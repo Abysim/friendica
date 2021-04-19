@@ -651,3 +651,6 @@ body.dragging, body.dragging * {
 span.required {
 	color: #c80000;
 }
+.itemedited {
+	display: none;
+}
