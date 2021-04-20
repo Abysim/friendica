@@ -1606,7 +1606,7 @@ class BBCode
 
 					$text = preg_replace("/\[video\](.*?)\[\/video\]/ism",
 						'<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>', $text);
-					$text = preg_replace("/\[audio\](.*?)\[\/audio\]/ism", '<audio src="$1" controls><a href="$1">$1</a></audio>', $text);
+					$text = preg_replace("/\[audio\](.*?)\[\/audio\]/ism", '<audio src="$1" controls preload="metadata"><a href="$1">$1</a></audio>', $text);
 				} else {
 					$text = preg_replace("/\[video\](.*?)\[\/video\]/ism",
 						'<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>', $text);
