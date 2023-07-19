@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,6 +24,7 @@ namespace Friendica\Worker;
 use Friendica\Core\Logger;
 use Friendica\Database\DBA;
 use Friendica\DI;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
 
 /**
  * Check the git repository VERSION file and save the version to the DB
@@ -35,7 +36,7 @@ class CheckVersion
 {
 	public static function execute()
 	{
-		Logger::log('checkversion: start');
+		Logger::notice('checkversion: start');
 
 		$checkurl = DI::config()->get('system', 'check_new_version_url', 'none');
 
@@ -51,15 +52,15 @@ class CheckVersion
 				// don't check
 				return;
 		}
-		Logger::log("Checking VERSION from: ".$checked_url, Logger::DEBUG);
+		Logger::info("Checking VERSION from: ".$checked_url);
 
 		// fetch the VERSION file
-		$gitversion = DBA::escape(trim(DI::httpRequest()->fetch($checked_url)));
-		Logger::log("Upstream VERSION is: ".$gitversion, Logger::DEBUG);
+		$gitversion = DBA::escape(trim(DI::httpClient()->fetch($checked_url, HttpClientAccept::TEXT)));
+		Logger::notice("Upstream VERSION is: ".$gitversion);
 
-		DI::config()->set('system', 'git_friendica_version', $gitversion);
+		DI::keyValue()->set('git_friendica_version', $gitversion);
 
-		Logger::log('checkversion: end');
+		Logger::notice('checkversion: end');
 
 		return;
 	}

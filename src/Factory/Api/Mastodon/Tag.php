@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,39 +25,32 @@ use Friendica\App\BaseURL;
 use Friendica\BaseFactory;
 use Friendica\Model\Tag as TagModel;
 use Friendica\Network\HTTPException;
-use Friendica\Repository\ProfileField;
 use Psr\Log\LoggerInterface;
 
 class Tag extends BaseFactory
 {
 	/** @var BaseURL */
-	protected $baseUrl;
-	/** @var ProfileField */
-	protected $profileField;
-	/** @var Field */
-	protected $mstdnField;
+	private $baseUrl;
 
-	public function __construct(LoggerInterface $logger, BaseURL $baseURL, ProfileField $profileField, Field $mstdnField)
+	public function __construct(LoggerInterface $logger, BaseURL $baseURL)
 	{
 		parent::__construct($logger);
 
 		$this->baseUrl = $baseURL;
-		$this->profileField = $profileField;
-		$this->mstdnField = $mstdnField;
 	}
 
 	/**
 	 * @param int $uriId Uri-ID of the item
+	 *
 	 * @return array
 	 * @throws HTTPException\InternalServerErrorException
-	 * @throws \ImagickException
 	 */
-	public function createFromUriId(int $uriId)
+	public function createFromUriId(int $uriId): array
 	{
 		$hashtags = [];
-		$tags = TagModel::getByURIId($uriId, [TagModel::HASHTAG]);
+		$tags     = TagModel::getByURIId($uriId, [TagModel::HASHTAG]);
 		foreach ($tags as $tag) {
-			$hashtag = new \Friendica\Object\Api\Mastodon\Tag($this->baseUrl, $tag);
+			$hashtag    = new \Friendica\Object\Api\Mastodon\Tag($this->baseUrl, $tag);
 			$hashtags[] = $hashtag->toArray();
 		}
 		return $hashtags;

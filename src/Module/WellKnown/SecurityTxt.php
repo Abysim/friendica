@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -29,7 +29,7 @@ use Friendica\BaseModule;
  */
 class SecurityTxt extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		$name = 'security.txt';
 		$fp = fopen($name, 'rt');

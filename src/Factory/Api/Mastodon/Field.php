@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,29 +23,31 @@ namespace Friendica\Factory\Api\Mastodon;
 
 use Friendica\BaseFactory;
 use Friendica\Collection\Api\Mastodon\Fields;
-use Friendica\Collection\ProfileFields;
+use Friendica\Profile\ProfileField\Collection\ProfileFields;
 use Friendica\Content\Text\BBCode;
-use Friendica\Model\ProfileField;
+use Friendica\Profile\ProfileField\Entity\ProfileField;
 use Friendica\Network\HTTPException;
 
 class Field extends BaseFactory
 {
 	/**
 	 * @param ProfileField $profileField
-	 * @return \Friendica\Api\Entity\Mastodon\Field
+	 *
+	 * @return \Friendica\Object\Api\Mastodon\Field
 	 * @throws HTTPException\InternalServerErrorException
 	 */
-	public function createFromProfileField(ProfileField $profileField)
+	public function createFromProfileField(ProfileField $profileField): \Friendica\Object\Api\Mastodon\Field
 	{
 		return new \Friendica\Object\Api\Mastodon\Field($profileField->label, BBCode::convert($profileField->value, false, BBCode::ACTIVITYPUB));
 	}
 
 	/**
 	 * @param ProfileFields $profileFields
+	 *
 	 * @return Fields
 	 * @throws HTTPException\InternalServerErrorException
 	 */
-	public function createFromProfileFields(ProfileFields $profileFields)
+	public function createFromProfileFields(ProfileFields $profileFields): Fields
 	{
 		$fields = [];
 

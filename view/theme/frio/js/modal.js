@@ -23,36 +23,9 @@ $(document).ready(function () {
 		$("#jot-content").append(jotcache);
 		// Clear the jotcache.
 		jotcache = "";
-		// Destroy the attachment linkPreviw for Jot.
+		// Destroy the attachment linkPreview for Jot.
 		if (typeof linkPreview === "object") {
 			linkPreview.destroy();
-		}
-	});
-
-	// Add Colorbox for viewing Network page images.
-	//var cBoxClasses = new Array();
-	$("body").on("click", ".wall-item-body a img", function () {
-		var aElem = $(this).parent();
-		var imgHref = aElem.attr("href");
-
-		// We need to make sure we only put a Colorbox on links to Friendica images.
-		// We'll try to do this by looking for links of the form
-		// .../photo/ab803d8eg08daf85023adfec08 (with nothing more following), in hopes
-		// that that will be unique enough.
-		if (imgHref.match(/\/photo\/[a-fA-F0-9]+(-[0-9]\.[\w]+?)?$/)) {
-			// Add a unique class to all the images of a certain post, to allow scrolling through
-			var cBoxClass = $(this).closest(".wall-item-body").attr("id") + "-lightbox";
-			$(this).addClass(cBoxClass);
-
-			//			if( $.inArray(cBoxClass, cBoxClasses) < 0 ) {
-			//				cBoxClasses.push(cBoxClass);
-			//			}
-
-			aElem.colorbox({
-				maxHeight: "90%",
-				photo: true, // Colorbox doesn't recognize a URL that don't end in .jpg, etc. as a photo.
-				rel: cBoxClass, //$(this).attr("class").match(/wall-item-body-[\d]+-lightbox/)[0].
-			});
 		}
 	});
 
@@ -82,7 +55,7 @@ $(document).ready(function () {
 	});
 
 	// Insert filebrowser images into the input field (field_fileinput.tpl).
-	$("body").on("fbrowser.image.input", function (e, filename, embedcode, id, img) {
+	$("body").on("fbrowser.photo.input", function (e, filename, embedcode, id, img) {
 		// Select the clicked button by it's attribute.
 		var elm = $("[image-input='select']");
 		// Select the input field which belongs to this button.
@@ -132,12 +105,12 @@ Dialog.show = function (url, title) {
 Dialog._get_url = function (type, name, id) {
 	var hash = name;
 	if (id !== undefined) hash = hash + "-" + id;
-	return "fbrowser/" + type + "/?mode=none&theme=frio#" + hash;
+	return 'media/' + type + '/browser?mode=none&theme=frio#' + hash;
 };
 
 // Does load the filebrowser into the jot modal.
 Dialog.showJot = function () {
-	var type = "image";
+	var type = "photo";
 	var name = "main";
 
 	var url = Dialog._get_url(type, name);
@@ -159,15 +132,15 @@ Dialog._load = function (url) {
 	let filebrowser = document.getElementById("filebrowser");
 
 	// Try to fetch the hash form the url.
-	let match = url.match(/fbrowser\/[a-z]+\/.*(#.*)/);
+	let match = url.match(/media\/[a-z]+\/.*(#.*)/);
 	if (!filebrowser || match === null) {
 		return; //not fbrowser
 	}
 
 	// Initialize the filebrowser.
 	loadScript("view/js/ajaxupload.js");
-	loadScript("view/theme/frio/js/filebrowser.js", function () {
-		FileBrowser.init(filebrowser.dataset.nickname, filebrowser.dataset.type, match[1]);
+	loadScript("view/theme/frio/js/module/media/browser.js", function () {
+		Browser.init(filebrowser.dataset.nickname, filebrowser.dataset.type, match[1]);
 	});
 };
 
@@ -190,7 +163,7 @@ function loadModalTitle() {
 	// Get the text of the first element with "heading" class.
 	title = $("#modal-body .heading").first().html();
 
-	// for event modals we need some speacial handling
+	// for event modals we need some special handling
 	if ($("#modal-body .event-wrapper .event-summary").length) {
 		title = '<i class="fa fa-calendar" aria-hidden="true"></i>&nbsp;';
 		var eventsum = $("#modal-body .event-wrapper .event-summary").html();
@@ -230,7 +203,7 @@ function addToModal(url, id) {
 			loadModalTitle();
 
 			// We need to initialize autosize again for new
-			// modal conent.
+			// modal content.
 			autosize($(".modal .text-autosize"));
 		}
 	});
@@ -254,10 +227,10 @@ function editpost(url) {
 	// But first we have to test if the url links to an event. So we will split up
 	// the url in its parts.
 	var splitURL = parseUrl(url);
-	// Test if in the url path containing "events/event". If the path containing this
+	// Test if in the url path containing "calendar/event/show". If the path containing this
 	// expression then we will call the addToModal function and exit this function at
 	// this point.
-	if (splitURL.path.indexOf("events/event") > -1) {
+	if (splitURL.path.indexOf("calendar/event/show") > -1) {
 		addToModal(splitURL.path);
 		return;
 	}
@@ -269,7 +242,7 @@ function editpost(url) {
 
 	// For editpost we load the modal html of "jot-sections" of the edit page. So we would have two jot forms in
 	// the page html. To avoid js conflicts we store the original jot in the variable jotcache.
-	// After closing the modal original jot should be restored at its orginal position in the html structure.
+	// After closing the modal original jot should be restored at its original position in the html structure.
 	jotcache = $("#jot-content > #jot-sections");
 
 	// Remove the original Jot as long as the edit Jot is open.
@@ -290,6 +263,10 @@ function editpost(url) {
 				$("#profile-jot-form #jot-title-wrap").hide();
 				$("#profile-jot-form #jot-category-wrap").hide();
 			}
+
+			// To make dropzone fileupload work on editing a comment, we need to
+			// attach a new dropzone to modal
+			dzFactory.setupDropzone('#jot-text-wrap', 'profile-jot-text');
 
 			modal.show();
 			$("#jot-popup").show();
@@ -336,10 +313,10 @@ function toggleJotNav(elm) {
 	$("#jot-modal .modal-header .nav-tabs .jot-nav-lnk").attr("aria-selected", "false");
 	elm.setAttribute("aria-selected", "true");
 
-	// For some some tab panels we need to execute other js functions.
+	// For some tab panels we need to execute other js functions.
 	if (tabpanel === "jot-preview-content") {
 		preview_post();
-		// Make Share button visivle in preview
+		// Make Share button visible in preview
 		$("#jot-preview-share").removeClass("minimize").attr("aria-hidden", "false");
 	} else if (tabpanel === "jot-fbrowser-wrapper") {
 		$(function () {
@@ -347,7 +324,7 @@ function toggleJotNav(elm) {
 		});
 	}
 
-	// If element is a mobile dropdown nav menu we need to change the botton text.
+	// If element is a mobile dropdown nav menu we need to change the button text.
 	if (cls) {
 		toggleDropdownText(elm);
 	}
@@ -357,7 +334,7 @@ function toggleJotNav(elm) {
 // it redirects you to your own server. In such cases we can't
 // load it into a modal.
 function openWallMessage(url) {
-	// Split the the url in its parts.
+	// Split the url in its parts.
 	var parts = parseUrl(url);
 
 	// If the host isn't the same we can't load it in a modal.

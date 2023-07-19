@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,8 +23,7 @@ namespace Friendica\Worker;
 
 use Friendica\Database\DBA;
 use Friendica\DI;
-use Friendica\Model\Photo;
-use Friendica\Util\Proxy as ProxyUtils;
+use Friendica\Util\DateTimeFormat;
 
 /**
  * Clear cache entries
@@ -33,38 +32,13 @@ class ClearCache
 {
 	public static function execute()
 	{
-		$a = DI::app();
-
 		// clear old cache
 		DI::cache()->clear();
 
-		// clear old item cache files
-		clear_cache();
-
-		// clear cache for photos
-		clear_cache($a->getBasePath(), $a->getBasePath() . "/photo");
-
-		// clear smarty cache
-		clear_cache($a->getBasePath() . "/view/smarty3/compiled", $a->getBasePath() . "/view/smarty3/compiled");
-
-		// clear cache for image proxy
-		if (!DI::config()->get("system", "proxy_disabled")) {
-			clear_cache($a->getBasePath(), $a->getBasePath() . "/proxy");
-
-			$cachetime = DI::config()->get('system', 'proxy_cache_time');
-
-			if (!$cachetime) {
-				$cachetime = ProxyUtils::DEFAULT_TIME;
-			}
-
-			$condition = ['`uid` = 0 AND `resource-id` LIKE "pic:%" AND `created` < NOW() - INTERVAL ? SECOND', $cachetime];
-			Photo::delete($condition);
-		}
-
 		// Delete the cached OEmbed entries that are older than three month
-		DBA::delete('oembed', ["`created` < NOW() - INTERVAL 3 MONTH"]);
+		DBA::delete('oembed', ["`created` < ?", DateTimeFormat::utc('now - 3 months')]);
 
 		// Delete the cached "parsed_url" entries that are expired
-		DBA::delete('parsed_url', ["`expires` < NOW()"]);
+		DBA::delete('parsed_url', ["`expires` < ?", DateTimeFormat::utcNow()]);
 	}
 }

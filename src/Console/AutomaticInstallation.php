@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,22 +24,21 @@ namespace Friendica\Console;
 use Asika\SimpleConsole\Console;
 use Friendica\App;
 use Friendica\App\BaseURL;
-use Friendica\Core\Config\IConfig;
-use Friendica\Core\Config\Cache;
+use Friendica\Core\Config\Capability\IManageConfigValues;
+use Friendica\Core\Config\ValueObject\Cache;
 use Friendica\Core\Installer;
 use Friendica\Core\Theme;
 use Friendica\Database\Database;
 use Friendica\Util\BasePath;
-use Friendica\Util\ConfigFileLoader;
 use RuntimeException;
 
 class AutomaticInstallation extends Console
 {
 	/** @var App\Mode */
 	private $appMode;
-	/** @var Cache */
+	/** @var \Friendica\Core\Config\ValueObject\Cache */
 	private $configCache;
-	/** @var IConfig */
+	/** @var IManageConfigValues */
 	private $config;
 	/** @var Database */
 	private $dba;
@@ -65,8 +64,9 @@ Options
     -s|--savedb               Save the DB credentials to the file (if environment variables is used)
     -H|--dbhost <host>        The host of the mysql/mariadb database (env MYSQL_HOST)
     -p|--dbport <port>        The port of the mysql/mariadb database (env MYSQL_PORT)
+    -s|--dbsocket <socket>    The socket of the mysql/mariadb database (env MYSQL_SOCKET)
     -d|--dbdata <database>    The name of the mysql/mariadb database (env MYSQL_DATABASE)
-    -U|--dbuser <username>    The username of the mysql/mariadb database login (env MYSQL_USER or MYSQL_USERNAME)
+    -u|--dbuser <username>    The username of the mysql/mariadb database login (env MYSQL_USER or MYSQL_USERNAME)
     -P|--dbpass <password>    The password of the mysql/mariadb database login (env MYSQL_PASSWORD)
     -U|--url <url>            The full base URL of Friendica - f.e. 'https://friendica.local/sub' (env FRIENDICA_URL) 
     -B|--phppath <php_path>   The path of the PHP binary (env FRIENDICA_PHP_PATH)
@@ -77,6 +77,7 @@ Options
 Environment variables
    MYSQL_HOST                  The host of the mysql/mariadb database (mandatory if mysql and environment is used)
    MYSQL_PORT                  The port of the mysql/mariadb database
+   MYSQL_SOCKET                The socket of the mysql/mariadb database
    MYSQL_USERNAME|MYSQL_USER   The username of the mysql/mariadb database login (MYSQL_USERNAME is for mysql, MYSQL_USER for mariadb)
    MYSQL_PASSWORD              The password of the mysql/mariadb database login
    MYSQL_DATABASE              The name of the mysql/mariadb database
@@ -94,12 +95,12 @@ Examples
 	bin/console autoinstall --savedb
 		Installs Friendica with environment variables and saves them to the 'config/local.config.php' file
 
-	bin/console autoinstall -h localhost -p 3365 -U user -P passwort1234 -d friendica
+	bin/console autoinstall -H localhost -p 3365 -u user -P password1234 -d friendica -U https://friendica.fqdn
 		Installs Friendica with a local mysql database with credentials
 HELP;
 	}
 
-	public function __construct(App\Mode $appMode, Cache $configCache, IConfig $config, Database $dba, array $argv = null)
+	public function __construct(App\Mode $appMode, Cache $configCache, IManageConfigValues $config, Database $dba, array $argv = null)
 	{
 		parent::__construct($argv);
 
@@ -109,10 +110,10 @@ HELP;
 		$this->dba         = $dba;
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		// Initialise the app
-		$this->out("Initializing setup...\n");
+		$this->out("Initializing setup...");
 
 		$installer = new Installer();
 
@@ -121,10 +122,10 @@ HELP;
 		$basepath     = new BasePath($basePathConf);
 		$installer->setUpCache($configCache, $basepath->getPath());
 
-		$this->out(" Complete!\n\n");
+		$this->out(" Complete!\n");
 
 		// Check Environment
-		$this->out("Checking environment...\n");
+		$this->out("Checking environment...");
 
 		$installer->resetChecks();
 
@@ -133,35 +134,38 @@ HELP;
 			throw new RuntimeException($errorMessage);
 		}
 
-		$this->out(" Complete!\n\n");
+		$this->out(" Complete!\n");
 
 		// if a config file is set,
 		$config_file = $this->getOption(['f', 'file']);
 
 		if (!empty($config_file)) {
-
+			$this->out("Loading config file '$config_file'...");
 			if (!file_exists($config_file)) {
-				throw new RuntimeException("ERROR: Config file does not exist.\n");
+				throw new RuntimeException("ERROR: Config file does not exist.");
 			}
 
-			//reload the config cache
-			$loader = new ConfigFileLoader($config_file);
-			$loader->setupCache($configCache);
-
+			//append config file to the config cache
+			$config = include($config_file);
+			if (!is_array($config)) {
+				throw new Exception('Error loading config file ' . $config_file);
+			}
+			$configCache->load($config, Cache::SOURCE_FILE);
 		} else {
 			// Creating config file
-			$this->out("Creating config file...\n");
+			$this->out("Creating config file...");
 
 			$save_db = $this->getOption(['s', 'savedb'], false);
 
 			$db_host = $this->getOption(['H', 'dbhost'], ($save_db) ? (getenv('MYSQL_HOST')) : Installer::DEFAULT_HOST);
 			$db_port = $this->getOption(['p', 'dbport'], ($save_db) ? getenv('MYSQL_PORT') : null);
+			$db_socket = $this->getOption(['s', 'dbsocket'], ($save_db) ? getenv('MYSQL_SOCKET') : null);
 			$configCache->set('database', 'hostname', $db_host . (!empty($db_port) ? ':' . $db_port : ''));
 			$configCache->set('database', 'database',
 				$this->getOption(['d', 'dbdata'],
 					($save_db) ? getenv('MYSQL_DATABASE') : ''));
 			$configCache->set('database', 'username',
-				$this->getOption(['U', 'dbuser'],
+				$this->getOption(['u', 'dbuser'],
 					($save_db) ? getenv('MYSQL_USER') . getenv('MYSQL_USERNAME') : ''));
 			$configCache->set('database', 'password',
 				$this->getOption(['P', 'dbpass'],
@@ -195,17 +199,16 @@ HELP;
 				$this->out('The Friendica URL has to be set during CLI installation.');
 				return 1;
 			} else {
-				$baseUrl = new BaseURL($this->config, []);
-				$baseUrl->saveByURL($url);
+				$configCache->set('system', 'url', $url);
 			}
 
 			$installer->createConfig($configCache);
 		}
 
-		$this->out("Complete!\n\n");
+		$this->out(" Complete!\n");
 
 		// Check database connection
-		$this->out("Checking database...\n");
+		$this->out("Checking database...");
 
 		$installer->resetChecks();
 
@@ -214,45 +217,45 @@ HELP;
 			throw new RuntimeException($errorMessage);
 		}
 
-		$this->out(" Complete!\n\n");
+		$this->out(" Complete!\n");
 
 		// Install database
 		$this->out("Inserting data into database...\n");
 
 		$installer->resetChecks();
 
-		if (!$installer->installDatabase($basePathConf)) {
+		if (!$installer->installDatabase()) {
 			$errorMessage = $this->extractErrors($installer->getChecks());
 			throw new RuntimeException($errorMessage);
 		}
 
 		if (!empty($config_file) && $config_file != 'config' . DIRECTORY_SEPARATOR . 'local.config.php') {
 			// Copy config file
-			$this->out("Copying config file...\n");
-			if (!copy($basePathConf . DIRECTORY_SEPARATOR . $config_file, $basePathConf . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'local.config.php')) {
+			$this->out("Copying config file...");
+			if (!copy($config_file, $basePathConf . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'local.config.php')) {
 				throw new RuntimeException("ERROR: Saving config file failed. Please copy '$config_file' to '" . $basePathConf . "'" . DIRECTORY_SEPARATOR . "config" . DIRECTORY_SEPARATOR . "local.config.php' manually.\n");
 			}
 		}
 
-		$this->out(" Complete!\n\n");
+		$this->out(" Complete!\n");
 
 		// Install theme
-		$this->out("Installing theme\n");
+		$this->out("Installing theme");
 		if (!empty($this->config->get('system', 'theme'))) {
 			Theme::install($this->config->get('system', 'theme'));
-			$this->out(" Complete\n\n");
+			$this->out(" Complete\n");
 		} else {
-			$this->out(" Theme setting is empty. Please check the file 'config/local.config.php'\n\n");
+			$this->out(" Theme setting is empty. Please check the file 'config/local.config.php'\n");
 		}
 
-		$this->out("\nInstallation is finished\n");
+		$this->out("\nInstallation is finished");
 
 		return 0;
 	}
 
 	/**
-	 * @param Installer $installer   The Installer instance
-	 * @param Cache     $configCache The config cache
+	 * @param Installer                                $installer   The Installer instance
+	 * @param \Friendica\Core\Config\ValueObject\Cache $configCache The config cache
 	 *
 	 * @return bool true if checks were successfully, otherwise false
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException

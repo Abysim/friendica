@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -30,11 +30,11 @@ use Friendica\Util\Strings;
 
 class Details extends BaseAdmin
 {
-	public static function post(array $parameters = [])
+	protected function post(array $request = [])
 	{
 		self::checkAdminAccess();
 
-		$addon = Strings::sanitizeFilePathItem($parameters['addon']);
+		$addon = Strings::sanitizeFilePathItem($this->parameters['addon']);
 
 		$redirect = 'admin/addons/' . $addon;
 
@@ -52,17 +52,17 @@ class Details extends BaseAdmin
 		DI::baseUrl()->redirect($redirect);
 	}
 
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		parent::content($parameters);
+		parent::content();
 
 		$a = DI::app();
 
 		$addons_admin = Addon::getAdminList();
 
-		$addon = Strings::sanitizeFilePathItem($parameters['addon']);
+		$addon = Strings::sanitizeFilePathItem($this->parameters['addon']);
 		if (!is_file("addon/$addon/$addon.php")) {
-			notice(DI::l10n()->t('Addon not found.'));
+			DI::sysmsg()->addNotice(DI::l10n()->t('Addon not found.'));
 			Addon::uninstall($addon);
 			DI::baseUrl()->redirect('admin/addons');
 		}
@@ -73,10 +73,10 @@ class Details extends BaseAdmin
 			// Toggle addon status
 			if (Addon::isEnabled($addon)) {
 				Addon::uninstall($addon);
-				info(DI::l10n()->t('Addon %s disabled.', $addon));
+				DI::sysmsg()->addInfo(DI::l10n()->t('Addon %s disabled.', $addon));
 			} else {
 				Addon::install($addon);
-				info(DI::l10n()->t('Addon %s enabled.', $addon));
+				DI::sysmsg()->addInfo(DI::l10n()->t('Addon %s enabled.', $addon));
 			}
 
 			DI::baseUrl()->redirect('admin/addons/' . $addon);
@@ -102,7 +102,7 @@ class Details extends BaseAdmin
 		if (array_key_exists($addon, $addons_admin)) {
 			require_once "addon/$addon/$addon.php";
 			$func = $addon . '_addon_admin';
-			$func($a, $admin_form);
+			$func($admin_form);
 		}
 
 		$t = Renderer::getMarkupTemplate('admin/addons/details.tpl');
@@ -112,7 +112,6 @@ class Details extends BaseAdmin
 			'$page' => DI::l10n()->t('Addons'),
 			'$toggle' => DI::l10n()->t('Toggle'),
 			'$settings' => DI::l10n()->t('Settings'),
-			'$baseurl' => DI::baseUrl()->get(true),
 
 			'$addon' => $addon,
 			'$status' => $status,

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -38,9 +38,15 @@ use Friendica\Util\Strings;
 
 /**
  * Base class for relay handling
+ * @see https://github.com/jaywink/social-relay
+ * @see https://wiki.diasporafoundation.org/Relay_servers_for_public_posts
  */
 class Relay
 {
+	const SCOPE_NONE = '';
+	const SCOPE_ALL = 'all';
+	const SCOPE_TAGS = 'tags';
+
 	/**
 	 * Check if a post is wanted
 	 *
@@ -50,18 +56,13 @@ class Relay
 	 * @param string $url
 	 * @return boolean "true" is the post is wanted by the system
 	 */
-	public static function isSolicitedPost(array $tags, string $body, int $authorid, string $url, string $network = '')
+	public static function isSolicitedPost(array $tags, string $body, int $authorid, string $url, string $network = '', int $causerid = 0): bool
 	{
 		$config = DI::config();
 
-		$subscribe = $config->get('system', 'relay_subscribe', false);
-		if ($subscribe) {
-			$scope = $config->get('system', 'relay_scope', SR_SCOPE_ALL);
-		} else {
-			$scope = SR_SCOPE_NONE;
-		}
+		$scope = $config->get('system', 'relay_scope');
 
-		if ($scope == SR_SCOPE_NONE) {
+		if ($scope == self::SCOPE_NONE) {
 			Logger::info('Server does not accept relay posts - rejected', ['network' => $network, 'url' => $url]);
 			return false;
 		}
@@ -76,14 +77,23 @@ class Relay
 			return false;
 		}
 
+		if (!empty($causerid)) {
+			$contact = Contact::getById($causerid, ['url']);
+			$causer = $contact['url'] ?? '';
+		} else {
+			$causer = '';
+		}
+
+		$body = ActivityPub\Processor::normalizeMentionLinks($body);
+
 		$systemTags = [];
 		$userTags = [];
 		$denyTags = [];
 
-		if ($scope == SR_SCOPE_TAGS) {
+		if ($scope == self::SCOPE_TAGS) {
 			$server_tags = $config->get('system', 'relay_server_tags');
 			$tagitems = explode(',', mb_strtolower($server_tags));
-			foreach ($tagitems AS $tag) {
+			foreach ($tagitems as $tag) {
 				$systemTags[] = trim($tag, '# ');
 			}
 
@@ -96,7 +106,7 @@ class Relay
 
 		$deny_tags = $config->get('system', 'relay_deny_tags');
 		$tagitems = explode(',', mb_strtolower($deny_tags));
-		foreach ($tagitems AS $tag) {
+		foreach ($tagitems as $tag) {
 			$tag = trim($tag, '# ');
 			$denyTags[] = $tag;
 		}
@@ -107,30 +117,49 @@ class Relay
 			foreach ($tags as $tag) {
 				$tag = mb_strtolower($tag);
 				if (in_array($tag, $denyTags)) {
-					Logger::info('Unwanted hashtag found - rejected', ['hashtag' => $tag, 'network' => $network, 'url' => $url]);
+					Logger::info('Unwanted hashtag found - rejected', ['hashtag' => $tag, 'network' => $network, 'url' => $url, 'causer' => $causer]);
 					return false;
 				}
 
 				if (in_array($tag, $tagList)) {
-					Logger::info('Subscribed hashtag found - accepted', ['hashtag' => $tag, 'network' => $network, 'url' => $url]);
+					Logger::info('Subscribed hashtag found - accepted', ['hashtag' => $tag, 'network' => $network, 'url' => $url, 'causer' => $causer]);
 					return true;
 				}
 
 				// We check with "strpos" for performance issues. Only when this is true, the regular expression check is used
 				// RegExp is taken from here: https://medium.com/@shiba1014/regex-word-boundaries-with-unicode-207794f6e7ed
 				if ((strpos($content, $tag) !== false) && preg_match('/(?<=[\s,.:;"\']|^)' . preg_quote($tag, '/') . '(?=[\s,.:;"\']|$)/', $content)) {
-					Logger::info('Subscribed hashtag found in content - accepted', ['hashtag' => $tag, 'network' => $network, 'url' => $url]);
+					Logger::info('Subscribed hashtag found in content - accepted', ['hashtag' => $tag, 'network' => $network, 'url' => $url, 'causer' => $causer]);
 					return true;
 				}
 			}
 		}
 
-		if ($scope == SR_SCOPE_ALL) {
-			Logger::info('Server accept all posts - accepted', ['network' => $network, 'url' => $url]);
+		$languages = [];
+		foreach (Item::getLanguageArray($body, 10) as $language => $reliability) {
+			if ($reliability > 0) {
+				$languages[] = $language;
+			}
+		}
+
+		Logger::debug('Got languages', ['languages' => $languages, 'body' => $body, 'causer' => $causer]);
+
+		if (!empty($languages)) {
+			if (in_array($languages[0], $config->get('system', 'relay_deny_languages'))) {
+				Logger::info('Unwanted language found - rejected', ['language' => $languages[0], 'network' => $network, 'url' => $url, 'causer' => $causer]);
+				return false;
+			}
+		} elseif ($config->get('system', 'relay_deny_undetected_language')) {
+			Logger::info('Undetected language found - rejected', ['body' => $body, 'network' => $network, 'url' => $url, 'causer' => $causer]);
+			return false;
+		}
+
+		if ($scope == self::SCOPE_ALL) {
+			Logger::info('Server accept all posts - accepted', ['network' => $network, 'url' => $url, 'causer' => $causer]);
 			return true;
 		}
 
-		Logger::info('No matching hashtags found - rejected', ['network' => $network, 'url' => $url]);
+		Logger::info('No matching hashtags found - rejected', ['network' => $network, 'url' => $url, 'causer' => $causer]);
 		return false;
 	}
 
@@ -139,6 +168,7 @@ class Relay
 	 *
 	 * @param array $gserver Global server record
 	 * @param array $fields  Optional network specific fields
+	 * @return void
 	 * @throws \Exception
 	 */
 	public static function updateContact(array $gserver, array $fields = [])
@@ -146,7 +176,7 @@ class Relay
 		if (in_array($gserver['network'], [Protocol::ACTIVITYPUB, Protocol::DFRN])) {
 			$system = APContact::getByURL($gserver['url'] . '/friendica');
 			if (!empty($system['sharedinbox'])) {
-				Logger::info('Sucessfully probed for relay contact', ['server' => $gserver['url']]);
+				Logger::info('Successfully probed for relay contact', ['server' => $gserver['url']]);
 				$id = Contact::updateFromProbeByURL($system['url']);
 				Logger::info('Updated relay contact', ['server' => $gserver['url'], 'id' => $id]);
 				return;
@@ -168,11 +198,11 @@ class Relay
 			return;
 		}
 
-		if (DBA::isResult($old)) {	
+		if (DBA::isResult($old)) {
 			$fields['updated'] = DateTimeFormat::utcNow();
 
 			Logger::info('Update relay contact', ['server' => $gserver['url'], 'id' => $old['id'], 'fields' => $fields]);
-			DBA::update('contact', $fields, ['id' => $old['id']], $old);
+			Contact::update($fields, ['id' => $old['id']], $old);
 		} else {
 			$default = ['created' => DateTimeFormat::utcNow(),
 				'name' => 'relay', 'nick' => 'relay', 'url' => $gserver['url'],
@@ -198,6 +228,7 @@ class Relay
 	 * The relay contact is a technical contact entry that exists once per server.
 	 *
 	 * @param array $contact of the relay contact
+	 * @return void
 	 */
 	public static function markForArchival(array $contact)
 	{
@@ -224,75 +255,63 @@ class Relay
 	}
 
 	/**
-	 * Return a list of relay servers
-	 *
-	 * The list contains not only the official relays but also servers that we serve directly
+	 * Return a list of servers that we serve via the direct relay
 	 *
 	 * @param integer $item_id  id of the item that is sent
 	 * @param array   $contacts Previously fetched contacts
-	 * @param array   $networks Networks of the relay servers 
-	 *
+	 * @param array   $networks Networks of the relay servers
 	 * @return array of relay servers
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function getList(int $item_id, array $contacts, array $networks)
+	public static function getDirectRelayList(int $item_id): array
 	{
 		$serverlist = [];
 
-		// Fetching relay servers
-		$serverdata = DI::config()->get("system", "relay_server");
-
-		if (!empty($serverdata)) {
-			$servers = explode(",", $serverdata);
-			foreach ($servers as $server) {
-				$gserver = DBA::selectFirst('gserver', ['id', 'url', 'network'], ['nurl' => Strings::normaliseLink($server)]);
-				if (DBA::isResult($gserver)) {
-					$serverlist[$gserver['id']] = $gserver;
-				}
-			}
+		if (!DI::config()->get('system', 'relay_directly', false)) {
+			return [];
 		}
 
-		if (DI::config()->get("system", "relay_directly", false)) {
-			// We distribute our stuff based on the parent to ensure that the thread will be complete
-			$parent = Post::selectFirst(['uri-id'], ['id' => $item_id]);
-			if (!DBA::isResult($parent)) {
-				return;
-			}
+		// We distribute our stuff based on the parent to ensure that the thread will be complete
+		$parent = Post::selectFirst(['uri-id'], ['id' => $item_id]);
+		if (!DBA::isResult($parent)) {
+			return [];
+		}
 
-			// Servers that want to get all content
-			$servers = DBA::select('gserver', ['id', 'url', 'network'], ['relay-subscribe' => true, 'relay-scope' => 'all']);
+		// Servers that want to get all content
+		$servers = DBA::select('gserver', ['id', 'url', 'network'], ['relay-subscribe' => true, 'relay-scope' => 'all']);
+		while ($server = DBA::fetch($servers)) {
+			$serverlist[$server['id']] = $server;
+		}
+		DBA::close($servers);
+
+		// All tags of the current post
+		$tags = DBA::select('tag-view', ['name'], ['uri-id' => $parent['uri-id'], 'type' => Tag::HASHTAG]);
+		$taglist = [];
+		while ($tag = DBA::fetch($tags)) {
+			$taglist[] = $tag['name'];
+		}
+		DBA::close($tags);
+
+		// All servers who wants content with this tag
+		$tagserverlist = [];
+		if (!empty($taglist)) {
+			$tagserver = DBA::select('gserver-tag', ['gserver-id'], ['tag' => $taglist]);
+			while ($server = DBA::fetch($tagserver)) {
+				$tagserverlist[] = $server['gserver-id'];
+			}
+			DBA::close($tagserver);
+		}
+
+		// All addresses with the given id
+		if (!empty($tagserverlist)) {
+			$servers = DBA::select('gserver', ['id', 'url', 'network'], ['relay-subscribe' => true, 'relay-scope' => 'tags', 'id' => $tagserverlist]);
 			while ($server = DBA::fetch($servers)) {
 				$serverlist[$server['id']] = $server;
 			}
 			DBA::close($servers);
-
-			// All tags of the current post
-			$tags = DBA::select('tag-view', ['name'], ['uri-id' => $parent['uri-id'], 'type' => Tag::HASHTAG]);
-			$taglist = [];
-			while ($tag = DBA::fetch($tags)) {
-				$taglist[] = $tag['name'];
-			}
-			DBA::close($tags);
-
-			// All servers who wants content with this tag
-			$tagserverlist = [];
-			if (!empty($taglist)) {
-				$tagserver = DBA::select('gserver-tag', ['gserver-id'], ['tag' => $taglist]);
-				while ($server = DBA::fetch($tagserver)) {
-					$tagserverlist[] = $server['gserver-id'];
-				}
-				DBA::close($tagserver);
-			}
-
-			// All adresses with the given id
-			if (!empty($tagserverlist)) {
-				$servers = DBA::select('gserver', ['id', 'url', 'network'], ['relay-subscribe' => true, 'relay-scope' => 'tags', 'id' => $tagserverlist]);
-				while ($server = DBA::fetch($servers)) {
-					$serverlist[$server['id']] = $server;
-				}
-				DBA::close($servers);
-			}
 		}
+
+		$contacts = [];
 
 		// Now we are collecting all relay contacts
 		foreach ($serverlist as $gserver) {
@@ -304,13 +323,22 @@ class Relay
 			if (empty($contact)) {
 				continue;
 			}
-
-			if (in_array($contact['network'], $networks) && !in_array($contact['batch'], array_column($contacts, 'batch'))) {
-				$contacts[] = $contact;
-			}
 		}
 
 		return $contacts;
+	}
+
+	/**
+	 * Return a list of relay servers
+	 *
+	 * @param array $fields Field list
+	 * @return array List of relay servers
+	 * @throws Exception
+	 */
+	public static function getList(array $fields = []): array
+	{
+		return DBA::selectToArray('apcontact', $fields,
+			["`type` = ? AND `url` IN (SELECT `url` FROM `contact` WHERE `uid` = ? AND `rel` = ?)", 'Application', 0, Contact::FRIEND]);
 	}
 
 	/**
@@ -318,7 +346,7 @@ class Relay
 	 *
 	 * @param array $gserver Global server record
 	 * @param array $fields  Fieldlist
-	 * @return array with the contact
+	 * @return array|bool Array with the contact or false on error
 	 * @throws \Exception
 	 */
 	private static function getContact(array $gserver, array $fields = ['batch', 'id', 'url', 'name', 'network', 'protocol', 'archive', 'blocked'])
@@ -342,5 +370,18 @@ class Relay
 
 		// It should never happen that we arrive here
 		return [];
+	}
+
+	/**
+	 * Resubscribe to all relay servers
+	 *
+	 * @return void
+	 */
+	public static function reSubscribe()
+	{
+		foreach (self::getList() as $server) {
+			$success = ActivityPub\Transmitter::sendRelayFollow($server['url']);
+			Logger::debug('Resubscribed', ['profile' => $server['url'], 'success' => $success]);
+		}
 	}
 }

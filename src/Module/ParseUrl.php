@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,19 +21,33 @@
 
 namespace Friendica\Module;
 
+use Friendica\App;
 use Friendica\BaseModule;
 use Friendica\Content\Text\BBCode;
 use Friendica\Core\Hook;
-use Friendica\Core\Session;
+use Friendica\Core\L10n;
+use Friendica\Core\Session\Capability\IHandleUserSessions;
 use Friendica\Core\System;
 use Friendica\Network\HTTPException\BadRequestException;
 use Friendica\Util;
+use Friendica\Util\Profiler;
+use Psr\Log\LoggerInterface;
 
 class ParseUrl extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	/** @var IHandleUserSessions */
+	protected $userSession;
+
+	public function __construct(L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, Response $response, IHandleUserSessions $userSession, $server, array $parameters = [])
 	{
-		if (!Session::isAuthenticated()) {
+		parent::__construct($l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
+
+		$this->userSession = $userSession;
+	}
+
+	protected function rawContent(array $request = [])
+	{
+		if (!$this->userSession->isAuthenticated()) {
 			throw new \Friendica\Network\HTTPException\ForbiddenException();
 		}
 
@@ -88,8 +102,7 @@ class ParseUrl extends BaseModule
 			if ($format == 'json') {
 				System::jsonExit($arr['text']);
 			} else {
-				echo $arr['text'];
-				exit();
+				System::httpExit($arr['text']);
 			}
 		}
 
@@ -122,8 +135,7 @@ class ParseUrl extends BaseModule
 
 			System::jsonExit($ret);
 		} else {
-			echo BBCode::embedURL($url, empty($_GET['noAttachment']), $title, $description, $_GET['tags'] ?? '');
-			exit();
+			System::httpExit(BBCode::embedURL($url, empty($_GET['noAttachment']), $title, $description, $_GET['tags'] ?? ''));
 		}
 	}
 }

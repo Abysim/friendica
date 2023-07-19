@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -33,12 +33,11 @@ use Friendica\Network\HTTPException;
 class CustomEmojis extends BaseApi
 {
 	/**
-	 * @param array $parameters
 	 * @throws HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 * @see https://docs.joinmastodon.org/methods/accounts/follow_requests#pending-follows
 	 */
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		$emojis = DI::mstdnEmoji()->createCollectionFromSmilies(Smilies::getList());
 

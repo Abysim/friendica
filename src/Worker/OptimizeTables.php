@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -40,15 +40,37 @@ class OptimizeTables
 
 		Logger::info('Optimize start');
 
-		DBA::e("OPTIMIZE TABLE `auth_codes`");
-		DBA::e("OPTIMIZE TABLE `cache`");
-		DBA::e("OPTIMIZE TABLE `challenge`");
-		DBA::e("OPTIMIZE TABLE `locks`");
-		DBA::e("OPTIMIZE TABLE `oembed`");
-		DBA::e("OPTIMIZE TABLE `parsed_url`");
-		DBA::e("OPTIMIZE TABLE `profile_check`");
-		DBA::e("OPTIMIZE TABLE `session`");
-		DBA::e("OPTIMIZE TABLE `tokens`");
+		DBA::optimizeTable('cache');
+		DBA::optimizeTable('locks');
+		DBA::optimizeTable('oembed');
+		DBA::optimizeTable('parsed_url');
+		DBA::optimizeTable('session');
+
+		if (DI::config()->get('system', 'optimize_all_tables')) {
+			DBA::optimizeTable('apcontact');
+			DBA::optimizeTable('contact');
+			DBA::optimizeTable('contact-relation');
+			DBA::optimizeTable('conversation');
+			DBA::optimizeTable('diaspora-contact');
+			DBA::optimizeTable('diaspora-interaction');
+			DBA::optimizeTable('fcontact');
+			DBA::optimizeTable('gserver');
+			DBA::optimizeTable('gserver-tag');
+			DBA::optimizeTable('inbox-status');
+			DBA::optimizeTable('item-uri');
+			DBA::optimizeTable('notification');
+			DBA::optimizeTable('notify');
+			DBA::optimizeTable('photo');
+			DBA::optimizeTable('post');
+			DBA::optimizeTable('post-content');
+			DBA::optimizeTable('post-delivery-data');
+			DBA::optimizeTable('post-link');
+			DBA::optimizeTable('post-thread');
+			DBA::optimizeTable('post-thread-user');
+			DBA::optimizeTable('post-user');
+			DBA::optimizeTable('storage');
+			DBA::optimizeTable('tag');
+		}
 
 		Logger::info('Optimize end');
 

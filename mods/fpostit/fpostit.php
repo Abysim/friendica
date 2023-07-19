@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -125,7 +125,7 @@ function showForm($error, $content) {
 
 	echo <<<EOF
 	<div class='wrap1'>
-		<h2><img class='logo' src='friendica-32.png' align='middle';/>
+		<h2><img class='logo' width="32" height="32" src='friendica.svg' align='middle';/>
 		Friendica Bookmarklet</h2>
 	</div>
 

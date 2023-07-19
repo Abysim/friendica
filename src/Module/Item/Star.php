@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,8 +22,8 @@
 namespace Friendica\Module\Item;
 
 use Friendica\BaseModule;
-use Friendica\Core\Session;
 use Friendica\Core\System;
+use Friendica\Database\DBA;
 use Friendica\DI;
 use Friendica\Model\Item;
 use Friendica\Model\Post;
@@ -34,23 +34,37 @@ use Friendica\Network\HTTPException;
  */
 class Star extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		$l10n = DI::l10n();
 
-		if (!Session::isAuthenticated()) {
+		if (!DI::userSession()->isAuthenticated()) {
 			throw new HttpException\ForbiddenException($l10n->t('Access denied.'));
 		}
 
-		if (empty($parameters['id'])) {
+		if (empty($this->parameters['id'])) {
 			throw new HTTPException\BadRequestException();
 		}
 
-		$itemId = intval($parameters['id']);
+		$itemId = intval($this->parameters['id']);
 
-		$item = Post::selectFirstForUser(local_user(), ['starred'], ['uid' => local_user(), 'id' => $itemId]);
+
+		$item = Post::selectFirstForUser(DI::userSession()->getLocalUserId(), ['uid', 'uri-id', 'starred'], ['uid' => [0, DI::userSession()->getLocalUserId()], 'id' => $itemId]);
 		if (empty($item)) {
 			throw new HTTPException\NotFoundException();
+		}
+
+		if ($item['uid'] == 0) {
+			$stored = Item::storeForUserByUriId($item['uri-id'], DI::userSession()->getLocalUserId(), ['post-reason' => Item::PR_ACTIVITY]);
+			if (!empty($stored)) {
+				$item = Post::selectFirst(['starred'], ['id' => $stored]);
+				if (!DBA::isResult($item)) {
+					throw new HTTPException\NotFoundException();
+				}
+				$itemId = $stored;
+			} else {
+				throw new HTTPException\NotFoundException();
+			}
 		}
 
 		$starred = !(bool)$item['starred'];

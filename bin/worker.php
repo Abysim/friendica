@@ -1,7 +1,7 @@
 #!/usr/bin/env php
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -40,7 +40,7 @@ $longopts = ['spawn', 'no_cron'];
 $options = getopt($shortopts, $longopts);
 
 // Ensure that worker.php is executed from the base path of the installation
-if (!file_exists("boot.php") && (sizeof($_SERVER["argv"]) != 0)) {
+if (!file_exists("index.php") && (sizeof($_SERVER["argv"]) != 0)) {
 	$directory = dirname($_SERVER["argv"][0]);
 
 	if (substr($directory, 0, 1) != '/') {
@@ -57,19 +57,17 @@ $dice = (new Dice())->addRules(include __DIR__ . '/../static/dependencies.config
 $dice = $dice->addRule(LoggerInterface::class,['constructParams' => ['worker']]);
 
 DI::init($dice);
-$a = DI::app();
+\Friendica\Core\Logger\Handler\ErrorHandler::register($dice->create(\Psr\Log\LoggerInterface::class));
 
 DI::mode()->setExecutor(Mode::WORKER);
 
 // Check the database structure and possibly fixes it
-Update::check($a->getBasePath(), true, DI::mode());
+Update::check(DI::basePath(), true);
 
 // Quit when in maintenance
 if (!DI::mode()->has(App\Mode::MAINTENANCEDISABLED)) {
 	return;
 }
-
-DI::baseUrl()->saveByURL(DI::config()->get('system', 'url'));
 
 $spawn = array_key_exists('s', $options) || array_key_exists('spawn', $options);
 
@@ -80,8 +78,10 @@ if ($spawn) {
 
 $run_cron = !array_key_exists('n', $options) && !array_key_exists('no_cron', $options);
 
-Worker::processQueue($run_cron);
+$process = DI::process()->create(getmypid(), basename(__FILE__));
 
-Worker::unclaimProcess();
+Worker::processQueue($run_cron, $process);
 
-DI::process()->end();
+Worker::unclaimProcess($process);
+
+DI::process()->delete($process);

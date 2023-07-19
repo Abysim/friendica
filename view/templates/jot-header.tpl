@@ -24,6 +24,11 @@ function initEditor(callback) {
 		$("a#jot-perms-icon").colorbox(colorbox_options);
 		$(".jothidden").show();
 
+		$("#profile-jot-text").keyup(function(){
+			var textlen = $(this).val().length;
+			$('#character-counter').text(textlen);
+		});
+
 		editor = true;
 	}
 	if (typeof callback != "undefined") {
@@ -40,7 +45,7 @@ function enableOnUser(){
 }
 
 </script>
-<script type="text/javascript" src="{{$baseurl}}/view/js/ajaxupload.js?v={{$smarty.const.FRIENDICA_VERSION}}" ></script>
+<script type="text/javascript" src="{{$baseurl}}/view/js/ajaxupload.js?v={{$smarty.const.FRIENDICA_VERSION}}"></script>
 <script>
 	var ispublic = '{{$ispublic nofilter}}';
 
@@ -56,11 +61,11 @@ function enableOnUser(){
 		 **/
 
 		/* callback */
-		$('body').on('fbrowser.image.main', function(e, filename, embedcode, id) {
+		$('body').on('fbrowser.photo.main', function(e, filename, embedcode, id) {
 			$.colorbox.close();
 			addeditortext(embedcode);
 		});
-		$('body').on('fbrowser.file.main', function(e, filename, embedcode, id) {
+		$('body').on('fbrowser.attachment.main', function(e, filename, embedcode, id) {
 			$.colorbox.close();
 			addeditortext(embedcode);
 		});
@@ -136,7 +141,7 @@ function enableOnUser(){
 		if ($('#jot-popup').length != 0) $('#jot-popup').show();
 
 		$('#like-rotator-' + id).show();
-		$.get('share/' + id, function(data) {
+		$.get('post/' + id + '/share', function(data) {
 			if (!editor) $("#profile-jot-text").val("");
 			initEditor(function(){
 				addeditortext(data);
@@ -179,7 +184,7 @@ function enableOnUser(){
 				commentBusy = true;
 				$('body').css('cursor', 'wait');
 
-				$.get('tagger/' + id + '?term=' + reply);
+				$.post('post/' + id + '/tag/add', {term: reply});
 				if(timer) clearTimeout(timer);
 				timer = setTimeout(NavUpdate,3000);
 				liking = 1;
@@ -210,6 +215,7 @@ function enableOnUser(){
 //					if(timer) clearTimeout(timer);
 //					timer = setTimeout(NavUpdate,3000);
 					liking = 1;
+					force_update = true;
 					$.colorbox.close();
 				} else {
 					$("#id_term").css("border-color","#FF0000");

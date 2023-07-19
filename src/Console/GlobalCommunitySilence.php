@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -75,7 +75,7 @@ HELP;
 		$this->dba  =$dba;
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		if ($this->getOption('v')) {
 			$this->out('Class: ' . __CLASS__);
@@ -98,7 +98,7 @@ HELP;
 
 		$contact_id = Contact::getIdForURL($this->getArgument(0));
 		if ($contact_id) {
-			$this->dba->update('contact', ['hidden' => true], ['id' => $contact_id]);
+			Contact::update(['hidden' => true], ['id' => $contact_id]);
 			$this->out('The account has been successfully silenced from the global community page.');
 		} else {
 			throw new RuntimeException('Could not find any public contact entry for this URL (' . $this->getArgument(0) . ')');

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -28,6 +28,7 @@ use Friendica\DI;
 use Friendica\Model\Item;
 use Friendica\Model\Post;
 use Friendica\Model\User;
+use Friendica\Module\Response;
 use Friendica\Network\HTTPException;
 use Friendica\Protocol\Diaspora;
 use Friendica\Util\Strings;
@@ -38,25 +39,18 @@ use Friendica\Util\Strings;
  */
 class Fetch extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-		$app = DI::app();
-
-		// @TODO: Replace with parameter from router
-		if (($app->argc != 3) || (!in_array($app->argv[1], ["post", "status_message", "reshare"]))) {
+		if (empty($this->parameters['guid'])) {
 			throw new HTTPException\NotFoundException();
 		}
 
-		// @TODO: Replace with parameter from router
-		$guid = $app->argv[2];
+		$guid = $this->parameters['guid'];
 
 		// Fetch the item
-		$fields = [
-			'uid', 'title', 'body', 'guid', 'contact-id', 'private', 'created', 'received', 'app', 'location', 'coord', 'network',
-			'event-id', 'resource-id', 'author-link', 'author-avatar', 'author-name', 'plink', 'owner-link', 'uri-id'
-		];
-		$condition = ['wall' => true, 'private' => [Item::PUBLIC, Item::UNLISTED], 'guid' => $guid, 'network' => [Protocol::DFRN, Protocol::DIASPORA]];
-		$item = Post::selectFirst($fields, $condition);
+		$condition = ['origin' => true, 'private' => [Item::PUBLIC, Item::UNLISTED], 'guid' => $guid,
+			'gravity' => [Item::GRAVITY_PARENT, Item::GRAVITY_COMMENT], 'network' => [Protocol::DFRN, Protocol::DIASPORA]];
+		$item = Post::selectFirst([], $condition);
 		if (empty($item)) {
 			$condition = ['guid' => $guid, 'network' => [Protocol::DFRN, Protocol::DIASPORA]];
 			$item = Post::selectFirst(['author-link'], $condition);
@@ -67,8 +61,8 @@ class Fetch extends BaseModule
 				}
 				$host = $parts["scheme"] . "://" . $parts["host"];
 
-				if (Strings::normaliseLink($host) != Strings::normaliseLink(DI::baseUrl()->get())) {
-					$location = $host . "/fetch/" . $app->argv[1] . "/" . urlencode($guid);
+				if (Strings::normaliseLink($host) != Strings::normaliseLink(DI::baseUrl())) {
+					$location = $host . "/fetch/" . DI::args()->getArgv()[1] . "/" . urlencode($guid);
 					System::externalRedirect($location, 301);
 				}
 			}
@@ -82,13 +76,15 @@ class Fetch extends BaseModule
 			throw new HTTPException\NotFoundException();
 		}
 
-		$status = Diaspora::buildStatus($item, $user);
+		if ($item['gravity'] == Item::GRAVITY_PARENT) {
+			$status = Diaspora::buildStatus($item, $user);
+		} else {
+			$status = ['type' => 'comment', 'message' => Diaspora::createCommentSignature($item)];
+		}
+
 		$xml = Diaspora::buildPostXml($status["type"], $status["message"]);
 
 		// Send the envelope
-		header("Content-Type: application/magic-envelope+xml; charset=utf-8");
-		echo Diaspora::buildMagicEnvelope($xml, $user);
-
-		exit();
+		System::httpExit(Diaspora::buildMagicEnvelope($xml, $user), Response::TYPE_XML, 'application/magic-envelope+xml');
 	}
 }

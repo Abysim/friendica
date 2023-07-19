@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,12 +21,16 @@
 
 namespace Friendica\Module\Diaspora;
 
+use Friendica\App;
 use Friendica\BaseModule;
-use Friendica\DI;
+use Friendica\Core\Config\Capability\IManageConfigValues;
+use Friendica\Core\L10n;
 use Friendica\Model\User;
+use Friendica\Module\Response;
 use Friendica\Network\HTTPException;
 use Friendica\Protocol\Diaspora;
 use Friendica\Util\Network;
+use Friendica\Util\Profiler;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -35,79 +39,83 @@ use Psr\Log\LoggerInterface;
  */
 class Receive extends BaseModule
 {
-	/** @var LoggerInterface */
-	private static $logger;
+	/** @var IManageConfigValues */
+	protected $config;
 
-	public static function init(array $parameters = [])
+	public function __construct(L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, Response $response, IManageConfigValues $config, array $server, array $parameters = [])
 	{
-		self::$logger = DI::logger();
+		parent::__construct($l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
+
+		$this->config = $config;
 	}
 
-	public static function post(array $parameters = [])
+	protected function post(array $request = [])
 	{
-		$enabled = DI::config()->get('system', 'diaspora_enabled', false);
+		$enabled = $this->config->get('system', 'diaspora_enabled', false);
 		if (!$enabled) {
-			self::$logger->info('Diaspora disabled.');
-			throw new HTTPException\ForbiddenException(DI::l10n()->t('Access denied.'));
+			$this->logger->info('Diaspora disabled.');
+			throw new HTTPException\ForbiddenException($this->t('Access denied.'));
 		}
 
-		$args = DI::args();
-
-		$type = $args->get(1);
-
-		switch ($type) {
-			case 'public':
-				self::receivePublic();
-				break;
-			case 'users':
-				self::receiveUser($args->get(2));
-				break;
-			default:
-				self::$logger->info('Wrong call.');
-				throw new HTTPException\BadRequestException('wrong call.');
-				break;
+		if ($this->parameters['type'] === 'public') {
+			$this->receivePublic();
+		} else if ($this->parameters['type'] === 'users') {
+			$this->receiveUser();
 		}
 	}
 
 	/**
 	 * Receive a public Diaspora posting
 	 *
+	 * @return void
 	 * @throws HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	private static function receivePublic()
+	private  function receivePublic()
 	{
-		self::$logger->info('Diaspora: Receiving post.');
+		$this->logger->info('Diaspora: Receiving post.');
 
-		$msg = self::decodePost();
+		$msg = $this->decodePost();
 
-		self::$logger->info('Diaspora: Dispatching.');
+		$this->logger->info('Diaspora: Dispatching.');
 
-		Diaspora::dispatchPublic($msg);
+		Diaspora::dispatchPublic($msg, Diaspora::PUSHED);
 	}
 
 	/**
 	 * Receive a Diaspora posting for a user
 	 *
-	 * @param string $guid The GUID of the importer
-	 *
+	 * @return void
 	 * @throws HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	private static function receiveUser(string $guid)
+	private function receiveUser()
 	{
-		self::$logger->info('Diaspora: Receiving post.');
+		$this->logger->info('Diaspora: Receiving post.');
 
-		$importer = User::getByGuid($guid);
+		$importer = User::getByGuid($this->parameters['guid']);
+		if (empty($importer)) {
+			// We haven't found the user.
+			// To avoid the remote system trying again we send the message that we accepted the content.
+			throw new HTTPException\AcceptedException();
+		}
 
-		$msg = self::decodePost(false, $importer['prvkey'] ?? '');
+		if ($importer['account-type'] == User::ACCOUNT_TYPE_COMMUNITY) {
+			// Communities aren't working with the Diaspora protocol
+			// We throw an "accepted" here, so that the sender doesn't repeat the delivery
+			throw new HTTPException\AcceptedException();
+		}
 
-		self::$logger->info('Diaspora: Dispatching.');
+		$msg = $this->decodePost(false, $importer['prvkey']);
+
+		$this->logger->info('Diaspora: Dispatching.');
 
 		if (Diaspora::dispatch($importer, $msg)) {
 			throw new HTTPException\OKException();
 		} else {
-			throw new HTTPException\InternalServerErrorException();
+			// We couldn't process the content.
+			// To avoid the remote system trying again we send the message that we accepted the content.
+			throw new HTTPException\AcceptedException();
 		}
 	}
 
@@ -121,7 +129,7 @@ class Receive extends BaseModule
 	 * @throws HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	private static function decodePost(bool $public = true, string $privKey = '')
+	private function decodePost(bool $public = true, string $privKey = ''): array
 	{
 		if (empty($_POST['xml'])) {
 
@@ -131,24 +139,24 @@ class Receive extends BaseModule
 				throw new HTTPException\InternalServerErrorException('Missing postdata.');
 			}
 
-			self::$logger->info('Diaspora: Message is in the new format.');
+			$this->logger->info('Diaspora: Message is in the new format.');
 
 			$msg = Diaspora::decodeRaw($postdata, $privKey);
 		} else {
 
 			$xml = urldecode($_POST['xml']);
 
-			self::$logger->info('Diaspora: Decode message in the old format.');
+			$this->logger->info('Diaspora: Decode message in the old format.');
 			$msg = Diaspora::decode($xml, $privKey);
 
 			if ($public && !$msg) {
-				self::$logger->info('Diaspora: Decode message in the new format.');
+				$this->logger->info('Diaspora: Decode message in the new format.');
 				$msg = Diaspora::decodeRaw($xml, $privKey);
 			}
 		}
 
-		self::$logger->info('Diaspora: Post decoded.');
-		self::$logger->debug('Diaspora: Decoded message.', ['msg' => $msg]);
+		$this->logger->info('Diaspora: Post decoded.');
+		$this->logger->debug('Diaspora: Decoded message.', ['msg' => $msg]);
 
 		if (!is_array($msg)) {
 			throw new HTTPException\InternalServerErrorException('Message is not an array.');

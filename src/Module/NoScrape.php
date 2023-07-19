@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,11 +22,9 @@
 namespace Friendica\Module;
 
 use Friendica\BaseModule;
-use Friendica\Core\Protocol;
 use Friendica\Core\System;
-use Friendica\Database\DBA;
 use Friendica\DI;
-use Friendica\Model\Profile;
+use Friendica\Model\APContact;
 use Friendica\Model\User;
 
 /**
@@ -36,34 +34,34 @@ use Friendica\Model\User;
  */
 class NoScrape extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		$a = DI::app();
 
-		if (isset($parameters['nick'])) {
+		if (isset($this->parameters['nick'])) {
 			// Get infos about a specific nick (public)
-			$which = $parameters['nick'];
-		} elseif (local_user() && isset($parameters['profile']) && DI::args()->get(2) == 'view') {
+			$which = $this->parameters['nick'];
+		} elseif (DI::userSession()->getLocalUserId() && isset($this->parameters['profile']) && DI::args()->get(2) == 'view') {
 			// view infos about a known profile (needs a login)
-			$which = $a->user['nickname'];
+			$which = $a->getLoggedInUserNickname();
 		} else {
 			System::jsonError(403, 'Authentication required');
 		}
 
-		Profile::load($a, $which);
+		$owner = User::getOwnerDataByNick($which);
 
-		if (empty($a->profile['uid'])) {
+		if (empty($owner['uid'])) {
 			System::jsonError(404, 'Profile not found');
 		}
 
 		$json_info = [
-			'addr'         => $a->profile['addr'],
+			'addr'         => $owner['addr'],
 			'nick'         => $which,
-			'guid'         => $a->profile['guid'],
-			'key'          => $a->profile['upubkey'],
-			'homepage'     => DI::baseUrl() . "/profile/{$which}",
-			'comm'         => ($a->profile['account-type'] == User::ACCOUNT_TYPE_COMMUNITY),
-			'account-type' => $a->profile['account-type'],
+			'guid'         => $owner['guid'],
+			'key'          => $owner['upubkey'],
+			'homepage'     => DI::baseUrl() . '/profile/' . $which,
+			'comm'         => ($owner['account-type'] == User::ACCOUNT_TYPE_COMMUNITY),
+			'account-type' => $owner['account-type'],
 		];
 
 		$dfrn_pages = ['request', 'confirm', 'notify', 'poll'];
@@ -71,61 +69,41 @@ class NoScrape extends BaseModule
 			$json_info["dfrn-{$dfrn}"] = DI::baseUrl() . "/dfrn_{$dfrn}/{$which}";
 		}
 
-		if (!$a->profile['net-publish']) {
+		if (!$owner['net-publish']) {
 			$json_info['hide'] = true;
 			System::jsonExit($json_info);
 		}
 
-		$keywords = $a->profile['pub_keywords'] ?? '';
+		$keywords = $owner['pub_keywords'] ?? '';
 		$keywords = str_replace(['#', ',', ' ', ',,'], ['', ' ', ',', ','], $keywords);
 		$keywords = explode(',', $keywords);
 
-		$contactPhoto = DBA::selectFirst('contact', ['photo'], ['self' => true, 'uid' => $a->profile['uid']]);
-
-		$json_info['fn']       = $a->profile['name'];
-		$json_info['photo']    = $contactPhoto["photo"];
+		$json_info['fn']       = $owner['name'];
+		$json_info['photo']    = User::getAvatarUrl($owner);
 		$json_info['tags']     = $keywords;
-		$json_info['language'] = $a->profile['language'];
+		$json_info['language'] = $owner['language'];
 
-		if (!empty($a->profile['last-item'])) {
-			$json_info['updated'] = date("c", strtotime($a->profile['last-item']));
+		if (!empty($owner['last-item'])) {
+			$json_info['updated'] = date("c", strtotime($owner['last-item']));
 		}
 
-		if (!($a->profile['hide-friends'] ?? false)) {
-			$json_info['contacts'] = DBA::count('contact',
-				[
-					'uid'     => $a->profile['uid'],
-					'self'    => 0,
-					'blocked' => 0,
-					'pending' => 0,
-					'hidden'  => 0,
-					'archive' => 0,
-					'network' => [Protocol::DFRN, Protocol::DIASPORA, Protocol::OSTATUS]
-				]);
+		if (!($owner['hide-friends'] ?? false)) {
+			$apcontact = APContact::getByURL($owner['url']);
+			$json_info['contacts'] = max($apcontact['following_count'], $apcontact['followers_count']);
 		}
 
 		// We display the last activity (post or login), reduced to year and week number
-		$last_active = 0;
-		$condition   = ['uid' => $a->profile['uid'], 'self' => true];
-		$contact     = DBA::selectFirst('contact', ['last-item'], $condition);
-		if (DBA::isResult($contact)) {
-			$last_active = strtotime($contact['last-item']);
-		}
-
-		$condition = ['uid' => $a->profile['uid']];
-		$user      = DBA::selectFirst('user', ['login_date'], $condition);
-		if (DBA::isResult($user)) {
-			if ($last_active < strtotime($user['login_date'])) {
-				$last_active = strtotime($user['login_date']);
-			}
+		$last_active = strtotime($owner['last-item']);
+		if ($owner['last-activity'] && $last_active < strtotime($owner['last-activity'])) {
+			$last_active = strtotime($owner['last-activity']);
 		}
 		$json_info['last-activity'] = date('o-W', $last_active);
 
 		//These are optional fields.
-		$profile_fields = ['about', 'locality', 'region', 'postal-code', 'country-name'];
+		$profile_fields = ['about', 'locality', 'region', 'postal-code', 'country-name', 'xmpp', 'matrix'];
 		foreach ($profile_fields as $field) {
-			if (!empty($a->profile[$field])) {
-				$json_info["$field"] = $a->profile[$field];
+			if (!empty($owner[$field])) {
+				$json_info[$field] = $owner[$field];
 			}
 		}
 

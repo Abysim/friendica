@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,7 @@ use Friendica\Network\HTTPException;
 
 class ServiceUnavailableException extends HTTPException
 {
-	protected $code = 503;
+	protected $code        = 503;
+	protected $httpdesc    = 'Service Unavailable';
+	protected $explanation = 'The server is currently unavailable (because it is overloaded or down for maintenance). Please try again later.';
 }

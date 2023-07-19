@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,15 +21,205 @@
 
 namespace Friendica\Core;
 
+use Friendica\Content\Text\BBCode;
+use Friendica\Content\Text\HTML;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\DI;
-use Friendica\Network\HTTPException\InternalServerErrorException;
+use Friendica\Module\Response;
+use Friendica\Network\HTTPException\FoundException;
+use Friendica\Network\HTTPException\MovedPermanentlyException;
+use Friendica\Network\HTTPException\TemporaryRedirectException;
+use Friendica\Util\BasePath;
 use Friendica\Util\XML;
+use Psr\Log\LoggerInterface;
 
 /**
  * Contains the class with system relevant stuff
  */
 class System
 {
+	/**
+	 * @var LoggerInterface
+	 */
+	private $logger;
+
+	/**
+	 * @var IManageConfigValues
+	 */
+	private $config;
+
+	/**
+	 * @var string
+	 */
+	private $basePath;
+
+	public function __construct(LoggerInterface $logger, IManageConfigValues $config, string $basepath)
+	{
+		$this->logger   = $logger;
+		$this->config   = $config;
+		$this->basePath = $basepath;
+	}
+
+	/**
+	 * Checks if the maximum number of database processes is reached
+	 *
+	 * @return bool Is the limit reached?
+	 */
+	public function isMaxProcessesReached(): bool
+	{
+		// Deactivated, needs more investigating if this check really makes sense
+		return false;
+
+		/*
+		 * Commented out to suppress static analyzer issues
+		 *
+		if ($this->mode->isBackend()) {
+			$process = 'backend';
+			$max_processes = $this->config->get('system', 'max_processes_backend');
+			if (intval($max_processes) == 0) {
+				$max_processes = 5;
+			}
+		} else {
+			$process = 'frontend';
+			$max_processes = $this->config->get('system', 'max_processes_frontend');
+			if (intval($max_processes) == 0) {
+				$max_processes = 20;
+			}
+		}
+
+		$processlist = DBA::processlist();
+		if ($processlist['list'] != '') {
+			$this->logger->debug('Processcheck: Processes: ' . $processlist['amount'] . ' - Processlist: ' . $processlist['list']);
+
+			if ($processlist['amount'] > $max_processes) {
+				$this->logger->debug('Processcheck: Maximum number of processes for ' . $process . ' tasks (' . $max_processes . ') reached.');
+				return true;
+			}
+		}
+		return false;
+		 */
+	}
+
+	/**
+	 * Checks if the minimal memory is reached
+	 *
+	 * @return bool Is the memory limit reached?
+	 */
+	public function isMinMemoryReached(): bool
+	{
+		// Deactivated, needs more investigating if this check really makes sense
+		return false;
+
+		/*
+		 * Commented out to suppress static analyzer issues
+		 *
+		$min_memory = $this->config->get('system', 'min_memory', 0);
+		if ($min_memory == 0) {
+			return false;
+		}
+
+		if (!is_readable('/proc/meminfo')) {
+			return false;
+		}
+
+		$memdata = explode("\n", file_get_contents('/proc/meminfo'));
+
+		$meminfo = [];
+		foreach ($memdata as $line) {
+			$data = explode(':', $line);
+			if (count($data) != 2) {
+				continue;
+			}
+			[$key, $val]     = $data;
+			$meminfo[$key]   = (int)trim(str_replace('kB', '', $val));
+			$meminfo[$key]   = (int)($meminfo[$key] / 1024);
+		}
+
+		if (!isset($meminfo['MemFree'])) {
+			return false;
+		}
+
+		$free = $meminfo['MemFree'];
+
+		$reached = ($free < $min_memory);
+
+		if ($reached) {
+			$this->logger->warning('Minimal memory reached.', ['free' => $free, 'memtotal' => $meminfo['MemTotal'], 'limit' => $min_memory]);
+		}
+
+		return $reached;
+		 */
+	}
+
+	/**
+	 * Checks if the maximum load is reached
+	 *
+	 * @return bool Is the load reached?
+	 */
+	public function isMaxLoadReached(): bool
+	{
+		$maxsysload = intval($this->config->get('system', 'maxloadavg'));
+		if ($maxsysload < 1) {
+			$maxsysload = 50;
+		}
+
+		$load = System::currentLoad();
+		if ($load) {
+			if (intval($load) > $maxsysload) {
+				$this->logger->notice('system load for process too high.', ['load' => $load, 'process' => 'backend', 'maxsysload' => $maxsysload]);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Executes a child process with 'proc_open'
+	 *
+	 * @param string $command The command to execute
+	 * @param array  $args    Arguments to pass to the command ( [ 'key' => value, 'key2' => value2, ... ]
+	 */
+	public function run(string $command, array $args)
+	{
+		if (!function_exists('proc_open')) {
+			$this->logger->warning('"proc_open" not available - quitting');
+			return;
+		}
+
+		$cmdline = $this->config->get('config', 'php_path', 'php') . ' ' . escapeshellarg($command);
+
+		foreach ($args as $key => $value) {
+			if (!is_null($value) && is_bool($value) && !$value) {
+				continue;
+			}
+
+			$cmdline .= ' --' . $key;
+			if (!is_null($value) && !is_bool($value)) {
+				$cmdline .= ' ' . $value;
+			}
+		}
+
+		if ($this->isMinMemoryReached()) {
+			$this->logger->warning('Memory limit reached - quitting');
+			return;
+		}
+
+		if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+			$resource = proc_open('cmd /c start /b ' . $cmdline, [], $foo, $this->basePath);
+		} else {
+			$resource = proc_open($cmdline . ' &', [], $foo, $this->basePath);
+		}
+
+		if (!is_resource($resource)) {
+			$this->logger->warning('We got no resource for command.', ['command' => $cmdline]);
+			return;
+		}
+
+		proc_close($resource);
+
+		$this->logger->info('Executed "proc_open"', ['command' => $cmdline, 'callstack' => System::callstack(10)]);
+	}
+
 	/**
 	 * Returns a string with a callstack. Can be used for logging.
 	 *
@@ -38,7 +228,7 @@ class System
 	 *                        this is called from a centralized method that isn't relevant to the callstack
 	 * @return string
 	 */
-	public static function callstack(int $depth = 4, int $offset = 0)
+	public static function callstack(int $depth = 4, int $offset = 0): string
 	{
 		$trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS);
 
@@ -61,14 +251,14 @@ class System
 
 				// Don't show multiple calls from the Database classes to show the essential parts of the callstack
 				$func['database'] = in_array($func['class'], ['Friendica\Database\DBA', 'Friendica\Database\Database']);
-				if (!$previous['database'] || !$func['database']) {	
+				if (!$previous['database'] || !$func['database']) {
 					$classparts = explode("\\", $func['class']);
-					$callstack[] = array_pop($classparts).'::'.$func['function'];
+					$callstack[] = array_pop($classparts).'::'.$func['function'] . (isset($func['line']) ? ' (' . $func['line'] . ')' : '');
 					$previous = $func;
 				}
 			} elseif (!in_array($func['function'], $ignore)) {
 				$func['database'] = ($func['function'] == 'q');
-				$callstack[] = $func['function'];
+				$callstack[] = $func['function'] . (isset($func['line']) ? ' (' . $func['line'] . ')' : '');
 				$func['class'] = '';
 				$previous = $func;
 			}
@@ -100,16 +290,14 @@ class System
 		}
 
 		if ($st) {
-			Logger::log('xml_status returning non_zero: ' . $st . " message=" . $message);
+			Logger::notice('xml_status returning non_zero: ' . $st . " message=" . $message);
 		}
 
-		header("Content-type: text/xml");
+		DI::apiResponse()->setType(Response::TYPE_XML);
+		DI::apiResponse()->addContent(XML::fromArray(['result' => $result]));
+		DI::page()->exit(DI::apiResponse()->generate());
 
-		$xmldata = ["result" => $result];
-
-		echo XML::fromArray($xmldata, $xml);
-
-		exit();
+		self::exit();
 	}
 
 	/**
@@ -120,20 +308,42 @@ class System
 	 * @param string  $content Response body. Optional.
 	 * @throws \Exception
 	 */
-	public static function httpExit($val, $message = '', $content = '')
+	public static function httpError($httpCode, $message = '', $content = '')
 	{
-		Logger::log('http_status_exit ' . $val);
-		header($_SERVER["SERVER_PROTOCOL"] . ' ' . $val . ' ' . $message);
+		if ($httpCode >= 400) {
+			Logger::debug('Exit with error', ['code' => $httpCode, 'message' => $message, 'callstack' => System::callstack(20), 'method' => DI::args()->getMethod(), 'agent' => $_SERVER['HTTP_USER_AGENT'] ?? '']);
+		}
+		DI::apiResponse()->setStatus($httpCode, $message);
+		DI::apiResponse()->addContent($content);
+		DI::page()->exit(DI::apiResponse()->generate());
 
-		echo $content;
-
-		exit();
+		self::exit();
 	}
 
-	public static function jsonError($httpCode, $data, $content_type = 'application/json')
+	/**
+	 * This function adds the content and a content-type HTTP header to the output.
+	 * After finishing the process is getting killed.
+	 *
+	 * @param string $content
+	 * @param string $type
+	 * @param string|null $content_type
+	 * @return void
+	 */
+	public static function httpExit(string $content, string $type = Response::TYPE_HTML, ?string $content_type = null) {
+		DI::apiResponse()->setType($type, $content_type);
+		DI::apiResponse()->addContent($content);
+		DI::page()->exit(DI::apiResponse()->generate());
+
+		self::exit();
+	}
+
+	public static function jsonError($httpCode, $content, $content_type = 'application/json')
 	{
-		header($_SERVER["SERVER_PROTOCOL"] . ' ' . $httpCode);
-		self::jsonExit($data, $content_type);
+		if ($httpCode >= 400) {
+			Logger::debug('Exit with error', ['code' => $httpCode, 'content_type' => $content_type, 'callstack' => System::callstack(20), 'method' => DI::args()->getMethod(), 'agent' => $_SERVER['HTTP_USER_AGENT'] ?? '']);
+		}
+		DI::apiResponse()->setStatus($httpCode);
+		self::jsonExit($content, $content_type);
 	}
 
 	/**
@@ -143,13 +353,25 @@ class System
 	 * and adds an application/json HTTP header to the output.
 	 * After finishing the process is getting killed.
 	 *
-	 * @param mixed   $x The input content.
-	 * @param string  $content_type Type of the input (Default: 'application/json').
-	 * @param integer $options JSON options
+	 * @param mixed   $content      The input content
+	 * @param string  $content_type Type of the input (Default: 'application/json')
+	 * @param integer $options      JSON options
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function jsonExit($x, $content_type = 'application/json', int $options = 0) {
-		header("Content-type: $content_type");
-		echo json_encode($x, $options);
+	public static function jsonExit($content, $content_type = 'application/json', int $options = JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT) {
+		DI::apiResponse()->setType(Response::TYPE_JSON, $content_type);
+		DI::apiResponse()->addContent(json_encode($content, $options));
+		DI::page()->exit(DI::apiResponse()->generate());
+
+		self::exit();
+	}
+
+	/**
+	 * Exit the program execution.
+	 */
+	public static function exit()
+	{
+		DI::page()->logRuntime(DI::config(), 'exit');
 		exit();
 	}
 
@@ -179,7 +401,7 @@ class System
 		if (is_bool($prefix) && !$prefix) {
 			$prefix = '';
 		} elseif (empty($prefix)) {
-			$prefix = hash('crc32', DI::baseUrl()->getHostname());
+			$prefix = hash('crc32', DI::baseUrl()->getHost());
 		}
 
 		while (strlen($prefix) < ($size - 13)) {
@@ -216,35 +438,68 @@ class System
 	}
 
 	/**
+	 * Fetch the load and number of processes
+	 *
+	 * @param bool $get_processes
+	 * @return array
+	 */
+	public static function getLoadAvg(bool $get_processes = true): array
+	{
+		$load_arr = sys_getloadavg();
+		if (empty($load_arr)) {
+			return [];
+		}
+
+		$load = [
+			'average1'  => $load_arr[0],
+			'average5'  => $load_arr[1],
+			'average15' => $load_arr[2],
+			'runnable'  => 0,
+			'scheduled' => 0
+		];
+
+		if ($get_processes && @is_readable('/proc/loadavg')) {
+			$content = @file_get_contents('/proc/loadavg');
+			if (!empty($content) && preg_match("#([.\d]+)\s([.\d]+)\s([.\d]+)\s(\d+)/(\d+)#", $content, $matches)) {
+				$load['runnable']  = (float)$matches[4];
+				$load['scheduled'] = (float)$matches[5];
+			}
+		}
+
+		return $load;
+	}
+
+	/**
 	 * Redirects to an external URL (fully qualified URL)
 	 * If you want to route relative to the current Friendica base, use App->internalRedirect()
 	 *
 	 * @param string $url  The new Location to redirect
 	 * @param int    $code The redirection code, which is used (Default is 302)
 	 *
-	 * @throws InternalServerErrorException If the URL is not fully qualified
+	 * @throws FoundException
+	 * @throws MovedPermanentlyException
+	 * @throws TemporaryRedirectException
+	 *
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
 	public static function externalRedirect($url, $code = 302)
 	{
 		if (empty(parse_url($url, PHP_URL_SCHEME))) {
-			throw new InternalServerErrorException("'$url' is not a fully qualified URL, please use App->internalRedirect() instead");
-		}
-
-		switch ($code) {
-			case 302:
-				// this is the default code for a REDIRECT
-				// We don't need a extra header here
-				break;
-			case 301:
-				header('HTTP/1.1 301 Moved Permanently');
-				break;
-			case 307:
-				header('HTTP/1.1 307 Temporary Redirect');
-				break;
+			Logger::warning('No fully qualified URL provided', ['url' => $url, 'callstack' => self::callstack(20)]);
+			DI::baseUrl()->redirect($url);
 		}
 
 		header("Location: $url");
-		exit();
+
+		switch ($code) {
+			case 302:
+				throw new FoundException();
+			case 301:
+				throw new MovedPermanentlyException();
+			case 307:
+				throw new TemporaryRedirectException();
+		}
+		self::exit();
 	}
 
 	/**
@@ -268,34 +523,33 @@ class System
 	 * Checks if a given directory is usable for the system
 	 *
 	 * @param      $directory
-	 * @param bool $check_writable
 	 *
 	 * @return boolean the directory is usable
 	 */
-	public static function isDirectoryUsable($directory, $check_writable = true)
+	private static function isDirectoryUsable(string $directory): bool
 	{
-		if ($directory == '') {
-			Logger::log('Directory is empty. This shouldn\'t happen.', Logger::DEBUG);
+		if (empty($directory)) {
+			Logger::warning('Directory is empty. This shouldn\'t happen.');
 			return false;
 		}
 
 		if (!file_exists($directory)) {
-			Logger::log('Path "' . $directory . '" does not exist for user ' . static::getUser(), Logger::DEBUG);
+			Logger::info('Path does not exist', ['directory' => $directory, 'user' => static::getUser()]);
 			return false;
 		}
 
 		if (is_file($directory)) {
-			Logger::log('Path "' . $directory . '" is a file for user ' . static::getUser(), Logger::DEBUG);
+			Logger::warning('Path is a file', ['directory' => $directory, 'user' => static::getUser()]);
 			return false;
 		}
 
 		if (!is_dir($directory)) {
-			Logger::log('Path "' . $directory . '" is not a directory for user ' . static::getUser(), Logger::DEBUG);
+			Logger::warning('Path is not a directory', ['directory' => $directory, 'user' => static::getUser()]);
 			return false;
 		}
 
-		if ($check_writable && !is_writable($directory)) {
-			Logger::log('Path "' . $directory . '" is not writable for user ' . static::getUser(), Logger::DEBUG);
+		if (!is_writable($directory)) {
+			Logger::warning('Path is not writable', ['directory' => $directory, 'user' => static::getUser()]);
 			return false;
 		}
 
@@ -309,7 +563,7 @@ class System
 	 */
 	public static function htmlUpdateExit($o)
 	{
-		header("Content-type: text/html");
+		DI::apiResponse()->setType(Response::TYPE_HTML);
 		echo "<!DOCTYPE html><html><body>\r\n";
 		// We can remove this hack once Internet Explorer recognises HTML5 natively
 		echo "<section>";
@@ -317,20 +571,119 @@ class System
 		echo str_replace("\t", "       ", $o);
 		echo "</section>";
 		echo "</body></html>\r\n";
-		exit();
+		self::exit();
 	}
 
-	/// @todo Move the following functions from boot.php
-	/*
-	function local_user()
-	function public_contact()
-	function remote_user()
-	function notice($s)
-	function info($s)
-	function is_site_admin()
-	function get_temppath()
-	function get_cachefile($file, $writemode = true)
-	function get_itemcachepath()
-	function get_spoolpath()
-	*/
+	/**
+	 * Fetch the temp path of the system
+	 *
+	 * @return string Path for temp files
+	 */
+	public static function getTempPath()
+	{
+		$temppath = DI::config()->get("system", "temppath");
+
+		if (($temppath != "") && self::isDirectoryUsable($temppath)) {
+			// We have a temp path and it is usable
+			return BasePath::getRealPath($temppath);
+		}
+
+		// We don't have a working preconfigured temp path, so we take the system path.
+		$temppath = sys_get_temp_dir();
+
+		// Check if it is usable
+		if (($temppath != "") && self::isDirectoryUsable($temppath)) {
+			// Always store the real path, not the path through symlinks
+			$temppath = BasePath::getRealPath($temppath);
+
+			// To avoid any interferences with other systems we create our own directory
+			$new_temppath = $temppath . "/" . DI::baseUrl()->getHost();
+			if (!is_dir($new_temppath)) {
+				/// @TODO There is a mkdir()+chmod() upwards, maybe generalize this (+ configurable) into a function/method?
+				@mkdir($new_temppath);
+			}
+
+			if (self::isDirectoryUsable($new_temppath)) {
+				// The new path is usable, we are happy
+				DI::config()->set("system", "temppath", $new_temppath);
+				return $new_temppath;
+			} else {
+				// We can't create a subdirectory, strange.
+				// But the directory seems to work, so we use it but don't store it.
+				return $temppath;
+			}
+		}
+
+		// Reaching this point means that the operating system is configured badly.
+		return '';
+	}
+
+	/**
+	 * Returns the path where spool files are stored
+	 *
+	 * @return string Spool path
+	 */
+	public static function getSpoolPath()
+	{
+		$spoolpath = DI::config()->get('system', 'spoolpath');
+		if (($spoolpath != "") && self::isDirectoryUsable($spoolpath)) {
+			// We have a spool path and it is usable
+			return $spoolpath;
+		}
+
+		// We don't have a working preconfigured spool path, so we take the temp path.
+		$temppath = self::getTempPath();
+
+		if ($temppath != "") {
+			// To avoid any interferences with other systems we create our own directory
+			$spoolpath = $temppath . "/spool";
+			if (!is_dir($spoolpath)) {
+				mkdir($spoolpath);
+			}
+
+			if (self::isDirectoryUsable($spoolpath)) {
+				// The new path is usable, we are happy
+				DI::config()->set("system", "spoolpath", $spoolpath);
+				return $spoolpath;
+			} else {
+				// We can't create a subdirectory, strange.
+				// But the directory seems to work, so we use it but don't store it.
+				return $temppath;
+			}
+		}
+
+		// Reaching this point means that the operating system is configured badly.
+		return "";
+	}
+
+	/**
+	 * Fetch the system rules
+	 * @param bool $numeric_id If set to "true", the rules are returned with a numeric id as key.
+	 *
+	 * @return array
+	 */
+	public static function getRules(bool $numeric_id = false): array
+	{
+		$rules = [];
+		$id    = 0;
+
+		if (DI::config()->get('system', 'tosdisplay')) {
+			$rulelist = DI::config()->get('system', 'tosrules') ?: DI::config()->get('system', 'tostext');
+			$html = BBCode::convert($rulelist, false, BBCode::EXTERNAL);
+
+			$msg = HTML::toPlaintext($html, 0, true);
+			foreach (explode("\n", trim($msg)) as $line) {
+				$line = trim($line);
+				if ($line) {
+					if ($numeric_id) {
+						$rules[++$id] = $line;
+					} else {
+						$rules[] = ['id' => (string)++$id, 'text' => $line];
+					}
+				}
+			}
+		}
+
+		return $rules;
+	}
 }

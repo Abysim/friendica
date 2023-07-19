@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,11 +22,10 @@
 namespace Friendica\Model\Post;
 
 use \BadMethodCallException;
-use Friendica\Core\Protocol;
 use Friendica\Database\Database;
 use Friendica\Database\DBA;
 use Friendica\Database\DBStructure;
-use Friendica\Model\Post;
+use Friendica\DI;
 
 class Thread
 {
@@ -44,7 +43,7 @@ class Thread
 			throw new BadMethodCallException('Empty URI_id');
 		}
 
-		$fields = DBStructure::getFieldsForTable('post-thread', $data);
+		$fields = DI::dbaDefinition()->truncateFieldsForTable('post-thread', $data);
 
 		// Additionally assign the key fields
 		$fields['uri-id'] = $uri_id;
@@ -67,7 +66,7 @@ class Thread
 			throw new BadMethodCallException('Empty URI_id');
 		}
 
-		$fields = DBStructure::getFieldsForTable('post-thread', $data);
+		$fields = DI::dbaDefinition()->truncateFieldsForTable('post-thread', $data);
 
 		// Remove the key fields
 		unset($fields['uri-id']);

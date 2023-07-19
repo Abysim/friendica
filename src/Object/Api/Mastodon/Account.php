@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -28,6 +28,7 @@ use Friendica\Content\Text\BBCode;
 use Friendica\Database\DBA;
 use Friendica\Model\Contact;
 use Friendica\Util\DateTimeFormat;
+use Friendica\Util\Proxy;
 
 /**
  * Class Account
@@ -85,52 +86,42 @@ class Account extends BaseDataTransferObject
 	 * Creates an account record from a public contact record. Expects all contact table fields to be set.
 	 *
 	 * @param BaseURL $baseUrl
-	 * @param array   $publicContact Full contact table record with uid = 0
-	 * @param array   $apcontact     Optional full apcontact table record
-	 * @param array   $userContact   Optional full contact table record with uid != 0
+	 * @param array   $account entry of "account-user-view"
+	 * @param Fields  $fields  Profile fields
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public function __construct(BaseURL $baseUrl, array $publicContact, Fields $fields, array $apcontact = [], array $userContact = [])
+	public function __construct(BaseURL $baseUrl, array $account, Fields $fields)
 	{
-		$this->id              = (string)$publicContact['id'];
-		$this->username        = $publicContact['nick'];
+		$this->id              = (string)$account['pid'];
+		$this->username        = $account['nick'];
 		$this->acct            =
-			strpos($publicContact['url'], $baseUrl->get() . '/') === 0 ?
-				$publicContact['nick'] :
-				$publicContact['addr'];
-		$this->display_name    = $publicContact['name'];
-		$this->locked          = (bool)$publicContact['manually-approve'] ?? !empty($apcontact['manually-approve']);
-		$this->bot             = ($publicContact['contact-type'] == Contact::TYPE_NEWS);
-		$this->discoverable    = !$publicContact['unsearchable'];
-		$this->group           = ($publicContact['contact-type'] == Contact::TYPE_COMMUNITY);
+			strpos($account['url'], $baseUrl . '/') === 0 ?
+				$account['nick'] :
+				$account['addr'];
+		$this->display_name    = $account['name'];
+		$this->locked          = (bool)$account['manually-approve'];
+		$this->bot             = ($account['contact-type'] == Contact::TYPE_NEWS);
+		$this->discoverable    = !$account['unsearchable'];
+		$this->group           = ($account['contact-type'] == Contact::TYPE_COMMUNITY);
 
-		$publicContactCreated = $publicContact['created'] ?: DBA::NULL_DATETIME;
-		$userContactCreated = $userContact['created'] ?? DBA::NULL_DATETIME;
+		$this->created_at      = DateTimeFormat::utc($account['created'] ?: DBA::NULL_DATETIME, DateTimeFormat::JSON);
 
-		$created = $userContactCreated < $publicContactCreated && ($userContactCreated != DBA::NULL_DATETIME) ? $userContactCreated : $publicContactCreated;
-		$this->created_at      = DateTimeFormat::utc($created, DateTimeFormat::ATOM);
+		$this->note            = BBCode::convertForUriId($account['uri-id'], $account['about'], BBCode::EXTERNAL);
+		$this->url             = $account['url'];
+		$this->avatar          = Contact::getAvatarUrlForId($account['id'] ?? 0 ?: $account['pid'], Proxy::SIZE_SMALL, $account['updated'], $account['guid'] ?? '');
+		$this->avatar_static   = Contact::getAvatarUrlForId($account['id'] ?? 0 ?: $account['pid'], Proxy::SIZE_SMALL, $account['updated'], $account['guid'] ?? '', true);
+		$this->header          = Contact::getHeaderUrlForId($account['id'] ?? 0 ?: $account['pid'], '', $account['updated'], $account['guid'] ?? '');
+		$this->header_static   = Contact::getHeaderUrlForId($account['id'] ?? 0 ?: $account['pid'], '', $account['updated'], $account['guid'] ?? '', true);
+		$this->followers_count = $account['ap-followers_count'] ?? $account['diaspora-interacted_count'] ?? 0;
+		$this->following_count = $account['ap-following_count'] ?? $account['diaspora-interacting_count'] ?? 0;
+		$this->statuses_count  = $account['ap-statuses_count'] ?? $account['diaspora-post_count'] ?? 0;
 
-		$this->note            = BBCode::convert($publicContact['about'], false);
-		$this->url             = $publicContact['url'];
-		$this->avatar          = $userContact['avatar'] ?? $publicContact['avatar'];
-		$this->avatar_static   = $userContact['avatar'] ?? $publicContact['avatar'];
-		// No header picture in Friendica
-		$this->header          = '';
-		$this->header_static   = '';
-		$this->followers_count = $apcontact['followers_count'] ?? 0;
-		$this->following_count = $apcontact['following_count'] ?? 0;
-		$this->statuses_count  = $apcontact['statuses_count'] ?? 0;
-
-		$publicContactLastItem = $publicContact['last-item'] ?: DBA::NULL_DATETIME;
-		$userContactLastItem = $userContact['last-item'] ?? DBA::NULL_DATETIME;
-
-		$lastItem = $userContactLastItem > $publicContactLastItem ? $userContactLastItem : $publicContactLastItem;
-		$this->last_status_at  = $lastItem != DBA::NULL_DATETIME ? DateTimeFormat::utc($lastItem, 'Y-m-d') : null;
+		$lastItem = $account['last-item'] ? DateTimeFormat::utc($account['last-item'], 'Y-m-d') : DBA::NULL_DATETIME;
+		$this->last_status_at  = $lastItem != DBA::NULL_DATETIME ? DateTimeFormat::utc($lastItem, DateTimeFormat::JSON) : null;
 
 		// No custom emojis per account in Friendica
 		$this->emojis          = [];
 		$this->fields          = $fields->getArrayCopy();
-
 	}
 
 	/**

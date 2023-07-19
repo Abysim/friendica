@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -34,22 +34,33 @@ use Friendica\Util\DateTimeFormat;
 class Delayed
 {
 	/**
+	 * The content of the post is posted as is. Connector settings are using the default settings.
+	 * This is used for automated scheduled posts via feeds or from the API.
+	 */
+	const PREPARED = 0;
+	/**
+	 * Like PREPARED, but additionally the connector settings can differ.
+	 * This is used when manually publishing scheduled posts.
+	 */
+	const PREPARED_NO_HOOK = 2;
+
+	/**
 	 * Insert a new delayed post
 	 *
-	 * @param string  $uri
-	 * @param array   $item
-	 * @param integer $notify
-	 * @param bool    $unprepared
-	 * @param string  $delayed
-	 * @param array   $taglist
-	 * @param array   $attachments
-	 * @return bool insert success
-	 */ 
-	public static function add(string $uri, array $item, int $notify = 0, bool $unprepared = false, string $delayed = '', array $taglist = [], array $attachments = [])
+	 * @param string $uri
+	 * @param array  $item
+	 * @param int    $notify
+	 * @param int    $preparation_mode
+	 * @param string $delayed
+	 * @param array  $taglist
+	 * @param array  $attachments
+	 * @return int   ID of the created delayed post entry
+	 */
+	public static function add(string $uri, array $item, int $notify = 0, int $preparation_mode = self::PREPARED, string $delayed = '', array $taglist = [], array $attachments = [])
 	{
 		if (empty($item['uid']) || self::exists($uri, $item['uid'])) {
 			Logger::notice('No uid or already found');
-			return false;
+			return 0;
 		}
 
 		if (empty($delayed)) {
@@ -58,19 +69,28 @@ class Delayed
 			$last_publish = DI::pConfig()->get($item['uid'], 'system', 'last_publish', 0, true);
 			$next_publish = max($last_publish + (60 * $min_posting), time());
 			$delayed = date(DateTimeFormat::MYSQL, $next_publish);
-		} else {
-			$next_publish = strtotime($delayed);
+			DI::pConfig()->set($item['uid'], 'system', 'last_publish', $next_publish);
 		}
 
 		Logger::notice('Adding post for delayed publishing', ['uid' => $item['uid'], 'delayed' => $delayed, 'uri' => $uri]);
 
-		if (!Worker::add(['priority' => PRIORITY_HIGH, 'delayed' => $delayed], 'DelayedPublish', $item, $notify, $taglist, $attachments, $unprepared, $uri)) {
-			return false;
+		$wid = Worker::add(['priority' => Worker::PRIORITY_HIGH, 'delayed' => $delayed], 'DelayedPublish', $item, $notify, $taglist, $attachments, $preparation_mode, $uri);
+		if (!$wid) {
+			return 0;
 		}
 
-		DI::pConfig()->set($item['uid'], 'system', 'last_publish', $next_publish);
+		$delayed_post = [
+			'uri'     => $uri,
+			'uid'     => $item['uid'],
+			'delayed' => $delayed,
+			'wid'     => $wid,
+		];
 
-		return DBA::insert('delayed-post', ['uri' => $uri, 'uid' => $item['uid'], 'delayed' => $delayed], Database::INSERT_IGNORE);
+		if (DBA::insert('delayed-post', $delayed_post, Database::INSERT_IGNORE)) {
+			return DBA::lastInsertId();
+		} else {
+			return 0;
+		}
 	}
 
 	/**
@@ -87,6 +107,23 @@ class Delayed
 	}
 
 	/**
+	 * Delete scheduled posts and the associated workerqueue entry
+	 *
+	 * @param integer $id
+	 * @return void
+	 */
+	public static function deleteById(int $id)
+	{
+		$post = DBA::selectFirst('delayed-post', ['wid'], ['id' => $id]);
+		if (empty($post['wid'])) {
+			return;
+		}
+
+		DBA::delete('delayed-post', ['id' => $id]);
+		DBA::delete('workerqueue', ['id' => $post['wid']]);
+	}
+
+	/**
 	 * Check if an entry exists
 	 *
 	 * @param string $uri
@@ -100,48 +137,65 @@ class Delayed
 	}
 
 	/**
+	 * Fetch parameters for delayed posts
+	 *
+	 * @param integer $id
+	 * @return array
+	 */
+	public static function getParametersForid(int $id)
+	{
+		$delayed = DBA::selectFirst('delayed-post', ['id', 'uid', 'wid', 'delayed'], ['id' => $id]);
+		if (empty($delayed['wid'])) {
+			return [];
+		}
+
+		$worker = DBA::selectFirst('workerqueue', ['parameter'], ['id' => $delayed['wid'], 'command' => 'DelayedPublish']);
+		if (empty($worker)) {
+			return [];
+		}
+
+		$parameters = json_decode($worker['parameter'], true);
+		if (empty($parameters)) {
+			return [];
+		}
+
+		// Make sure to only publish the attachments in the dedicated array field
+		if (empty($parameters[3]) && !empty($parameters[0]['attachments'])) {
+			$parameters[3] = $parameters[0]['attachments'];
+			unset($parameters[0]['attachments']);
+		}
+
+		return [
+			'parameters' => $delayed,
+			'item' => $parameters[0],
+			'notify' => $parameters[1],
+			'taglist' => $parameters[2],
+			'attachments' => $parameters[3],
+			'unprepared' => $parameters[4],
+			'uri' => $parameters[5],
+		];
+	}
+
+	/**
 	 * Publish a delayed post
 	 *
-	 * @param array $item
-	 * @param integer $notify
-	 * @param array $taglist
-	 * @param array $attachments
-	 * @param bool  $unprepared
+	 * @param array  $item
+	 * @param int    $notify
+	 * @param array  $taglist
+	 * @param array  $attachments
+	 * @param int    $preparation_mode
 	 * @param string $uri
 	 * @return bool
 	 */
-	public static function publish(array $item, int $notify = 0, array $taglist = [], array $attachments = [], bool $unprepared = false, string $uri = '')
+	public static function publish(array $item, int $notify = 0, array $taglist = [], array $attachments = [], int $preparation_mode = self::PREPARED, string $uri = '')
 	{
-		if ($unprepared) {
-			$_SESSION['authenticated'] = true;
-			$_SESSION['uid'] = $item['uid'];
-
-			$_REQUEST = $item;
-			$_REQUEST['api_source'] = true;
-			$_REQUEST['profile_uid'] = $item['uid'];
-			$_REQUEST['title'] = $item['title'] ?? '';
-
-			if (!empty($item['app'])) {
-				$_REQUEST['source'] = $item['app'];
-			}
-
-			require_once 'mod/item.php';
-			$id = item_post(DI::app());
-
-			if (empty($uri) && !empty($item['extid'])) {
-				$uri = $item['extid'];
-			}
-
-			Logger::notice('Unprepared post stored', ['id' => $id, 'uid' => $item['uid'], 'uri' => $uri]);
-			if (self::exists($uri, $item['uid'])) {
-				self::delete($uri, $item['uid']);
-			}
-	
-			return $id;
+		if (!empty($attachments)) {
+			$item['attachments'] = $attachments;
 		}
-		$id = Item::insert($item, $notify);
 
-		Logger::notice('Post stored', ['id' => $id, 'uid' => $item['uid'], 'cid' => $item['contact-id']]);
+		$id = Item::insert($item, $notify, $preparation_mode == self::PREPARED);
+
+		Logger::notice('Post stored', ['id' => $id, 'uid' => $item['uid'], 'cid' => $item['contact-id'] ?? 'N/A']);
 
 		if (empty($uri) && !empty($item['uri'])) {
 			$uri = $item['uri'];
@@ -156,11 +210,6 @@ class Delayed
 
 			foreach ($taglist as $tag) {
 				Tag::store($feeditem['uri-id'], Tag::HASHTAG, $tag);
-			}
-
-			foreach ($attachments as $attachment) {
-				$attachment['uri-id'] = $feeditem['uri-id'];
-				Media::insert($attachment);
 			}
 		}
 

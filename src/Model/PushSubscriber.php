@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -34,9 +34,10 @@ class PushSubscriber
 	 *
 	 * @param integer $uid User ID
 	 * @param int     $default_priority
+	 * @return void
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function publishFeed($uid, $default_priority = PRIORITY_HIGH)
+	public static function publishFeed(int $uid, int $default_priority = Worker::PRIORITY_HIGH)
 	{
 		$condition = ['push' => 0, 'uid' => $uid];
 		DBA::update('push_subscriber', ['push' => 1, 'next_try' => DBA::NULL_DATETIME], $condition);
@@ -48,23 +49,24 @@ class PushSubscriber
 	 * start workers to transmit the feed data
 	 *
 	 * @param int $default_priority
+	 * @return void
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function requeue($default_priority = PRIORITY_HIGH)
+	public static function requeue(int $default_priority = Worker::PRIORITY_HIGH)
 	{
 		// We'll push to each subscriber that has push > 0,
 		// i.e. there has been an update (set in notifier.php).
-		$subscribers = DBA::select('push_subscriber', ['id', 'push', 'callback_url', 'nickname'], ["`push` > 0 AND `next_try` < UTC_TIMESTAMP()"]);
+		$subscribers = DBA::select('push_subscriber', ['id', 'push', 'callback_url', 'nickname'], ["`push` > 0 AND `next_try` < ?", DateTimeFormat::utcNow()]);
 
 		while ($subscriber = DBA::fetch($subscribers)) {
 			// We always handle retries with low priority
 			if ($subscriber['push'] > 1) {
-				$priority = PRIORITY_LOW;
+				$priority = Worker::PRIORITY_LOW;
 			} else {
 				$priority = $default_priority;
 			}
 
-			Logger::log('Publish feed to ' . $subscriber['callback_url'] . ' for ' . $subscriber['nickname'] . ' with priority ' . $priority, Logger::DEBUG);
+			Logger::info('Publish feed to ' . $subscriber['callback_url'] . ' for ' . $subscriber['nickname'] . ' with priority ' . $priority);
 			Worker::add($priority, 'PubSubPublish', (int)$subscriber['id']);
 		}
 
@@ -80,9 +82,10 @@ class PushSubscriber
 	 * @param string  $hub_callback Callback address
 	 * @param string  $hub_topic    Feed topic
 	 * @param string  $hub_secret   Subscription secret
+	 * @return void
 	 * @throws \Exception
 	 */
-	public static function renew($uid, $nick, $subscribe, $hub_callback, $hub_topic, $hub_secret)
+	public static function renew(int $uid, string $nick, int $subscribe, string $hub_callback, string $hub_topic, string $hub_secret)
 	{
 		// fetch the old subscription if it exists
 		$subscriber = DBA::selectFirst('push_subscriber', ['last_update', 'push'], ['callback_url' => $hub_callback]);
@@ -108,9 +111,9 @@ class PushSubscriber
 				'secret' => $hub_secret];
 			DBA::insert('push_subscriber', $fields);
 
-			Logger::log("Successfully subscribed [$hub_callback] for $nick");
+			Logger::notice("Successfully subscribed [$hub_callback] for $nick");
 		} else {
-			Logger::log("Successfully unsubscribed [$hub_callback] for $nick");
+			Logger::notice("Successfully unsubscribed [$hub_callback] for $nick");
 			// we do nothing here, since the row was already deleted
 		}
 	}
@@ -119,9 +122,10 @@ class PushSubscriber
 	 * Delay the push subscriber
 	 *
 	 * @param integer $id Subscriber ID
+	 * @return void
 	 * @throws \Exception
 	 */
-	public static function delay($id)
+	public static function delay(int $id)
 	{
 		$subscriber = DBA::selectFirst('push_subscriber', ['push', 'callback_url', 'renewed', 'nickname'], ['id' => $id]);
 		if (!DBA::isResult($subscriber)) {
@@ -136,10 +140,10 @@ class PushSubscriber
 
 			if ($days > 60) {
 				DBA::update('push_subscriber', ['push' => -1, 'next_try' => DBA::NULL_DATETIME], ['id' => $id]);
-				Logger::log('Delivery error: Subscription ' . $subscriber['callback_url'] . ' for ' . $subscriber['nickname'] . ' is marked as ended.', Logger::DEBUG);
+				Logger::info('Delivery error: Subscription ' . $subscriber['callback_url'] . ' for ' . $subscriber['nickname'] . ' is marked as ended.');
 			} else {
 				DBA::update('push_subscriber', ['push' => 0, 'next_try' => DBA::NULL_DATETIME], ['id' => $id]);
-				Logger::log('Delivery error: Giving up ' . $subscriber['callback_url'] . ' for ' . $subscriber['nickname'] . ' for now.', Logger::DEBUG);
+				Logger::info('Delivery error: Giving up ' . $subscriber['callback_url'] . ' for ' . $subscriber['nickname'] . ' for now.');
 			}
 		} else {
 			// Calculate the delay until the next trial
@@ -149,7 +153,7 @@ class PushSubscriber
 			$retrial = $retrial + 1;
 
 			DBA::update('push_subscriber', ['push' => $retrial, 'next_try' => $next], ['id' => $id]);
-			Logger::log('Delivery error: Next try (' . $retrial . ') ' . $subscriber['callback_url'] . ' for ' . $subscriber['nickname'] . ' at ' . $next, Logger::DEBUG);
+			Logger::info('Delivery error: Next try (' . $retrial . ') ' . $subscriber['callback_url'] . ' for ' . $subscriber['nickname'] . ' at ' . $next);
 		}
 	}
 
@@ -158,9 +162,10 @@ class PushSubscriber
 	 *
 	 * @param integer $id          Subscriber ID
 	 * @param string  $last_update Date of last transmitted item
+	 * @return void
 	 * @throws \Exception
 	 */
-	public static function reset($id, $last_update)
+	public static function reset(int $id, string $last_update)
 	{
 		$subscriber = DBA::selectFirst('push_subscriber', ['callback_url', 'nickname'], ['id' => $id]);
 		if (!DBA::isResult($subscriber)) {
@@ -170,7 +175,7 @@ class PushSubscriber
 		// set last_update to the 'created' date of the last item, and reset push=0
 		$fields = ['push' => 0, 'next_try' => DBA::NULL_DATETIME, 'last_update' => $last_update];
 		DBA::update('push_subscriber', $fields, ['id' => $id]);
-		Logger::log('Subscriber ' . $subscriber['callback_url'] . ' for ' . $subscriber['nickname'] . ' is marked as vital', Logger::DEBUG);
+		Logger::info('Subscriber ' . $subscriber['callback_url'] . ' for ' . $subscriber['nickname'] . ' is marked as vital');
 
 		$parts = parse_url($subscriber['callback_url']);
 		unset($parts['path']);

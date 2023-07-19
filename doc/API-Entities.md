@@ -410,13 +410,13 @@ Ex: Wed May 23 06:01:13 +0000 2007
 </tr>
 
 <tr>
-<td><code>startTime</code></td>
+<td><code>start_time</code></td>
 <td>String (UTC <code>YYYY-MM-DD HH:II:SS)</code>)</td>
 <td></td>
 </tr>
 
 <tr>
-<td><code>endTime</code></td>
+<td><code>end_time</code></td>
 <td>String (UTC <code>YYYY-MM-DD HH:II:SS)</code>)</td>
 <td>Optional (null date is <code>0001-01-01 00:00:00</code></td>
 </tr>
@@ -437,12 +437,6 @@ Ex: Wed May 23 06:01:13 +0000 2007
 <td><code>place</code></td>
 <td>String</td>
 <td>Optional. Location.</td>
-</tr>
-
-<tr>
-<td><code>adjust</code></td>
-<td>Boolean</td>
-<td>???</td>
 </tr>
 
 <tr>
@@ -771,7 +765,7 @@ Identical to [the Twitter Media Object](https://developer.twitter.com/en/docs/tw
 <li>64: Unused</li>
 <li>128: Mention</li>
 <li>256: Tag added to a post</li>
-<li>512: Poke</li>
+<li>512: Poke (Obsolete)</li>
 <li>1024: New post</li>
 <li>16384: System email</li>
 <li>32768: System event</li>
@@ -915,6 +909,13 @@ Identical to [the Twitter Media Object](https://developer.twitter.com/en/docs/tw
 </tr>
 
 <tr>
+<td><code>media-id</code></td>
+<td>String (Integer) </td>
+<td>ID used for attaching images to a Mastodon Post Status</td>
+</tr>
+
+
+<tr>
 <td><code>created</code></td>
 <td>String (Date)</td>
 <td>Format <code>YYYY-MM-DD HH:MM:SS</code></td>
@@ -1008,6 +1009,14 @@ Mutually exclusive with <code>data</code> <code>datasize</code>.
 </tr>
 
 <tr>
+<td><code>scales</code></td>
+<td>Array of Photo Scales</td>
+<td>
+List of the various resized versions of the Photo
+</td>
+</tr>
+
+<tr>
 <td><code>datasize</code></td>
 <td>Integer</td>
 <td>
@@ -1045,6 +1054,58 @@ Mutually exclusive with <code>link</code>.
 
 </tbody>
 </table>
+
+## Photo Scale
+
+<table class="table table-condensed table-striped table-bordered">
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Type</th>
+<th align="center">Nullable</th>
+</tr>
+</thead>
+<tbody>
+
+<tr>
+<td><code>id</code></td>
+<td>String (Integer)</td>
+<td>Row ID of this photo scale</td>
+</tr>
+
+<tr>
+<td><code>scale</code></td>
+<td>Integer</td>
+<td>Scale number</td>
+</tr>
+
+<tr>
+<td><code>link</code></td>
+<td>String (URL)</td>
+<td>URL to this scale's image</td>
+</tr>
+
+<tr>
+<td><code>height</code></td>
+<td>Integer</td>
+<td>Image height in pixels</td>
+</tr>
+
+<tr>
+<td><code>width</code></td>
+<td>Integer</td>
+<td>Image width in pixels</td>
+</tr>
+
+<tr>
+<td><code>size</code></td>
+<td>Integer</td>
+<td>Image size in bytes</td>
+</tr>
+
+</tbody>
+</table>
+
 
 ## Photo List Item
 
@@ -1104,6 +1165,40 @@ Mutually exclusive with <code>link</code>.
 <td><code>thumb</code></td>
 <td>String (URL)</td>
 <td>URL of the smallest scale version of the picture.</td>
+</tr>
+
+</tbody>
+</table>
+
+
+## Photo Album
+
+<table class="table table-condensed table-striped table-bordered">
+<thead>
+<tr>
+<th>Attribute</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+
+<tr>
+<td><code>name</code></td>
+<td>String</td>
+<td>The name of the photo album</td>
+</tr>
+
+<tr>
+<td><code>created</code></td>
+<td>String (Date)</td>
+<td>The creation date of the album. Format <code>YYYY-MM-DD HH:MM:SS</code></td>
+</tr>
+
+<tr>
+<td><code>count</code></td>
+<td>Integer</td>
+<td>The number of images in the album</td>
 </tr>
 
 </tbody>

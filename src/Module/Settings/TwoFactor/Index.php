@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,8 +22,8 @@
 namespace Friendica\Module\Settings\TwoFactor;
 
 use Friendica\Core\Renderer;
-use Friendica\Core\Session;
 use Friendica\DI;
+use Friendica\Network\HTTPException\FoundException;
 use Friendica\Security\TwoFactor\Model\AppSpecificPassword;
 use Friendica\Security\TwoFactor\Model\RecoveryCode;
 use Friendica\Model\User;
@@ -33,77 +33,84 @@ use PragmaRX\Google2FA\Google2FA;
 
 class Index extends BaseSettings
 {
-	public static function post(array $parameters = [])
+	protected function post(array $request = [])
 	{
-		if (!local_user()) {
+		if (!DI::userSession()->getLocalUserId()) {
 			return;
 		}
 
 		self::checkFormSecurityTokenRedirectOnError('settings/2fa', 'settings_2fa');
 
 		try {
-			User::getIdFromPasswordAuthentication(local_user(), $_POST['password'] ?? '');
+			User::getIdFromPasswordAuthentication(DI::userSession()->getLocalUserId(), $_POST['password'] ?? '');
 
-			$has_secret = (bool) DI::pConfig()->get(local_user(), '2fa', 'secret');
-			$verified = DI::pConfig()->get(local_user(), '2fa', 'verified');
+			$has_secret = (bool)DI::pConfig()->get(DI::userSession()->getLocalUserId(), '2fa', 'secret');
+			$verified   = DI::pConfig()->get(DI::userSession()->getLocalUserId(), '2fa', 'verified');
 
 			switch ($_POST['action'] ?? '') {
 				case 'enable':
 					if (!$has_secret && !$verified) {
 						$Google2FA = new Google2FA();
 
-						DI::pConfig()->set(local_user(), '2fa', 'secret', $Google2FA->generateSecretKey(32));
+						DI::pConfig()->set(DI::userSession()->getLocalUserId(), '2fa', 'secret', $Google2FA->generateSecretKey(32));
 
-						DI::baseUrl()->redirect('settings/2fa/recovery?t=' . self::getFormSecurityToken('settings_2fa_password'));
+						DI::baseUrl()
+						  ->redirect('settings/2fa/recovery?t=' . self::getFormSecurityToken('settings_2fa_password'));
 					}
 					break;
 				case 'disable':
 					if ($has_secret) {
-						RecoveryCode::deleteForUser(local_user());
-						DI::pConfig()->delete(local_user(), '2fa', 'secret');
-						DI::pConfig()->delete(local_user(), '2fa', 'verified');
-						Session::remove('2fa');
+						RecoveryCode::deleteForUser(DI::userSession()->getLocalUserId());
+						DI::pConfig()->delete(DI::userSession()->getLocalUserId(), '2fa', 'secret');
+						DI::pConfig()->delete(DI::userSession()->getLocalUserId(), '2fa', 'verified');
+						DI::session()->remove('2fa');
 
-						info(DI::l10n()->t('Two-factor authentication successfully disabled.'));
+						DI::sysmsg()->addInfo(DI::l10n()->t('Two-factor authentication successfully disabled.'));
 						DI::baseUrl()->redirect('settings/2fa');
 					}
 					break;
 				case 'recovery':
 					if ($has_secret) {
-						DI::baseUrl()->redirect('settings/2fa/recovery?t=' . self::getFormSecurityToken('settings_2fa_password'));
+						DI::baseUrl()
+						  ->redirect('settings/2fa/recovery?t=' . self::getFormSecurityToken('settings_2fa_password'));
 					}
 					break;
 				case 'app_specific':
 					if ($has_secret) {
-						DI::baseUrl()->redirect('settings/2fa/app_specific?t=' . self::getFormSecurityToken('settings_2fa_password'));
+						DI::baseUrl()
+						  ->redirect('settings/2fa/app_specific?t=' . self::getFormSecurityToken('settings_2fa_password'));
 					}
 					break;
 				case 'trusted':
 					if ($has_secret) {
-						DI::baseUrl()->redirect('settings/2fa/trusted?t=' . self::getFormSecurityToken('settings_2fa_password'));
+						DI::baseUrl()
+						  ->redirect('settings/2fa/trusted?t=' . self::getFormSecurityToken('settings_2fa_password'));
 					}
 					break;
 				case 'configure':
 					if (!$verified) {
-						DI::baseUrl()->redirect('settings/2fa/verify?t=' . self::getFormSecurityToken('settings_2fa_password'));
+						DI::baseUrl()
+						  ->redirect('settings/2fa/verify?t=' . self::getFormSecurityToken('settings_2fa_password'));
 					}
 					break;
 			}
+		} catch (FoundException $exception) {
+			// Nothing to do here
 		} catch (\Exception $e) {
-			notice(DI::l10n()->t('Wrong Password'));
+			DI::sysmsg()->addNotice(DI::l10n()->t($e->getMessage()));
 		}
 	}
 
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		if (!local_user()) {
+		if (!DI::userSession()->getLocalUserId()) {
 			return Login::form('settings/2fa');
 		}
 
-		parent::content($parameters);
+		parent::content();
 
-		$has_secret = (bool) DI::pConfig()->get(local_user(), '2fa', 'secret');
-		$verified = DI::pConfig()->get(local_user(), '2fa', 'verified');
+		$has_secret = (bool) DI::pConfig()->get(DI::userSession()->getLocalUserId(), '2fa', 'secret');
+		$verified = DI::pConfig()->get(DI::userSession()->getLocalUserId(), '2fa', 'verified');
 
 		return Renderer::replaceMacros(Renderer::getMarkupTemplate('settings/twofactor/index.tpl'), [
 			'$form_security_token' => self::getFormSecurityToken('settings_2fa'),
@@ -121,12 +128,12 @@ class Index extends BaseSettings
 
 			'$recovery_codes_title'     => DI::l10n()->t('Recovery codes'),
 			'$recovery_codes_remaining' => DI::l10n()->t('Remaining valid codes'),
-			'$recovery_codes_count'     => RecoveryCode::countValidForUser(local_user()),
+			'$recovery_codes_count'     => RecoveryCode::countValidForUser(DI::userSession()->getLocalUserId()),
 			'$recovery_codes_message'   => DI::l10n()->t('<p>These one-use codes can replace an authenticator app code in case you have lost access to it.</p>'),
 
 			'$app_specific_passwords_title'     => DI::l10n()->t('App-specific passwords'),
 			'$app_specific_passwords_remaining' => DI::l10n()->t('Generated app-specific passwords'),
-			'$app_specific_passwords_count'     => AppSpecificPassword::countForUser(local_user()),
+			'$app_specific_passwords_count'     => AppSpecificPassword::countForUser(DI::userSession()->getLocalUserId()),
 			'$app_specific_passwords_message'   => DI::l10n()->t('<p>These randomly generated passwords allow you to authenticate on apps not supporting two-factor authentication.</p>'),
 
 			'$action_title'         => DI::l10n()->t('Actions'),

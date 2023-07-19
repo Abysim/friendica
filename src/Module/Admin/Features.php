@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -28,7 +28,7 @@ use Friendica\Module\BaseAdmin;
 
 class Features extends BaseAdmin
 {
-	public static function post(array $parameters = [])
+	protected function post(array $request = [])
 	{
 		self::checkAdminAccess();
 
@@ -50,7 +50,7 @@ class Features extends BaseAdmin
 				DI::config()->set('feature', $feature, $val);
 
 				if (!empty($_POST[$featurelock])) {
-					DI::config()->set('feature_lock', $feature, $val);
+					DI::config()->set('feature_lock', $feature, 1);
 				} else {
 					DI::config()->delete('feature_lock', $feature);
 				}
@@ -60,9 +60,9 @@ class Features extends BaseAdmin
 		DI::baseUrl()->redirect('admin/features');
 	}
 
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		parent::content($parameters);
+		parent::content();
 
 		$features = [];
 
@@ -81,7 +81,6 @@ class Features extends BaseAdmin
 		$tpl = Renderer::getMarkupTemplate('admin/features.tpl');
 		$o = Renderer::replaceMacros($tpl, [
 			'$form_security_token' => self::getFormSecurityToken("admin_manage_features"),
-			'$baseurl'             => DI::baseUrl()->get(true),
 			'$title'               => DI::l10n()->t('Manage Additional Features'),
 			'$features'            => $features,
 			'$submit'              => DI::l10n()->t('Save Settings'),

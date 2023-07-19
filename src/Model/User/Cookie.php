@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,7 +22,7 @@
 namespace Friendica\Model\User;
 
 use Friendica\App;
-use Friendica\Core\Config\IConfig;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 
 /**
  * Interacting with the Friendica Cookie of a user
@@ -52,21 +52,21 @@ class Cookie
 	private $data;
 
 	/**
-	 * @param IConfig     $config
-	 * @param App\BaseURL $baseURL
-	 * @param array       $SERVER The $_SERVER array
-	 * @param array       $COOKIE The $_COOKIE array
+	 * @param App\Request         $request The current http request
+	 * @param IManageConfigValues $config
+	 * @param App\BaseURL         $baseURL
+	 * @param array               $COOKIE The $_COOKIE array
 	 */
-	public function __construct(IConfig $config, App\BaseURL $baseURL, array $SERVER = [], array $COOKIE = [])
+	public function __construct(App\Request $request, IManageConfigValues $config, App\BaseURL $baseURL, array $COOKIE = [])
 	{
-		$this->sslEnabled     = $baseURL->getSSLPolicy() === App\BaseURL::SSL_POLICY_FULL;
+		$this->sslEnabled     = $baseURL->getScheme() === 'https';
 		$this->sitePrivateKey = $config->get('system', 'site_prvkey');
 
 		$authCookieDays = $config->get('system', 'auth_cookie_lifetime',
 			self::DEFAULT_EXPIRE);
 		$this->lifetime = $authCookieDays * 24 * 60 * 60;
 
-		$this->remoteAddr = ($SERVER['REMOTE_ADDR'] ?? null) ?: '0.0.0.0';
+		$this->remoteAddr = $request->getRemoteAddress();
 
 		$this->data = json_decode($COOKIE[self::NAME] ?? '[]', true) ?: [];
 	}
@@ -125,13 +125,26 @@ class Cookie
 	}
 
 	/**
+	 * Resets the cookie to a given data set
+	 *
+	 * @param array $data
+	 *
+	 * @return bool
+	 */
+	public function reset(array $data): bool
+	{
+		return $this->clear() &&
+			   $this->setMultiple($data);
+	}
+
+	/**
 	 * Clears the Friendica cookie
 	 */
 	public function clear(): bool
 	{
 		$this->data = [];
 		// make sure cookie is deleted on browser close, as a security measure
-		return $this->setCookie( '', -3600, $this->sslEnabled);
+		return $this->setCookie('', -3600, $this->sslEnabled);
 	}
 
 	/**
@@ -161,7 +174,7 @@ class Cookie
 	 *
 	 */
 	protected function setCookie(string $value = null, int $expire = null,
-	                             bool $secure = null): bool
+								 bool $secure = null): bool
 	{
 		return setcookie(self::NAME, $value, $expire, self::PATH, self::DOMAIN, $secure, self::HTTPONLY);
 	}

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,7 @@ use Friendica\Network\HTTPException;
 
 class NotImplementedException extends HTTPException
 {
-	protected $code = 501;
+	protected $code        = 501;
+	protected $httpdesc    = 'Not Implemented';
+	protected $explanation = 'The server either does not recognize the request method, or it lacks the ability to fulfil the request. Usually this implies future availability (e.g., a new feature of a web-service API).';
 }

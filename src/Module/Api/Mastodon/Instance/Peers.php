@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,6 +24,7 @@ namespace Friendica\Module\Api\Mastodon\Instance;
 use Friendica\Core\Protocol;
 use Friendica\Core\System;
 use Friendica\Database\DBA;
+use Friendica\Model\GServer;
 use Friendica\Module\BaseApi;
 use Friendica\Network\HTTPException;
 use Friendica\Util\Network;
@@ -34,15 +35,16 @@ use Friendica\Util\Network;
 class Peers extends BaseApi
 {
 	/**
-	 * @param array $parameters
 	 * @throws HTTPException\InternalServerErrorException
 	 */
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		$return = [];
 
 		// We only select for Friendica and ActivityPub servers, since it is expected to only deliver AP compatible systems here.
-		$instances = DBA::select('gserver', ['url'], ["`network` in (?, ?) AND NOT `failed`", Protocol::DFRN, Protocol::ACTIVITYPUB]);
+		$instances = DBA::select('gserver', ['url'], ["`network` in (?, ?) AND NOT `blocked` AND NOT `failed` AND NOT `detection-method` IN (?, ?, ?, ?)",
+			Protocol::DFRN, Protocol::ACTIVITYPUB,
+			GServer::DETECT_MANUAL, GServer::DETECT_HEADER, GServer::DETECT_BODY, GServer::DETECT_HOST_META]);
 		while ($instance = DBA::fetch($instances)) {
 			$urldata = parse_url($instance['url']);
 			unset($urldata['scheme']);

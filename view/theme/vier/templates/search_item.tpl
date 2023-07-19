@@ -28,11 +28,12 @@
 			<span class="wall-item-ago">
 				{{if $item.plink}}<a class="link" title="{{$item.plink.title}}" href="{{$item.plink.href}}" style="color: #999">{{$item.ago}}</a>{{else}} {{$item.ago}} {{/if}}
 				{{if $item.lock}}<span class="fakelink" style="color: #999" onclick="lockview(event, 'item', {{$item.id}});">{{$item.lock}}</span> {{/if}}
+				<span class="pinned">{{$item.pinned}}</span>
 			</span>
 		</div>
 		<div class="wall-item-content">
-			{{if $item.title}}<h2><a href="{{$item.plink.href}}">{{$item.title}}</a></h2>{{/if}}
-			<div class="wall-item-body">{{$item.body_html nofilter}}</div>
+			{{if $item.title}}<h2 dir="auto"><a href="{{$item.plink.href}}">{{$item.title}}</a></h2>{{/if}}
+			<div class="wall-item-body" dir="auto">{{$item.body_html nofilter}}</div>
 		</div>
 	</div>
 	<div class="wall-item-bottom">
@@ -47,9 +48,8 @@
 		</div>
 	</div>
 	<div class="wall-item-bottom">
-		<div class="">
-			<!-- {{if $item.plink}}<a title="{{$item.plink.title}}" href="{{$item.plink.href}}"><i class="icon-link icon-large"></i></a>{{/if}} -->
-			{{if $item.conv}}<a href='{{$item.conv.href}}' id='context-{{$item.id}}' title='{{$item.conv.title}}'><i class="icon-link icon-large"></i></a>{{/if}}
+		<div dir="auto">
+			{{if $item.conv}}<a href="{{$item.conv.href}}" id="context-{{$item.id}}" title="{{$item.conv.title}}"><i class="icon-link icon-large"></i></a>{{/if}}
 		</div>
 		<div class="wall-item-actions">
 
@@ -76,10 +76,10 @@
 
 			<div class="wall-item-actions-tools">
 
-				{{if $item.drop.pagedrop}}
+				{{if $item.drop && $item.drop.pagedrop}}
 					<input type="checkbox" title="{{$item.drop.select}}" name="itemselected[]" class="item-select" value="{{$item.id}}" />
 				{{/if}}
-				{{if $item.drop.dropping}}
+				{{if $item.drop && $item.drop.dropping}}
 					<a href="item/drop/{{$item.id}}" onclick="return confirmDelete();" class="icon delete s16" title="{{$item.drop.delete}}">{{$item.drop.delete}}</a>
 				{{/if}}
 				{{if $item.edpost}}

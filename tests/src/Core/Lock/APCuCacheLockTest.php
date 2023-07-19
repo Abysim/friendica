@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,8 +21,8 @@
 
 namespace Friendica\Test\src\Core\Lock;
 
-use Friendica\Core\Cache\APCuCache;
-use Friendica\Core\Lock\CacheLock;
+use Friendica\Core\Cache\Type\APCuCache;
+use Friendica\Core\Lock\Type\CacheLock;
 
 /**
  * @group APCU
@@ -40,6 +40,6 @@ class APCuCacheLockTest extends LockTest
 
 	protected function getInstance()
 	{
-		return new CacheLock(new APCuCache('localhost'));
+		return new \Friendica\Core\Lock\Type\CacheLock(new APCuCache('localhost'));
 	}
 }

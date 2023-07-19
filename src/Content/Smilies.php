@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -39,10 +39,9 @@ class Smilies
 	 * @param array  $b              Array of emoticons
 	 * @param string $smiley         The text smilie
 	 * @param string $representation The replacement
-	 *
 	 * @return void
 	 */
-	public static function add(&$b, $smiley, $representation)
+	public static function add(array &$b, string $smiley, string $representation)
 	{
 		$found = array_search($smiley, $b['texts']);
 
@@ -66,7 +65,7 @@ class Smilies
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 * @hook  smilie ('texts' => smilies texts array, 'icons' => smilies html array)
 	 */
-	public static function getList()
+	public static function getList(): array
 	{
 		$texts =  [
 			'&lt;3',
@@ -107,7 +106,7 @@ class Smilies
 
 		];
 
-		$baseUrl = DI::baseUrl();
+		$baseUrl = (string)DI::baseUrl();
 
 		$icons = [
 		'<img class="smiley" src="' . $baseUrl . '/images/smiley-heart.gif" alt="&lt;3" title="&lt;3" />',
@@ -134,7 +133,7 @@ class Smilies
 		'<img class="smiley" src="' . $baseUrl . '/images/smiley-cry.gif" alt=":\'(" title=":\'("/>',
 		'<img class="smiley" src="' . $baseUrl . '/images/smiley-foot-in-mouth.gif" alt=":-!" title=":-!" />',
 		'<img class="smiley" src="' . $baseUrl . '/images/smiley-undecided.gif" alt=":-/" title=":-/" />',
-		'<img class="smiley" src="' . $baseUrl . '/images/smiley-embarassed.gif" alt=":-[" title=":-[" />',
+		'<img class="smiley" src="' . $baseUrl . '/images/smiley-embarrassed.gif" alt=":-[" title=":-[" />',
 		'<img class="smiley" src="' . $baseUrl . '/images/smiley-cool.gif" alt="8-)" title="8-)" />',
 		'<img class="smiley" src="' . $baseUrl . '/images/beer_mug.gif" alt=":beer" title=":beer" />',
 		'<img class="smiley" src="' . $baseUrl . '/images/beer_mug.gif" alt=":homebrew" title=":homebrew" />',
@@ -142,7 +141,7 @@ class Smilies
 		'<img class="smiley" src="' . $baseUrl . '/images/smiley-facepalm.gif" alt=":facepalm" title=":facepalm" />',
 		'<img class="smiley" src="' . $baseUrl . '/images/like.gif" alt=":like" title=":like" />',
 		'<img class="smiley" src="' . $baseUrl . '/images/dislike.gif" alt=":dislike" title=":dislike" />',
-		'<a href="https://friendi.ca">~friendica <img class="smiley" src="' . $baseUrl . '/images/friendica-16.png" alt="~friendica" title="~friendica" /></a>',
+		'<a href="https://friendi.ca">~friendica <img class="smiley" width="16" height="16" src="' . $baseUrl . '/images/friendica.svg" alt="~friendica" title="~friendica" /></a>',
 		'<a href="http://redmatrix.me/">red<img class="smiley" src="' . $baseUrl . '/images/rm-16.png" alt="red#" title="red#" />matrix</a>',
 		'<a href="http://redmatrix.me/">red<img class="smiley" src="' . $baseUrl . '/images/rm-16.png" alt="red#matrix" title="red#matrix" />matrix</a>'
 		];
@@ -169,7 +168,7 @@ class Smilies
 	 *
 	 * @return string $subject with all substrings in the $search array replaced by the values in the $replace array
 	 */
-	private static function strOrigReplace($search, $replace, $subject)
+	private static function strOrigReplace(array $search, array $replace, string $subject): string
 	{
 		return strtr($subject, array_combine($search, $replace));
 	}
@@ -191,7 +190,7 @@ class Smilies
 	 * @return string HTML Output of the Smilie
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function replace($s, $no_images = false)
+	public static function replace(string $s, bool $no_images = false): string
 	{
 		$smilies = self::getList();
 
@@ -211,16 +210,16 @@ class Smilies
 	 * @return string
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function replaceFromArray($text, array $smilies, $no_images = false)
+	public static function replaceFromArray(string $text, array $smilies, bool $no_images = false): string
 	{
 		if (intval(DI::config()->get('system', 'no_smilies'))
-			|| (local_user() && intval(DI::pConfig()->get(local_user(), 'system', 'no_smilies')))
+			|| (DI::userSession()->getLocalUserId() && intval(DI::pConfig()->get(DI::userSession()->getLocalUserId(), 'system', 'no_smilies')))
 		) {
 			return $text;
 		}
 
-		$text = preg_replace_callback('/<(pre)>(.*?)<\/pre>/ism', 'self::encode', $text);
-		$text = preg_replace_callback('/<(code)>(.*?)<\/code>/ism', 'self::encode', $text);
+		$text = preg_replace_callback('/<(pre)>(.*?)<\/pre>/ism', [self::class, 'encode'], $text);
+		$text = preg_replace_callback('/<(code)>(.*?)<\/code>/ism', [self::class, 'encode'], $text);
 
 		if ($no_images) {
 			$cleaned = ['texts' => [], 'icons' => []];
@@ -234,32 +233,34 @@ class Smilies
 			$smilies = $cleaned;
 		}
 
-		$text = preg_replace_callback('/&lt;(3+)/', 'self::pregHeart', $text);
+		$text = preg_replace_callback('/&lt;(3+)/', [self::class, 'heartReplaceCallback'], $text);
 		$text = self::strOrigReplace($smilies['texts'], $smilies['icons'], $text);
 
-		$text = preg_replace_callback('/<(code)>(.*?)<\/code>/ism', 'self::decode', $text);
-		$text = preg_replace_callback('/<(pre)>(.*?)<\/pre>/ism', 'self::decode', $text);
+		$text = preg_replace_callback('/<(code)>(.*?)<\/code>/ism', [self::class, 'decode'], $text);
+		$text = preg_replace_callback('/<(pre)>(.*?)<\/pre>/ism', [self::class, 'decode'], $text);
 
 		return $text;
 	}
 
 	/**
-	 * @param string $m string
+	 * Encodes smiley match array to BASE64 string
 	 *
+	 * @param array $m Match array
 	 * @return string base64 encoded string
 	 */
-	private static function encode($m)
+	private static function encode(array $m): string
 	{
 		return '<' . $m[1] . '>' . Strings::base64UrlEncode($m[2]) . '</' . $m[1] . '>';
 	}
 
 	/**
-	 * @param string $m string
+	 * Decodes a previously BASE64-encoded match array to a string
 	 *
+	 * @param array $m Matches array
 	 * @return string base64 decoded string
 	 * @throws \Exception
 	 */
-	private static function decode($m)
+	private static function decode(array $m): string
 	{
 		return '<' . $m[1] . '>' . Strings::base64UrlDecode($m[2]) . '</' . $m[1] . '>';
 	}
@@ -268,24 +269,20 @@ class Smilies
 	/**
 	 * expand <3333 to the correct number of hearts
 	 *
-	 * @param string $x string
-	 *
+	 * @param array $matches
 	 * @return string HTML Output
-	 *
-	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	private static function pregHeart($x)
+	private static function heartReplaceCallback(array $matches): string
 	{
-		if (strlen($x[1]) == 1) {
-			return $x[0];
+		if (strlen($matches[1]) == 1) {
+			return $matches[0];
 		}
 
 		$t = '';
-		for ($cnt = 0; $cnt < strlen($x[1]); $cnt ++) {
+		for ($cnt = 0; $cnt < strlen($matches[1]); $cnt ++) {
 			$t .= '❤';
 		}
 
-		$r =  str_replace($x[0], $t, $x[0]);
-		return $r;
+		return str_replace($matches[0], $t, $matches[0]);
 	}
 }

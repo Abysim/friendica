@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -126,5 +126,43 @@ class ArraysTest extends TestCase
 	{
 		$str = Arrays::recursiveImplode([[1], [2, [3]]], ',');
 		self::assertSame($str, '{1},{2,{3}}');
+	}
+
+	/**
+	 * Test the Arrays::walkRecursive() function.
+	 */
+	public function testApiWalkRecursive()
+	{
+		$array = ['item1'];
+		self::assertEquals(
+			$array,
+			Arrays::walkRecursive(
+				$array,
+				function () {
+					// Should we test this with a callback that actually does something?
+					return true;
+				}
+			)
+		);
+	}
+
+	/**
+	 * Test the Arrays::walkRecursive() function with an array.
+	 *
+	 * @return void
+	 */
+	public function testApiWalkRecursiveWithArray()
+	{
+		$array = [['item1'], ['item2']];
+		self::assertEquals(
+			$array,
+			Arrays::walkRecursive(
+				$array,
+				function () {
+					// Should we test this with a callback that actually does something?
+					return true;
+				}
+			)
+		);
 	}
 }

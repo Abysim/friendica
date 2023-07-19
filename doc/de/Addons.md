@@ -38,16 +38,13 @@ $function ist ein String und der Name der Funktion, die ausgeführt wird, wenn d
 Argumente
 ---
 
-Deine Hook-Callback-Funktion wird mit mindestens einem und bis zu zwei Argumenten aufgerufen
+Deine Hook-Callback-Funktion wird mit höchstens einem Argumenten aufgerufen
 
-    function myhook_function(App $a, &$b) {
+    function myhook_function(&$b) {
 
     }
 
 Wenn du Änderungen an den aufgerufenen Daten vornehmen willst, musst du diese als Referenzvariable (mit "&") während der Funktionsdeklaration deklarieren.
-
-$a ist die Friendica "App"-Klasse, die eine Menge an Informationen über den aktuellen Friendica-Status beinhaltet, u.a. welche Module genutzt werden, Konfigurationsinformationen, Inhalte der Seite zum Zeitpunkt des Hook-Aufrufs.
-Es ist empfohlen, diese Funktion "$a" zu nennen, um seine Nutzung an den Gebrauch an anderer Stelle anzugleichen.
 
 $b kann frei benannt werden.
 Diese Information ist speziell auf den Hook bezogen, der aktuell bearbeitet wird, und beinhaltet normalerweise Daten, die du sofort nutzen, anzeigen oder bearbeiten kannst.
@@ -61,15 +58,18 @@ Addons können auch als "Module" agieren und alle Seitenanfragen für eine besti
 Um ein Addon als Modul zu nutzen, ist es nötig, die Funktion "addon_name_module()" zu definieren, die keine Argumente benötigt und nichts weiter machen muss.
 
 Wenn diese Funktion existiert, wirst du nun alle Seitenanfragen für "http://example.com/addon_name" erhalten - mit allen URL-Komponenten als zusätzliche Argumente.
-Diese werden in ein Array $a->argv geparst und stimmen mit $a->argc überein, wobei sie die Anzahl der URL-Komponenten abbilden.
-So würde http://example.com/addon/arg1/arg2 nach einem Modul "addon" suchen und seiner Modulfunktion die $a-App-Strukur übergeben (dies ist für viele Komponenten verfügbar). Das umfasst:
+Diese werden in das App\Arguments Objekt geparst.
+So würde `http://example.com/addon/arg1/arg2` dies ergeben:
+```php
+DI::args()->getArgc(); // = 3
+DI::args()->get(0); // = 'addon'
+DI::args()->get(1); // = 'arg1'
+DI::args()->get(2); // = 'arg2'
+```
 
-    $a->argc = 3
-    $a->argv = array(0 => 'addon', 1 => 'arg1', 2 => 'arg2');
-
-Deine Modulfunktionen umfassen oft die Funktion addon_name_content(App $a), welche den Seiteninhalt definiert und zurückgibt.
-Sie können auch addon_name_post(App $a) umfassen, welches vor der content-Funktion aufgerufen wird und normalerweise die Resultate der POST-Formulare handhabt.
-Du kannst ebenso addon_name_init(App $a) nutzen, was oft frühzeitig aufgerufen wird und das Modul initialisert.
+Deine Modulfunktionen umfassen oft die Funktion `addon_name_content()`, welche den Seiteninhalt definiert und zurückgibt.
+Sie können auch `addon_name_post()` umfassen, welches vor der content-Funktion aufgerufen wird und normalerweise die Resultate der POST-Formulare handhabt.
+Du kannst ebenso `addon_name_init()` nutzen, was oft frühzeitig aufgerufen wird und das Modul initialisert.
 
 
 Derzeitige Hooks
@@ -83,7 +83,7 @@ Derzeitige Hooks
         'user_record' => die erfolgreiche Authentifizierung muss auch einen gültigen Nutzereintrag aus der Datenbank zurückgeben
 
 **'logged_in'** - wird aufgerufen, sobald ein Nutzer sich erfolgreich angemeldet hat.
-    $b beinhaltet den $a->Nutzer-Array
+    $b beinhaltet den `App->user`
 
 
 **'display_item'** - wird aufgerufen, wenn ein Beitrag für die Anzeige formatiert wird.
@@ -103,12 +103,6 @@ Derzeitige Hooks
     $b ist das Item-Array einer Information, die in der Datenbank und im Item gespeichert ist.
         {Bitte beachte: der Seiteninhalt ist bbcode - nicht HTML)
 
-**'settings_form'** - wird aufgerufen, wenn die HTML-Ausgabe für die Einstellungsseite generiert wird.
-    $b ist die HTML-Ausgabe (String) der Einstellungsseite vor dem finalen "</form>"-Tag.
-
-**'settings_post'** - wird aufgerufen, wenn die Einstellungsseiten geladen werden.
-    $b ist der $_POST-Array
-
 **'addon_settings'** - wird aufgerufen, wenn die HTML-Ausgabe der Addon-Einstellungsseite generiert wird.
     $b ist die HTML-Ausgabe (String) der Addon-Einstellungsseite vor dem finalen "</form>"-Tag.
 
@@ -125,7 +119,7 @@ Derzeitige Hooks
 
 **'profile_advanced'** - wird aufgerufen, wenn die HTML-Ausgabe für das "Advanced profile" generiert wird; stimmt mit dem "Profil"-Tab auf der Profilseite der Nutzer überein.
     $b ist die HTML-Ausgabe (String) des erstellten Profils
-    (Die Details des Profil-Arrays sind in $a->profile)
+    (Die Details des Profil-Arrays sind in `App->profile`)
 
 **'directory_item'** - wird von der Verzeichnisseite aufgerufen, wenn ein Item für die Anzeige formatiert wird.
     $b ist ein Array
@@ -199,7 +193,6 @@ Eine komplette Liste aller Hook-Callbacks mit den zugehörigen Dateien (am 01-Ap
     Hook::callAll($a->module.'_mod_init', $placeholder);
     Hook::callAll($a->module.'_mod_init', $placeholder);
     Hook::callAll($a->module.'_mod_post', $_POST);
-    Hook::callAll($a->module.'_mod_afterpost', $placeholder);
     Hook::callAll($a->module.'_mod_content', $arr);
     Hook::callAll($a->module.'_mod_aftercontent', $arr);
     Hook::callAll('page_end', DI::page()['content']);
@@ -217,7 +210,7 @@ Eine komplette Liste aller Hook-Callbacks mit den zugehörigen Dateien (am 01-Ap
     Hook::callAll('enotify_mail', $datarray);
     Hook::callAll('check_item_notification', $notification_data);
 
-### include/conversation.php
+### src/Content/Conversation.php
 
     Hook::callAll('conversation_start', $cb);
     Hook::callAll('render_location', $locate);
@@ -233,10 +226,6 @@ Eine komplette Liste aller Hook-Callbacks mit den zugehörigen Dateien (am 01-Ap
 ### mod/xrd.php
 
     Hook::callAll('personal_xrd', $arr);
-
-### mod/ping.php
-
-    Hook::callAll('network_ping', $arr);
 
 ### mod/parse_url.php
 
@@ -269,11 +258,9 @@ Eine komplette Liste aller Hook-Callbacks mit den zugehörigen Dateien (am 01-Ap
     Hook::callAll('addon_settings_post', $_POST);
     Hook::callAll('connector_settings_post', $_POST);
     Hook::callAll('display_settings_post', $_POST);
-    Hook::callAll('settings_post', $_POST);
     Hook::callAll('addon_settings', $settings_addons);
     Hook::callAll('connector_settings', $settings_connectors);
     Hook::callAll('display_settings', $o);
-    Hook::callAll('settings_form', $o);
 
 ### mod/photos.php
 
@@ -294,10 +281,6 @@ Eine komplette Liste aller Hook-Callbacks mit den zugehörigen Dateien (am 01-Ap
 
     Hook::callAll('home_init', $ret);
     Hook::callAll("home_content", $content);
-
-### mod/poke.php
-
-    Hook::callAll('post_local_end', $arr);
 
 ### mod/contacts.php
 
@@ -322,10 +305,6 @@ Eine komplette Liste aller Hook-Callbacks mit den zugehörigen Dateien (am 01-Ap
     Hook::callAll('post_local_start', $_REQUEST);
     Hook::callAll('post_local', $datarray);
     Hook::callAll('post_local_end', $datarray);
-
-### mod/editpost.php
-
-    Hook::callAll('jot_tool', $jotplugins);
 
 ### src/Network/FKOAuth1.php
 
@@ -409,14 +388,37 @@ Eine komplette Liste aller Hook-Callbacks mit den zugehörigen Dateien (am 01-Ap
 ### src/Core/Authentication.php
 
     Hook::callAll('logged_in', $a->user);
-    
+
+### src/Core/Protocol.php
+
+    Hook::callAll('support_follow', $hook_data);
+    Hook::callAll('support_revoke_follow', $hook_data);
+    Hook::callAll('unfollow', $hook_data);
+    Hook::callAll('revoke_follow', $hook_data);
+    Hook::callAll('block', $hook_data);
+    Hook::callAll('unblock', $hook_data);
+    Hook::callAll('support_probe', $hook_data);
+
+### src/Core/Logger/Factory.php
+
+    Hook::callAll('logger_instance', $data);
+
 ### src/Core/StorageManager
 
     Hook::callAll('storage_instance', $data);
+    Hook::callAll('storage_config', $data);
+
+### src/Module/Notifications/Ping.php
+
+    Hook::callAll('network_ping', $arr);
 
 ### src/Module/PermissionTooltip.php
 
     Hook::callAll('lockview_content', $item);
+
+### src/Module/Post/Edit.php
+
+    Hook::callAll('jot_tool', $jotplugins);
 
 ### src/Worker/Directory.php
 
@@ -456,10 +458,6 @@ Eine komplette Liste aller Hook-Callbacks mit den zugehörigen Dateien (am 01-Ap
 ### src/Core/Hook.php
 
     self::callSingle(self::getApp(), 'hook_fork', $fork_hook, $hookdata);
-
-### src/Core/L10n/L10n.php
-
-    Hook::callAll('poke_verbs', $arr);
 
 ### src/Core/Worker.php
 

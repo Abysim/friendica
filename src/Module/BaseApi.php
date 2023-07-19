@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,138 +21,498 @@
 
 namespace Friendica\Module;
 
+use DateTime;
+use Friendica\App;
+use Friendica\App\Router;
 use Friendica\BaseModule;
+use Friendica\Core\L10n;
+use Friendica\Core\Logger;
+use Friendica\Core\System;
+use Friendica\Database\DBA;
 use Friendica\DI;
+use Friendica\Model\Contact;
+use Friendica\Model\Item;
+use Friendica\Model\Post;
+use Friendica\Model\User;
+use Friendica\Module\Api\ApiResponse;
+use Friendica\Module\Special\HTTPException as ModuleHTTPException;
 use Friendica\Network\HTTPException;
-
-require_once __DIR__ . '/../../include/api.php';
+use Friendica\Object\Api\Mastodon\Status;
+use Friendica\Object\Api\Mastodon\TimelineOrderByTypes;
+use Friendica\Security\BasicAuth;
+use Friendica\Security\OAuth;
+use Friendica\Util\DateTimeFormat;
+use Friendica\Util\Profiler;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Log\LoggerInterface;
 
 class BaseApi extends BaseModule
 {
+	const LOG_PREFIX = 'API {action} - ';
+
+	const SCOPE_READ   = 'read';
+	const SCOPE_WRITE  = 'write';
+	const SCOPE_FOLLOW = 'follow';
+	const SCOPE_PUSH   = 'push';
+
 	/**
-	 * @var string json|xml|rss|atom
+	 * @var array
 	 */
-	protected static $format = 'json';
+	protected static $boundaries = [];
+
 	/**
-	 * @var bool|int
+	 * @var array
 	 */
-	protected static $current_user_id;
+	protected static $request = [];
 
-	public static function init(array $parameters = [])
+	/** @var App */
+	protected $app;
+
+	/** @var ApiResponse */
+	protected $response;
+
+	public function __construct(App $app, L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, ApiResponse $response, array $server, array $parameters = [])
 	{
-		$arguments = DI::args();
+		parent::__construct($l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
 
-		if (substr($arguments->getCommand(), -4) === '.xml') {
-			self::$format = 'xml';
-		}
-		if (substr($arguments->getCommand(), -4) === '.rss') {
-			self::$format = 'rss';
-		}
-		if (substr($arguments->getCommand(), -4) === '.atom') {
-			self::$format = 'atom';
-		}
-	}
-
-	public static function post(array $parameters = [])
-	{
-		if (!api_user()) {
-			throw new HTTPException\UnauthorizedException(DI::l10n()->t('Permission denied.'));
-		}
-
-		$a = DI::app();
-
-		if (!empty($a->user['uid']) && $a->user['uid'] != api_user()) {
-			throw new HTTPException\ForbiddenException(DI::l10n()->t('Permission denied.'));
-		}
+		$this->app = $app;
 	}
 
 	/**
-	 * Log in user via OAuth1 or Simple HTTP Auth.
+	 * Additionally checks, if the caller is permitted to do this action
 	 *
-	 * Simple Auth allow username in form of <pre>user@server</pre>, ignoring server part
+	 * {@inheritDoc}
 	 *
-	 * @return bool Was a user authenticated?
 	 * @throws HTTPException\ForbiddenException
-	 * @throws HTTPException\UnauthorizedException
-	 * @throws HTTPException\InternalServerErrorException
-	 * @hook  'authenticate'
-	 *               array $addon_auth
-	 *               'username' => username from login form
-	 *               'password' => password from login form
-	 *               'authenticated' => return status,
-	 *               'user_record' => return authenticated user record
 	 */
-	protected static function login()
+	public function run(ModuleHTTPException $httpException, array $request = [], bool $scopecheck = true): ResponseInterface
 	{
-		api_login(DI::app());
+		if ($scopecheck) {
+			switch ($this->args->getMethod()) {
+				case Router::DELETE:
+				case Router::PATCH:
+				case Router::POST:
+				case Router::PUT:
+					self::checkAllowedScope(self::SCOPE_WRITE);
 
-		self::$current_user_id = api_user();
-
-		return (bool)self::$current_user_id;
-	}
-
-	/**
-	 * Get user info array.
-	 *
-	 * @param int|string $contact_id Contact ID or URL
-	 * @return array|bool
-	 * @throws HTTPException\BadRequestException
-	 * @throws HTTPException\InternalServerErrorException
-	 * @throws HTTPException\UnauthorizedException
-	 * @throws \ImagickException
-	 */
-	protected static function getUser($contact_id = null)
-	{
-		return api_get_user(DI::app(), $contact_id);
-	}
-
-	/**
-	 * Formats the data according to the data type
-	 *
-	 * @param string $root_element
-	 * @param array $data An array with a single element containing the returned result
-	 * @return false|string
-	 */
-	protected static function format(string $root_element, array $data)
-	{
-		$return = api_format_data($root_element, self::$format, $data);
-
-		switch (self::$format) {
-			case "xml":
-				header("Content-Type: text/xml");
-				break;
-			case "json":
-				header("Content-Type: application/json");
-				if (!empty($return)) {
-					$json = json_encode(end($return));
-					if (!empty($_GET['callback'])) {
-						$json = $_GET['callback'] . "(" . $json . ")";
+					if (!self::getCurrentUserID()) {
+						throw new HTTPException\ForbiddenException($this->t('Permission denied.'));
 					}
-					$return = $json;
-				}
-				break;
-			case "rss":
-				header("Content-Type: application/rss+xml");
-				$return  = '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . $return;
-				break;
-			case "atom":
-				header("Content-Type: application/atom+xml");
-				$return = '<?xml version="1.0" encoding="UTF-8"?>' . "\n" . $return;
-				break;
+					break;
+			}
 		}
-		
-		return $return;
+
+		return parent::run($httpException, $request);
 	}
 
 	/**
-	 * Creates the XML from a JSON style array
+	 * Processes data from GET requests and sets paging conditions
 	 *
-	 * @param $data
-	 * @param $root_element
+	 * @param array $request       Custom REQUEST array
+	 * @param array $condition     Existing conditions to merge
+	 * @return array paging data condition parameters data
+	 * @throws \Exception
+	 */
+	protected function addPagingConditions(array $request, array $condition): array
+	{
+		$requested_order = $request['friendica_order'];
+		if ($requested_order == TimelineOrderByTypes::ID) {
+			if (!empty($request['max_id'])) {
+				$condition = DBA::mergeConditions($condition, ["`uri-id` < ?", intval($request['max_id'])]);
+			}
+
+			if (!empty($request['since_id'])) {
+				$condition = DBA::mergeConditions($condition, ["`uri-id` > ?", intval($request['since_id'])]);
+			}
+
+			if (!empty($request['min_id'])) {
+				$condition = DBA::mergeConditions($condition, ["`uri-id` > ?", intval($request['min_id'])]);
+			}
+		} else {
+			switch ($requested_order) {
+				case TimelineOrderByTypes::RECEIVED:
+				case TimelineOrderByTypes::CHANGED:
+				case TimelineOrderByTypes::EDITED:
+				case TimelineOrderByTypes::CREATED:
+				case TimelineOrderByTypes::COMMENTED:
+					$order_field = $requested_order;
+					break;
+				default:
+					throw new \Exception("Unrecognized request order: $requested_order");
+			}
+
+			if (!empty($request['max_id'])) {
+				$condition = DBA::mergeConditions($condition, ["`$order_field` < ?", DateTimeFormat::convert($request['max_id'], DateTimeFormat::MYSQL)]);
+			}
+
+			if (!empty($request['since_id'])) {
+				$condition = DBA::mergeConditions($condition, ["`$order_field` > ?", DateTimeFormat::convert($request['since_id'], DateTimeFormat::MYSQL)]);
+			}
+
+			if (!empty($request['min_id'])) {
+				$condition = DBA::mergeConditions($condition, ["`$order_field` > ?", DateTimeFormat::convert($request['min_id'], DateTimeFormat::MYSQL)]);
+			}
+		}
+
+		return $condition;
+	}
+
+	/**
+	 * Processes data from GET requests and sets paging conditions
+	 *
+	 * @param array $request  Custom REQUEST array
+	 * @param array $params   Existing $params element to build on
+	 * @return array ordering data added to the params blocks that was passed in
+	 * @throws \Exception
+	 */
+	protected function buildOrderAndLimitParams(array $request, array $params = []): array
+	{
+		$requested_order = $request['friendica_order'];
+		switch ($requested_order) {
+			case TimelineOrderByTypes::CHANGED:
+			case TimelineOrderByTypes::CREATED:
+			case TimelineOrderByTypes::COMMENTED:
+			case TimelineOrderByTypes::EDITED:
+			case TimelineOrderByTypes::RECEIVED:
+				$order_field = $requested_order;
+				break;
+			case TimelineOrderByTypes::ID:
+			default:
+				$order_field = 'uri-id';
+		}
+
+		if (!empty($request['min_id'])) {
+			$params['order'] = [$order_field];
+		} else {
+			$params['order'] = [$order_field => true];
+		}
+
+		$params['limit'] = $request['limit'];
+
+		return $params;
+	}
+
+	/**
+	 * Update the ID/time boundaries for this result set. Used for building Link Headers
+	 *
+	 * @param Status $status
+	 * @param array $post_item
+	 * @param string $order
+	 * @return void
+	 * @throws \Exception
+	 */
+	protected function updateBoundaries(Status $status, array $post_item, string $order)
+	{
+		try {
+			switch ($order) {
+				case TimelineOrderByTypes::CHANGED:
+					if (!empty($status->friendicaExtension()->changedAt())) {
+						self::setBoundaries(new DateTime(DateTimeFormat::utc($status->friendicaExtension()->changedAt(), DateTimeFormat::JSON)));
+					}
+					break;
+				case TimelineOrderByTypes::CREATED:
+					if (!empty($status->createdAt())) {
+						self::setBoundaries(new DateTime(DateTimeFormat::utc($status->createdAt(), DateTimeFormat::JSON)));
+					}
+					break;
+				case TimelineOrderByTypes::COMMENTED:
+					if (!empty($status->friendicaExtension()->commentedAt())) {
+						self::setBoundaries(new DateTime(DateTimeFormat::utc($status->friendicaExtension()->commentedAt(), DateTimeFormat::JSON)));
+					}
+					break;
+				case TimelineOrderByTypes::EDITED:
+					if (!empty($status->editedAt())) {
+						self::setBoundaries(new DateTime(DateTimeFormat::utc($status->editedAt(), DateTimeFormat::JSON)));
+					}
+					break;
+				case TimelineOrderByTypes::RECEIVED:
+					if (!empty($status->friendicaExtension()->receivedAt())) {
+						self::setBoundaries(new DateTime(DateTimeFormat::utc($status->friendicaExtension()->receivedAt(), DateTimeFormat::JSON)));
+					}
+					break;
+				case TimelineOrderByTypes::ID:
+				default:
+					self::setBoundaries($post_item['uri-id']);
+			}
+		} catch (\Exception $e) {
+			Logger::debug('Error processing page boundary calculation, skipping', ['error' => $e]);
+		}
+	}
+
+	/**
+	 * Processes data from GET requests and sets defaults
+	 *
+	 * @param array      $defaults Associative array of expected request keys and their default typed value. A null
+	 *                             value will remove the request key from the resulting value array.
+	 * @param array $request       Custom REQUEST array, superglobal instead
+	 * @return array request data
+	 * @throws \Exception
+	 */
+	public function getRequest(array $defaults, array $request): array
+	{
+		self::$request    = $request;
+		self::$boundaries = [];
+
+		unset(self::$request['pagename']);
+
+		return $this->checkDefaults($defaults, $request);
+	}
+
+	/**
+	 * Set boundaries for the "link" header
+	 * @param array $boundaries
+	 * @param int|\DateTime $id
+	 */
+	protected static function setBoundaries($id)
+	{
+		if (!isset(self::$boundaries['min'])) {
+			self::$boundaries['min'] = $id;
+		}
+
+		if (!isset(self::$boundaries['max'])) {
+			self::$boundaries['max'] = $id;
+		}
+
+		self::$boundaries['min'] = min(self::$boundaries['min'], $id);
+		self::$boundaries['max'] = max(self::$boundaries['max'], $id);
+	}
+
+	/**
+	 * Get the "link" header with "next" and "prev" links
 	 * @return string
 	 */
-	protected static function createXml($data, $root_element)
+	protected static function getLinkHeader(bool $asDate = false): string
 	{
-		return api_create_xml($data, $root_element);
+		if (empty(self::$boundaries)) {
+			return '';
+		}
+
+		$request = self::$request;
+
+		unset($request['min_id']);
+		unset($request['max_id']);
+		unset($request['since_id']);
+
+		$prev_request = $next_request = $request;
+
+		if ($asDate) {
+			$max_date = self::$boundaries['max'];
+			$min_date = self::$boundaries['min'];
+			$prev_request['min_id'] = $max_date->format(DateTimeFormat::JSON);
+			$next_request['max_id'] = $min_date->format(DateTimeFormat::JSON);
+		} else {
+			$prev_request['min_id'] = self::$boundaries['max'];
+			$next_request['max_id'] = self::$boundaries['min'];
+		}
+
+		$command = DI::baseUrl() . '/' . DI::args()->getCommand();
+
+		$prev = $command . '?' . http_build_query($prev_request);
+		$next = $command . '?' . http_build_query($next_request);
+
+		return 'Link: <' . $next . '>; rel="next", <' . $prev . '>; rel="prev"';
+	}
+
+	/**
+	 * Get the "link" header with "next" and "prev" links for an offset/limit type call
+	 * @return string
+	 */
+	protected static function getOffsetAndLimitLinkHeader(int $offset, int $limit): string
+	{
+		$request = self::$request;
+
+		unset($request['offset']);
+		$request['limit'] = $limit;
+
+		$prev_request = $next_request = $request;
+
+		$prev_request['offset'] = $offset - $limit;
+		$next_request['offset'] = $offset + $limit;
+
+		$command = DI::baseUrl() . '/' . DI::args()->getCommand();
+
+		$prev = $command . '?' . http_build_query($prev_request);
+		$next = $command . '?' . http_build_query($next_request);
+
+		if ($prev_request['offset'] >= 0) {
+			return 'Link: <' . $next . '>; rel="next", <' . $prev . '>; rel="prev"';
+		} else {
+			return 'Link: <' . $next . '>; rel="next"';
+		}
+	}
+
+	/**
+	 * Set the "link" header with "next" and "prev" links
+	 * @return void
+	 */
+	protected static function setLinkHeader(bool $asDate = false)
+	{
+		$header = self::getLinkHeader($asDate);
+		if (!empty($header)) {
+			header($header);
+		}
+	}
+
+	/**
+	 * Set the "link" header with "next" and "prev" links
+	 * @return void
+	 */
+	protected static function setLinkHeaderByOffsetLimit(int $offset, int $limit)
+	{
+		$header = self::getOffsetAndLimitLinkHeader($offset, $limit);
+		if (!empty($header)) {
+			header($header);
+		}
+	}
+
+	/**
+	 * Check if the app is known to support quoted posts
+	 *
+	 * @return bool
+	 */
+	public static function appSupportsQuotes(): bool
+	{
+		$token = OAuth::getCurrentApplicationToken();
+		return (!empty($token['name']) && in_array($token['name'], ['Fedilab']));
+	}
+
+	/**
+	 * Get current application token
+	 *
+	 * @return array token
+	 */
+	public static function getCurrentApplication()
+	{
+		$token = OAuth::getCurrentApplicationToken();
+
+		if (empty($token)) {
+			$token = BasicAuth::getCurrentApplicationToken();
+		}
+
+		return $token;
+	}
+
+	/**
+	 * Get current user id, returns 0 if not logged in
+	 *
+	 * @return int User ID
+	 */
+	public static function getCurrentUserID()
+	{
+		$uid = OAuth::getCurrentUserID();
+
+		if (empty($uid)) {
+			$uid = BasicAuth::getCurrentUserID(false);
+		}
+
+		return (int)$uid;
+	}
+
+	/**
+	 * Check if the provided scope does exist.
+	 * halts execution on missing scope or when not logged in.
+	 *
+	 * @param string $scope the requested scope (read, write, follow, push)
+	 */
+	public static function checkAllowedScope(string $scope)
+	{
+		$token = self::getCurrentApplication();
+
+		if (empty($token)) {
+			Logger::notice('Empty application token');
+			DI::mstdnError()->Forbidden();
+		}
+
+		if (!isset($token[$scope])) {
+			Logger::warning('The requested scope does not exist', ['scope' => $scope, 'application' => $token]);
+			DI::mstdnError()->Forbidden();
+		}
+
+		if (empty($token[$scope])) {
+			Logger::warning('The requested scope is not allowed', ['scope' => $scope, 'application' => $token]);
+			DI::mstdnError()->Forbidden();
+		}
+	}
+
+	public static function checkThrottleLimit()
+	{
+		$uid = self::getCurrentUserID();
+
+		// Check for throttling (maximum posts per day, week and month)
+		$throttle_day = DI::config()->get('system', 'throttle_limit_day');
+		if ($throttle_day > 0) {
+			$datefrom = date(DateTimeFormat::MYSQL, time() - 24*60*60);
+
+			$condition = ["`gravity` = ? AND `uid` = ? AND `wall` AND `received` > ?", Item::GRAVITY_PARENT, $uid, $datefrom];
+			$posts_day = Post::countThread($condition);
+
+			if ($posts_day > $throttle_day) {
+				Logger::notice('Daily posting limit reached', ['uid' => $uid, 'posts' => $posts_day, 'limit' => $throttle_day]);
+				$error = DI::l10n()->t('Too Many Requests');
+				$error_description = DI::l10n()->tt("Daily posting limit of %d post reached. The post was rejected.", "Daily posting limit of %d posts reached. The post was rejected.", $throttle_day);
+				$errorobj = new \Friendica\Object\Api\Mastodon\Error($error, $error_description);
+				System::jsonError(429, $errorobj->toArray());
+			}
+		}
+
+		$throttle_week = DI::config()->get('system', 'throttle_limit_week');
+		if ($throttle_week > 0) {
+			$datefrom = date(DateTimeFormat::MYSQL, time() - 24*60*60*7);
+
+			$condition = ["`gravity` = ? AND `uid` = ? AND `wall` AND `received` > ?", Item::GRAVITY_PARENT, $uid, $datefrom];
+			$posts_week = Post::countThread($condition);
+
+			if ($posts_week > $throttle_week) {
+				Logger::notice('Weekly posting limit reached', ['uid' => $uid, 'posts' => $posts_week, 'limit' => $throttle_week]);
+				$error = DI::l10n()->t('Too Many Requests');
+				$error_description = DI::l10n()->tt("Weekly posting limit of %d post reached. The post was rejected.", "Weekly posting limit of %d posts reached. The post was rejected.", $throttle_week);
+				$errorobj = new \Friendica\Object\Api\Mastodon\Error($error, $error_description);
+				System::jsonError(429, $errorobj->toArray());
+			}
+		}
+
+		$throttle_month = DI::config()->get('system', 'throttle_limit_month');
+		if ($throttle_month > 0) {
+			$datefrom = date(DateTimeFormat::MYSQL, time() - 24*60*60*30);
+
+			$condition = ["`gravity` = ? AND `uid` = ? AND `wall` AND `received` > ?", Item::GRAVITY_PARENT, $uid, $datefrom];
+			$posts_month = Post::countThread($condition);
+
+			if ($posts_month > $throttle_month) {
+				Logger::notice('Monthly posting limit reached', ['uid' => $uid, 'posts' => $posts_month, 'limit' => $throttle_month]);
+				$error = DI::l10n()->t('Too Many Requests');
+				$error_description = DI::l10n()->tt('Monthly posting limit of %d post reached. The post was rejected.', 'Monthly posting limit of %d posts reached. The post was rejected.', $throttle_month);
+				$errorobj = new \Friendica\Object\Api\Mastodon\Error($error, $error_description);
+				System::jsonError(429, $errorobj->toArray());
+			}
+		}
+	}
+
+	public static function getContactIDForSearchterm(string $screen_name = null, string $profileurl = null, int $cid = null, int $uid)
+	{
+		if (!empty($cid)) {
+			return $cid;
+		}
+
+		if (!empty($profileurl)) {
+			return Contact::getIdForURL($profileurl);
+		}
+
+		if (empty($cid) && !empty($screen_name)) {
+			if (strpos($screen_name, '@') !== false) {
+				return Contact::getIdForURL($screen_name, 0, false);
+			}
+
+			$user = User::getByNickname($screen_name, ['uid']);
+			if (!empty($user['uid'])) {
+				return Contact::getPublicIdByUserId($user['uid']);
+			}
+		}
+
+		if ($uid != 0) {
+			return Contact::getPublicIdByUserId($uid);
+		}
+
+		return null;
 	}
 }

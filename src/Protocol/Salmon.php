@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,10 +23,13 @@ namespace Friendica\Protocol;
 
 use Friendica\Core\Logger;
 use Friendica\DI;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
 use Friendica\Network\Probe;
+use Friendica\Protocol\Salmon\Format\Magic;
 use Friendica\Util\Crypto;
 use Friendica\Util\Strings;
 use Friendica\Util\XML;
+use phpseclib3\Crypt\PublicKeyLoader;
 
 /**
  * Salmon Protocol class
@@ -39,14 +42,14 @@ class Salmon
 	/**
 	 * @param string $uri     Uniform Resource Identifier
 	 * @param string $keyhash encoded key
-	 * @return mixed
+	 * @return string Key or empty string on any errors
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function getKey($uri, $keyhash)
+	public static function getKey(string $uri, string $keyhash): string
 	{
 		$ret = [];
 
-		Logger::log('Fetching salmon key for '.$uri);
+		Logger::info('Fetching salmon key for '.$uri);
 
 		$arr = Probe::lrdd($uri);
 
@@ -72,7 +75,8 @@ class Salmon
 						$ret[$x] = substr($ret[$x], 5);
 					}
 				} elseif (Strings::normaliseLink($ret[$x]) == 'http://') {
-					$ret[$x] = DI::httpRequest()->fetch($ret[$x]);
+					$ret[$x] = DI::httpClient()->fetch($ret[$x], HttpClientAccept::MAGIC_KEY);
+					Logger::debug('Fetched public key', ['url' => $ret[$x]]);
 				}
 			}
 		}
@@ -81,13 +85,13 @@ class Salmon
 		Logger::notice('Key located', ['ret' => $ret]);
 
 		if (count($ret) == 1) {
-			// We only found one one key so we don't care if the hash matches.
-			// If it's the wrong key we'll find out soon enough because
-			// message verification will fail. This also covers some older
-			// software which don't supply a keyhash. As long as they only
-			// have one key we'll be right.
-
-			return $ret[0];
+			/* We only found one key so we don't care if the hash matches.
+			 * If it's the wrong key we'll find out soon enough because
+			 * message verification will fail. This also covers some older
+			 * software which don't supply a keyhash. As long as they only
+			 * have one key we'll be right.
+			 */
+			return (string) $ret[0];
 		} else {
 			foreach ($ret as $a) {
 				$hash = Strings::base64UrlEncode(hash('sha256', $a));
@@ -107,21 +111,21 @@ class Salmon
 	 * @return integer
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function slapper($owner, $url, $slap)
+	public static function slapper(array $owner, string $url, string $slap): int
 	{
 		// does contact have a salmon endpoint?
 
 		if (!strlen($url)) {
-			return;
+			return -1;
 		}
 
 		if (!$owner['sprvkey']) {
-			Logger::log(sprintf("user '%s' (%d) does not have a salmon private key. Send failed.",
+			Logger::notice(sprintf("user '%s' (%d) does not have a salmon private key. Send failed.",
 			$owner['name'], $owner['uid']));
-			return;
+			return -1;
 		}
 
-		Logger::log('slapper called for '.$url.'. Data: ' . $slap);
+		Logger::info('slapper called for '.$url.'. Data: ' . $slap);
 
 		// create a magic envelope
 
@@ -143,21 +147,25 @@ class Salmon
 		$signature3  = Strings::base64UrlEncode(Crypto::rsaSign($data, $owner['sprvkey']));
 
 		// At first try the non compliant method that works for GNU Social
-		$xmldata = ["me:env" => ["me:data" => $data,
-				"@attributes" => ["type" => $data_type],
-				"me:encoding" => $encoding,
-				"me:alg" => $algorithm,
-				"me:sig" => $signature,
-				"@attributes2" => ["key_id" => $keyhash]]];
+		$xmldata = [
+			'me:env' => [
+				'me:data' => $data,
+				'@attributes' => ['type' => $data_type],
+				'me:encoding' => $encoding,
+				'me:alg' => $algorithm,
+				'me:sig' => $signature,
+				'@attributes2' => ['key_id' => $keyhash],
+			]
+		];
 
-		$namespaces = ["me" => "http://salmon-protocol.org/ns/magic-env"];
+		$namespaces = ['me' => ActivityNamespace::SALMON_ME];
 
-		$salmon = XML::fromArray($xmldata, $xml, false, $namespaces);
+		$salmon = XML::fromArray($xmldata, $dummy, false, $namespaces);
 
 		// slap them
-		$postResult = DI::httpRequest()->post($url, $salmon, [
-			'Content-type: application/magic-envelope+xml',
-			'Content-length: ' . strlen($salmon)
+		$postResult = DI::httpClient()->post($url, $salmon, [
+			'Content-type' => 'application/magic-envelope+xml',
+			'Content-length' => strlen($salmon),
 		]);
 
 		$return_code = $postResult->getReturnCode();
@@ -165,57 +173,61 @@ class Salmon
 		// check for success, e.g. 2xx
 
 		if ($return_code > 299) {
-			Logger::log('GNU Social salmon failed. Falling back to compliant mode');
+			Logger::notice('GNU Social salmon failed. Falling back to compliant mode');
 
 			// Now try the compliant mode that normally isn't used for GNU Social
-			$xmldata = ["me:env" => ["me:data" => $data,
-					"@attributes" => ["type" => $data_type],
-					"me:encoding" => $encoding,
-					"me:alg" => $algorithm,
-					"me:sig" => $signature2,
-					"@attributes2" => ["key_id" => $keyhash]]];
+			$xmldata = [
+				'me:env' => [
+					'me:data' => $data,
+					'@attributes' => ['type' => $data_type],
+					'me:encoding' => $encoding,
+					'me:alg' => $algorithm,
+					'me:sig' => $signature2,
+					'@attributes2' => ['key_id' => $keyhash]
+				]
+			];
 
-			$namespaces = ["me" => "http://salmon-protocol.org/ns/magic-env"];
-
-			$salmon = XML::fromArray($xmldata, $xml, false, $namespaces);
+			$salmon = XML::fromArray($xmldata, $dummy, false, $namespaces);
 
 			// slap them
-			$postResult = DI::httpRequest()->post($url, $salmon, [
-				'Content-type: application/magic-envelope+xml',
-				'Content-length: ' . strlen($salmon)
+			$postResult = DI::httpClient()->post($url, $salmon, [
+				'Content-type' => 'application/magic-envelope+xml',
+				'Content-length' => strlen($salmon),
 			]);
 			$return_code = $postResult->getReturnCode();
 		}
 
 		if ($return_code > 299) {
-			Logger::log('compliant salmon failed. Falling back to old status.net');
+			Logger::notice('compliant salmon failed. Falling back to old status.net');
 
 			// Last try. This will most likely fail as well.
-			$xmldata = ["me:env" => ["me:data" => $data,
-					"@attributes" => ["type" => $data_type],
-					"me:encoding" => $encoding,
-					"me:alg" => $algorithm,
-					"me:sig" => $signature3,
-					"@attributes2" => ["key_id" => $keyhash]]];
+			$xmldata = [
+				'me:env' => [
+					'me:data' => $data,
+					'@attributes' => ['type' => $data_type],
+					'me:encoding' => $encoding,
+					'me:alg' => $algorithm,
+					'me:sig' => $signature3,
+					'@attributes2' => ['key_id' => $keyhash],
+				]
+			];
 
-			$namespaces = ["me" => "http://salmon-protocol.org/ns/magic-env"];
-
-			$salmon = XML::fromArray($xmldata, $xml, false, $namespaces);
+			$salmon = XML::fromArray($xmldata, $dummy, false, $namespaces);
 
 			// slap them
-			$postResult = DI::httpRequest()->post($url, $salmon, [
-				'Content-type: application/magic-envelope+xml',
-				'Content-length: ' . strlen($salmon)]);
+			$postResult = DI::httpClient()->post($url, $salmon, [
+				'Content-type' => 'application/magic-envelope+xml',
+				'Content-length' => strlen($salmon)]);
 			$return_code = $postResult->getReturnCode();
 		}
 
-		Logger::log('slapper for '.$url.' returned ' . $return_code);
+		Logger::info('slapper for '.$url.' returned ' . $return_code);
 
 		if (! $return_code) {
 			return -1;
 		}
 
-		if (($return_code == 503) && (stristr($postResult->getHeader(), 'retry-after'))) {
+		if (($return_code == 503) && $postResult->inHeader('retry-after')) {
 			return -1;
 		}
 
@@ -227,9 +239,21 @@ class Salmon
 	 * @return string
 	 * @throws \Exception
 	 */
-	public static function salmonKey($pubkey)
+	public static function salmonKey(string $pubkey): string
 	{
-		Crypto::pemToMe($pubkey, $modulus, $exponent);
-		return 'RSA' . '.' . Strings::base64UrlEncode($modulus, true) . '.' . Strings::base64UrlEncode($exponent, true);
+		\phpseclib3\Crypt\RSA::addFileFormat(Magic::class);
+
+		return PublicKeyLoader::load($pubkey)->toString('Magic');
+	}
+
+	/**
+	 * @param string $magic Magic key format starting with "RSA."
+	 * @return string
+	 */
+	public static function magicKeyToPem(string $magic): string
+	{
+		\phpseclib3\Crypt\RSA::addFileFormat(Magic::class);
+
+		return (string) PublicKeyLoader::load($magic);
 	}
 }

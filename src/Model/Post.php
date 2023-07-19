@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -26,7 +26,7 @@ use Friendica\Core\Logger;
 use Friendica\Core\System;
 use Friendica\Database\Database;
 use Friendica\Database\DBA;
-use Friendica\Database\DBStructure;
+use Friendica\DI;
 use Friendica\Protocol\Activity;
 
 class Post
@@ -39,13 +39,13 @@ class Post
 	 * @return int    ID of inserted post
 	 * @throws \Exception
 	 */
-	public static function insert(int $uri_id, array $data = [])
+	public static function insert(int $uri_id, array $data = []): int
 	{
 		if (empty($uri_id)) {
 			throw new BadMethodCallException('Empty URI_id');
 		}
 
-		$fields = DBStructure::getFieldsForTable('post', $data);
+		$fields = DI::dbaDefinition()->truncateFieldsForTable('post', $data);
 
 		// Additionally assign the key fields
 		$fields['uri-id'] = $uri_id;
@@ -102,41 +102,43 @@ class Post
 	}
 
 	/**
-	 * Fills an array with data from an post query
+	 * Fills an array with data from a post query
 	 *
-	 * @param object $stmt statement object
-	 * @param bool   $do_close
+	 * @param object|bool $stmt Return value from Database->select
 	 * @return array Data array
+	 * @throws \Exception
 	 */
-	public static function toArray($stmt, $do_close = true) {
+	public static function toArray($stmt): array
+	{
 		if (is_bool($stmt)) {
-			return $stmt;
+			return [];
 		}
 
 		$data = [];
 		while ($row = self::fetch($stmt)) {
 			$data[] = $row;
 		}
-		if ($do_close) {
-			DBA::close($stmt);
-		}
+
+		DBA::close($stmt);
+
 		return $data;
 	}
 
 	/**
-	 * Check if post data exists
+	 * Check if post-user-view records exists
 	 *
 	 * @param array $condition array of fields for condition
 	 *
 	 * @return boolean Are there rows for that condition?
 	 * @throws \Exception
 	 */
-	public static function exists($condition) {
+	public static function exists(array $condition): bool
+	{
 		return DBA::exists('post-user-view', $condition);
 	}
 
 	/**
-	 * Counts the posts satisfying the provided condition
+	 * Counts the post-user-view records satisfying the provided condition
 	 *
 	 * @param array        $condition array of fields for condition
 	 * @param array        $params    Array of several parameters
@@ -151,22 +153,65 @@ class Post
 	 * $count = Post::count($condition);
 	 * @throws \Exception
 	 */
-	public static function count(array $condition = [], array $params = [])
+	public static function count(array $condition = [], array $params = []): int
 	{
 		return DBA::count('post-user-view', $condition, $params);
 	}
 
 	/**
-	 * Retrieve a single record from the post table and returns it in an associative array
+	 * Counts the post-thread-user-view records satisfying the provided condition
+	 *
+	 * @param array        $condition array of fields for condition
+	 * @param array        $params    Array of several parameters
+	 *
+	 * @return int
+	 *
+	 * Example:
+	 * $condition = ["uid" => 1, "network" => 'dspr'];
+	 * or:
+	 * $condition = ["`uid` = ? AND `network` IN (?, ?)", 1, 'dfrn', 'dspr'];
+	 *
+	 * $count = Post::count($condition);
+	 * @throws \Exception
+	 */
+	public static function countThread(array $condition = [], array $params = []): int
+	{
+		return DBA::count('post-thread-user-view', $condition, $params);
+	}
+
+	/**
+	 * Counts the post-view records satisfying the provided condition
+	 *
+	 * @param array        $condition array of fields for condition
+	 * @param array        $params    Array of several parameters
+	 *
+	 * @return int
+	 *
+	 * Example:
+	 * $condition = ["network" => 'dspr'];
+	 * or:
+	 * $condition = ["`network` IN (?, ?)", 1, 'dfrn', 'dspr'];
+	 *
+	 * $count = Post::count($condition);
+	 * @throws \Exception
+	 */
+	public static function countPosts(array $condition = [], array $params = []): int
+	{
+		return DBA::count('post-view', $condition, $params);
+	}
+
+	/**
+	 * Retrieve a single record from the post-user-view view and returns it in an associative array
 	 *
 	 * @param array $fields
 	 * @param array $condition
 	 * @param array $params
+	 * @param bool  $user_mode true = post-user-view, false = post-view
 	 * @return bool|array
 	 * @throws \Exception
 	 * @see   DBA::select
 	 */
-	public static function selectFirst(array $fields = [], array $condition = [], $params = [])
+	public static function selectFirst(array $fields = [], array $condition = [], array $params = [])
 	{
 		$params['limit'] = 1;
 
@@ -182,7 +227,47 @@ class Post
 	}
 
 	/**
-	 * Retrieve a single record from the post-thread table and returns it in an associative array
+	 * Retrieve a single record from the post-user-view view and returns it in an associative array
+	 * When the requested record is a reshare activity, the system fetches the reshared original post.
+	 * Otherwise the function reacts similar to selectFirst
+	 *
+	 * @param array $fields
+	 * @param array $condition
+	 * @param array $params
+	 * @param bool  $user_mode true = post-user-view, false = post-view
+	 * @return bool|array
+	 * @throws \Exception
+	 * @see   DBA::select
+	 */
+	public static function selectOriginal(array $fields = [], array $condition = [], array $params = [])
+	{
+		$original_fields = $fields;
+		$remove = [];
+		if (!empty($fields)) {
+			foreach (['gravity', 'verb', 'thr-parent-id', 'uid'] as $field) {
+				if (!in_array($field, $fields)) {
+					$fields[] = $field;
+					$remove[] = $field;
+				}
+			}
+		}
+		$result = self::selectFirst($fields, $condition, $params);
+		if (empty($result)) {
+			return $result;
+		}
+
+		if (($result['gravity'] != Item::GRAVITY_ACTIVITY) || ($result['verb'] != Activity::ANNOUNCE)) {
+			foreach ($remove as $field) {
+				unset($result[$field]);
+			}
+			return $result;
+		}
+
+		return self::selectFirst($original_fields, ['uri-id' => $result['thr-parent-id'], 'uid' => [0, $result['uid']]], $params);
+	}
+
+	/**
+	 * Retrieve a single record from the post-view view and returns it in an associative array
 	 *
 	 * @param array $fields
 	 * @param array $condition
@@ -191,7 +276,32 @@ class Post
 	 * @throws \Exception
 	 * @see   DBA::select
 	 */
-	public static function selectFirstThread(array $fields = [], array $condition = [], $params = [])
+	public static function selectFirstPost(array $fields = [], array $condition = [], array $params = [])
+	{
+		$params['limit'] = 1;
+
+		$result = self::selectPosts($fields, $condition, $params);
+
+		if (is_bool($result)) {
+			return $result;
+		} else {
+			$row = self::fetch($result);
+			DBA::close($result);
+			return $row;
+		}
+	}
+
+	/**
+	 * Retrieve a single record from the post-thread-user-view view and returns it in an associative array
+	 *
+	 * @param array $fields
+	 * @param array $condition
+	 * @param array $params
+	 * @return bool|array
+	 * @throws \Exception
+	 * @see   DBA::select
+	 */
+	public static function selectFirstThread(array $fields = [], array $condition = [], array $params = [])
 	{
 		$params['limit'] = 1;
 
@@ -207,7 +317,7 @@ class Post
 	}
 
 	/**
-	 * Select rows from the post table and returns them as an array
+	 * Select rows from the post-user-view view and returns them as an array
 	 *
 	 * @param array $selected  Array of selected fields, empty for all
 	 * @param array $condition Array of fields for condition
@@ -216,7 +326,7 @@ class Post
 	 * @return array
 	 * @throws \Exception
 	 */
-	public static function selectToArray(array $fields = [], array $condition = [], $params = [])
+	public static function selectToArray(array $fields = [], array $condition = [], array $params = [])
 	{
 		$result = self::select($fields, $condition, $params);
 
@@ -244,7 +354,7 @@ class Post
 	 * @return boolean|object
 	 * @throws \Exception
 	 */
-	private static function selectView(string $view, array $selected = [], array $condition = [], $params = [])
+	private static function selectView(string $view, array $selected = [], array $condition = [], array $params = [])
 	{
 		if (empty($selected)) {
 			$selected = array_merge(Item::DISPLAY_FIELDLIST, Item::ITEM_FIELDLIST);
@@ -260,7 +370,7 @@ class Post
 	}
 
 	/**
-	 * Select rows from the post table
+	 * Select rows from the post-user-view view
 	 *
 	 * @param array $selected  Array of selected fields, empty for all
 	 * @param array $condition Array of fields for condition
@@ -269,13 +379,13 @@ class Post
 	 * @return boolean|object
 	 * @throws \Exception
 	 */
-	public static function select(array $selected = [], array $condition = [], $params = [])
+	public static function select(array $selected = [], array $condition = [], array $params = [])
 	{
 		return self::selectView('post-user-view', $selected, $condition, $params);
 	}
 
 	/**
-	 * Select rows from the post table
+	 * Select rows from the post-view view
 	 *
 	 * @param array $selected  Array of selected fields, empty for all
 	 * @param array $condition Array of fields for condition
@@ -284,9 +394,39 @@ class Post
 	 * @return boolean|object
 	 * @throws \Exception
 	 */
-	public static function selectThread(array $selected = [], array $condition = [], $params = [])
+	public static function selectPosts(array $selected = [], array $condition = [], array $params = [])
+	{
+		return self::selectView('post-view', $selected, $condition, $params);
+	}
+
+	/**
+	 * Select rows from the post-thread-user-view view
+	 *
+	 * @param array $selected  Array of selected fields, empty for all
+	 * @param array $condition Array of fields for condition
+	 * @param array $params    Array of several parameters
+	 *
+	 * @return boolean|object
+	 * @throws \Exception
+	 */
+	public static function selectThread(array $selected = [], array $condition = [], array $params = [])
 	{
 		return self::selectView('post-thread-user-view', $selected, $condition, $params);
+	}
+
+	/**
+	 * Select rows from the post-thread-view view
+	 *
+	 * @param array $selected  Array of selected fields, empty for all
+	 * @param array $condition Array of fields for condition
+	 * @param array $params    Array of several parameters
+	 *
+	 * @return boolean|object
+	 * @throws \Exception
+	 */
+	public static function selectPostThread(array $selected = [], array $condition = [], array $params = [])
+	{
+		return self::selectView('post-thread-view', $selected, $condition, $params);
 	}
 
 	/**
@@ -301,7 +441,7 @@ class Post
 	 * @return boolean|object
 	 * @throws \Exception
 	 */
-	private static function selectViewForUser(string $view, $uid, array $selected = [], array $condition = [], $params = [])
+	private static function selectViewForUser(string $view, int $uid, array $selected = [], array $condition = [], array $params = [])
 	{
 		if (empty($selected)) {
 			$selected = Item::DISPLAY_FIELDLIST;
@@ -312,18 +452,18 @@ class Post
 			AND NOT `author-blocked` AND NOT `owner-blocked`
 			AND (NOT `causer-blocked` OR `causer-id` = ? OR `causer-id` IS NULL) AND NOT `contact-blocked`
 			AND ((NOT `contact-readonly` AND NOT `contact-pending` AND (`contact-rel` IN (?, ?)))
-				OR `self` OR `gravity` != ? OR `contact-uid` = ?)
-			AND NOT EXISTS (SELECT `uri-id` FROM `post-user` WHERE `uid` = ? AND `uri-id` = `" . $view . "`.`uri-id` AND `hidden`)
-			AND NOT EXISTS (SELECT `cid` FROM `user-contact` WHERE `uid` = ? AND `cid` = `author-id` AND `blocked`)
-			AND NOT EXISTS (SELECT `cid` FROM `user-contact` WHERE `uid` = ? AND `cid` = `owner-id` AND `blocked`)
-			AND NOT EXISTS (SELECT `cid` FROM `user-contact` WHERE `uid` = ? AND `cid` = `author-id` AND `ignored` AND `gravity` = ?)
-			AND NOT EXISTS (SELECT `cid` FROM `user-contact` WHERE `uid` = ? AND `cid` = `owner-id` AND `ignored` AND `gravity` = ?)",
-			0, Contact::SHARING, Contact::FRIEND, GRAVITY_PARENT, 0, $uid, $uid, $uid, $uid, GRAVITY_PARENT, $uid, GRAVITY_PARENT]);
+				OR `self` OR `contact-uid` = ?)
+			AND NOT `" . $view . "`.`uri-id` IN (SELECT `uri-id` FROM `post-user` WHERE `uid` = ? AND `hidden`)
+			AND NOT `author-id` IN (SELECT `cid` FROM `user-contact` WHERE `uid` = ? AND `blocked` AND `cid` = `author-id`)
+			AND NOT `owner-id` IN (SELECT `cid` FROM `user-contact` WHERE `uid` = ? AND `blocked` AND `cid` = `owner-id`)
+			AND NOT `author-id` IN (SELECT `cid` FROM `user-contact` WHERE `uid` = ? AND `ignored` AND `cid` = `author-id`)
+			AND NOT `owner-id` IN (SELECT `cid` FROM `user-contact` WHERE `uid` = ? AND `ignored` AND `cid` = `owner-id`)",
+				0, Contact::SHARING, Contact::FRIEND, 0, $uid, $uid, $uid, $uid, $uid]);
 
 		$select_string = implode(', ', array_map([DBA::class, 'quoteIdentifier'], $selected));
 
 		$condition_string = DBA::buildCondition($condition);
-		$param_string = DBA::buildParameter($params);
+		$param_string     = DBA::buildParameter($params);
 
 		$sql = "SELECT " . $select_string . " FROM `" . $view . "` " . $condition_string . $param_string;
 		$sql = DBA::cleanQuery($sql);
@@ -332,7 +472,7 @@ class Post
 	}
 
 	/**
-	 * Select rows from the post view for a given user
+	 * Select rows from the post-user-view view for a given user
 	 *
 	 * @param integer $uid       User ID
 	 * @param array   $selected  Array of selected fields, empty for all
@@ -342,13 +482,13 @@ class Post
 	 * @return boolean|object
 	 * @throws \Exception
 	 */
-	public static function selectForUser($uid, array $selected = [], array $condition = [], $params = [])
+	public static function selectForUser(int $uid, array $selected = [], array $condition = [], array $params = [])
 	{
 		return self::selectViewForUser('post-user-view', $uid, $selected, $condition, $params);
 	}
 
-		/**
-	 * Select rows from the post view for a given user
+	/**
+	 * Select rows from the post-view view for a given user
 	 *
 	 * @param integer $uid       User ID
 	 * @param array   $selected  Array of selected fields, empty for all
@@ -358,13 +498,29 @@ class Post
 	 * @return boolean|object
 	 * @throws \Exception
 	 */
-	public static function selectThreadForUser($uid, array $selected = [], array $condition = [], $params = [])
+	public static function selectPostsForUser(int $uid, array $selected = [], array $condition = [], array $params = [])
+	{
+		return self::selectViewForUser('post-view', $uid, $selected, $condition, $params);
+	}
+
+	/**
+	 * Select rows from the post-thread-user-view view for a given user
+	 *
+	 * @param integer $uid       User ID
+	 * @param array   $selected  Array of selected fields, empty for all
+	 * @param array   $condition Array of fields for condition
+	 * @param array   $params    Array of several parameters
+	 *
+	 * @return boolean|object
+	 * @throws \Exception
+	 */
+	public static function selectThreadForUser(int $uid, array $selected = [], array $condition = [], array $params = [])
 	{
 		return self::selectViewForUser('post-thread-user-view', $uid, $selected, $condition, $params);
 	}
 
 	/**
-	 * Retrieve a single record from the post view for a given user and returns it in an associative array
+	 * Retrieve a single record from the post-user-view view for a given user and returns it in an associative array
 	 *
 	 * @param integer $uid User ID
 	 * @param array   $selected
@@ -374,7 +530,7 @@ class Post
 	 * @throws \Exception
 	 * @see   DBA::select
 	 */
-	public static function selectFirstForUser($uid, array $selected = [], array $condition = [], $params = [])
+	public static function selectFirstForUser(int $uid, array $selected = [], array $condition = [], array $params = [])
 	{
 		$params['limit'] = 1;
 
@@ -390,36 +546,43 @@ class Post
 	}
 
 	/**
-	 * Select pinned rows from the item table for a given user
+	 * Retrieve a single record from the post-user-view view for a given user and returns it in an associative array
+	 * When the requested record is a reshare activity, the system fetches the reshared original post.
+	 * Otherwise the function reacts similar to selectFirstForUser
 	 *
-	 * @param integer $uid       User ID
-	 * @param array   $selected  Array of selected fields, empty for all
-	 * @param array   $condition Array of fields for condition
-	 * @param array   $params    Array of several parameters
-	 *
-	 * @return boolean|object
+	 * @param integer $uid User ID
+	 * @param array   $selected
+	 * @param array   $condition
+	 * @param array   $params
+	 * @return bool|array
 	 * @throws \Exception
+	 * @see   DBA::select
 	 */
-	public static function selectPinned(int $uid, array $selected = [], array $condition = [], $params = [])
+	public static function selectOriginalForUser(int $uid, array $selected = [], array $condition = [], array $params = [])
 	{
-		$postthreaduser = DBA::select('post-thread-user', ['uri-id'], ['uid' => $uid, 'pinned' => true]);
-		if (!DBA::isResult($postthreaduser)) {
-			return $postthreaduser;
+		$original_selected = $selected;
+		$remove = [];
+		if (!empty($selected)) {
+			foreach (['gravity', 'verb', 'thr-parent-id'] as $field) {
+				if (!in_array($field, $selected)) {
+					$selected[] = $field;
+					$remove[]   = $field;
+				}
+			}
 		}
-	
-		$pinned = [];
-		while ($useritem = DBA::fetch($postthreaduser)) {
-			$pinned[] = $useritem['uri-id'];
-		}
-		DBA::close($postthreaduser);
-
-		if (empty($pinned)) {
-			return [];
+		$result = self::selectFirstForUser($uid, $selected, $condition, $params);
+		if (empty($result)) {
+			return $result;
 		}
 
-		$condition = DBA::mergeConditions(['uri-id' => $pinned, 'uid' => $uid, 'gravity' => GRAVITY_PARENT], $condition);
+		if (($result['gravity'] != Item::GRAVITY_ACTIVITY) || ($result['verb'] != Activity::ANNOUNCE)) {
+			foreach ($remove as $field) {
+				unset($result[$field]);
+			}
+			return $result;
+		}
 
-		return self::selectForUser($uid, $selected, $condition, $params);
+		return self::selectFirstForUser($uid, $original_selected, ['uri-id' => $result['thr-parent-id'], 'uid' => [0, $uid]], $params);
 	}
 
 	/**
@@ -437,7 +600,7 @@ class Post
 	{
 		$affected = 0;
 
-		Logger::info('Start Update', ['fields' => $fields, 'condition' => $condition, 'uid' => local_user(),'callstack' => System::callstack(10)]);
+		Logger::info('Start Update', ['fields' => $fields, 'condition' => $condition, 'uid' => DI::userSession()->getLocalUserId(),'callstack' => System::callstack(10)]);
 
 		// Don't allow changes to fields that are responsible for the relation between the records
 		unset($fields['id']);
@@ -450,20 +613,20 @@ class Post
 		unset($fields['parent-uri']);
 		unset($fields['parent-uri-id']);
 
-		$thread_condition = DBA::mergeConditions($condition, ['gravity' => GRAVITY_PARENT]);
+		$thread_condition = DBA::mergeConditions($condition, ['gravity' => Item::GRAVITY_PARENT]);
 
 		// To ensure the data integrity we do it in an transaction
 		DBA::transaction();
 
-		$update_fields = DBStructure::getFieldsForTable('post-user', $fields);
+		$update_fields = DI::dbaDefinition()->truncateFieldsForTable('post-user', $fields);
 		if (!empty($update_fields)) {
 			$affected_count = 0;
-			$posts = DBA::select('post-user-view', ['post-user-id'], $condition);
+			$posts          = DBA::select('post-user-view', ['post-user-id'], $condition);
 			while ($rows = DBA::toArray($posts, false, 100)) {
 				$puids = array_column($rows, 'post-user-id');
 				if (!DBA::update('post-user', $update_fields, ['id' => $puids])) {
 					DBA::rollback();
-					Logger::notice('Updating post-user failed', ['fields' => $update_fields, 'condition' => $condition]);
+					Logger::warning('Updating post-user failed', ['fields' => $update_fields, 'condition' => $condition]);
 					return false;
 				}
 				$affected_count += DBA::affectedRows();
@@ -472,15 +635,15 @@ class Post
 			$affected = $affected_count;
 		}
 
-		$update_fields = DBStructure::getFieldsForTable('post-content', $fields);
+		$update_fields = DI::dbaDefinition()->truncateFieldsForTable('post-content', $fields);
 		if (!empty($update_fields)) {
 			$affected_count = 0;
-			$posts = DBA::select('post-user-view', ['uri-id'], $condition, ['group_by' => ['uri-id']]);
+			$posts          = DBA::select('post-user-view', ['uri-id'], $condition, ['group_by' => ['uri-id']]);
 			while ($rows = DBA::toArray($posts, false, 100)) {
 				$uriids = array_column($rows, 'uri-id');
 				if (!DBA::update('post-content', $update_fields, ['uri-id' => $uriids])) {
 					DBA::rollback();
-					Logger::notice('Updating post-content failed', ['fields' => $update_fields, 'condition' => $condition]);
+					Logger::warning('Updating post-content failed', ['fields' => $update_fields, 'condition' => $condition]);
 					return false;
 				}
 				$affected_count += DBA::affectedRows();
@@ -489,15 +652,21 @@ class Post
 			$affected = max($affected, $affected_count);
 		}
 
-		$update_fields = DBStructure::getFieldsForTable('post', $fields);
+		$update_fields = DI::dbaDefinition()->truncateFieldsForTable('post', $fields);
 		if (!empty($update_fields)) {
 			$affected_count = 0;
-			$posts = DBA::select('post-user-view', ['uri-id'], $condition, ['group_by' => ['uri-id']]);
+			$posts          = DBA::select('post-user-view', ['uri-id'], $condition, ['group_by' => ['uri-id']]);
 			while ($rows = DBA::toArray($posts, false, 100)) {
 				$uriids = array_column($rows, 'uri-id');
+
+				// Only delete the "post" entry when all "post-user" entries are deleted
+				if (!empty($update_fields['deleted']) && DBA::exists('post-user', ['uri-id' => $uriids, 'deleted' => false])) {
+					unset($update_fields['deleted']);
+				}
+
 				if (!DBA::update('post', $update_fields, ['uri-id' => $uriids])) {
 					DBA::rollback();
-					Logger::notice('Updating post failed', ['fields' => $update_fields, 'condition' => $condition]);
+					Logger::warning('Updating post failed', ['fields' => $update_fields, 'condition' => $condition]);
 					return false;
 				}
 				$affected_count += DBA::affectedRows();
@@ -509,12 +678,12 @@ class Post
 		$update_fields = Post\DeliveryData::extractFields($fields);
 		if (!empty($update_fields)) {
 			$affected_count = 0;
-			$posts = DBA::select('post-user-view', ['uri-id'], $condition, ['group_by' => ['uri-id']]);
+			$posts          = DBA::select('post-user-view', ['uri-id'], $condition, ['group_by' => ['uri-id']]);
 			while ($rows = DBA::toArray($posts, false, 100)) {
 				$uriids = array_column($rows, 'uri-id');
 				if (!DBA::update('post-delivery-data', $update_fields, ['uri-id' => $uriids])) {
 					DBA::rollback();
-					Logger::notice('Updating post-delivery-data failed', ['fields' => $update_fields, 'condition' => $condition]);
+					Logger::warning('Updating post-delivery-data failed', ['fields' => $update_fields, 'condition' => $condition]);
 					return false;
 				}
 				$affected_count += DBA::affectedRows();
@@ -523,15 +692,15 @@ class Post
 			$affected = max($affected, $affected_count);
 		}
 
-		$update_fields = DBStructure::getFieldsForTable('post-thread', $fields);
+		$update_fields = DI::dbaDefinition()->truncateFieldsForTable('post-thread', $fields);
 		if (!empty($update_fields)) {
 			$affected_count = 0;
-			$posts = DBA::select('post-user-view', ['uri-id'], $thread_condition, ['group_by' => ['uri-id']]);
+			$posts          = DBA::select('post-user-view', ['uri-id'], $thread_condition, ['group_by' => ['uri-id']]);
 			while ($rows = DBA::toArray($posts, false, 100)) {
 				$uriids = array_column($rows, 'uri-id');
 				if (!DBA::update('post-thread', $update_fields, ['uri-id' => $uriids])) {
 					DBA::rollback();
-					Logger::notice('Updating post-thread failed', ['fields' => $update_fields, 'condition' => $condition]);
+					Logger::warning('Updating post-thread failed', ['fields' => $update_fields, 'condition' => $condition]);
 					return false;
 				}
 				$affected_count += DBA::affectedRows();
@@ -540,15 +709,15 @@ class Post
 			$affected = max($affected, $affected_count);
 		}
 
-		$update_fields = DBStructure::getFieldsForTable('post-thread-user', $fields);
+		$update_fields = DI::dbaDefinition()->truncateFieldsForTable('post-thread-user', $fields);
 		if (!empty($update_fields)) {
 			$affected_count = 0;
-			$posts = DBA::select('post-user-view', ['post-user-id'], $thread_condition);
+			$posts          = DBA::select('post-user-view', ['post-user-id'], $thread_condition);
 			while ($rows = DBA::toArray($posts, false, 100)) {
 				$thread_puids = array_column($rows, 'post-user-id');
 				if (!DBA::update('post-thread-user', $update_fields, ['post-user-id' => $thread_puids])) {
 					DBA::rollback();
-					Logger::notice('Updating post-thread-user failed', ['fields' => $update_fields, 'condition' => $condition]);
+					Logger::warning('Updating post-thread-user failed', ['fields' => $update_fields, 'condition' => $condition]);
 					return false;
 				}
 				$affected_count += DBA::affectedRows();
@@ -574,7 +743,7 @@ class Post
 	 * @return boolean was the delete successful?
 	 * @throws \Exception
 	 */
-	public static function delete(array $conditions, array $options = [])
+	public static function delete(array $conditions, array $options = []): bool
 	{
 		return DBA::delete('post', $conditions, $options);
 	}

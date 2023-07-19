@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,11 +21,18 @@
 
 namespace Friendica\Module\Settings\TwoFactor;
 
+use Friendica\App;
+use Friendica\Core\L10n;
+use Friendica\Core\PConfig\Capability\IManagePersonalConfigValues;
 use Friendica\Core\Renderer;
+use Friendica\Core\Session\Capability\IHandleUserSessions;
 use Friendica\DI;
+use Friendica\Module\Response;
 use Friendica\Security\TwoFactor\Model\RecoveryCode;
 use Friendica\Module\BaseSettings;
 use Friendica\Module\Security\Login;
+use Friendica\Util\Profiler;
+use Psr\Log\LoggerInterface;
 
 /**
  * // Page 3: 2FA enabled but not verified, show recovery codes
@@ -34,27 +41,34 @@ use Friendica\Module\Security\Login;
  */
 class Recovery extends BaseSettings
 {
-	public static function init(array $parameters = [])
+	/** @var IManagePersonalConfigValues */
+	protected $pConfig;
+
+	public function __construct(IManagePersonalConfigValues $pConfig, IHandleUserSessions $session, App\Page $page, L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, Response $response, array $server, array $parameters = [])
 	{
-		if (!local_user()) {
+		parent::__construct($session, $page, $l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
+
+		$this->pConfig = $pConfig;
+
+		if (!DI::userSession()->getLocalUserId()) {
 			return;
 		}
 
-		$secret = DI::pConfig()->get(local_user(), '2fa', 'secret');
+		$secret = $this->pConfig->get(DI::userSession()->getLocalUserId(), '2fa', 'secret');
 
 		if (!$secret) {
-			DI::baseUrl()->redirect('settings/2fa');
+			$this->baseUrl->redirect('settings/2fa');
 		}
 
 		if (!self::checkFormSecurityToken('settings_2fa_password', 't')) {
-			notice(DI::l10n()->t('Please enter your password to access this page.'));
-			DI::baseUrl()->redirect('settings/2fa');
+			DI::sysmsg()->addNotice($this->t('Please enter your password to access this page.'));
+			$this->baseUrl->redirect('settings/2fa');
 		}
 	}
 
-	public static function post(array $parameters = [])
+	protected function post(array $request = [])
 	{
-		if (!local_user()) {
+		if (!DI::userSession()->getLocalUserId()) {
 			return;
 		}
 
@@ -62,41 +76,41 @@ class Recovery extends BaseSettings
 			self::checkFormSecurityTokenRedirectOnError('settings/2fa/recovery', 'settings_2fa_recovery');
 
 			if ($_POST['action'] == 'regenerate') {
-				RecoveryCode::regenerateForUser(local_user());
-				info(DI::l10n()->t('New recovery codes successfully generated.'));
-				DI::baseUrl()->redirect('settings/2fa/recovery?t=' . self::getFormSecurityToken('settings_2fa_password'));
+				RecoveryCode::regenerateForUser(DI::userSession()->getLocalUserId());
+				DI::sysmsg()->addInfo($this->t('New recovery codes successfully generated.'));
+				$this->baseUrl->redirect('settings/2fa/recovery?t=' . self::getFormSecurityToken('settings_2fa_password'));
 			}
 		}
 	}
 
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		if (!local_user()) {
+		if (!DI::userSession()->getLocalUserId()) {
 			return Login::form('settings/2fa/recovery');
 		}
 
-		parent::content($parameters);
+		parent::content();
 
-		if (!RecoveryCode::countValidForUser(local_user())) {
-			RecoveryCode::generateForUser(local_user());
+		if (!RecoveryCode::countValidForUser(DI::userSession()->getLocalUserId())) {
+			RecoveryCode::generateForUser(DI::userSession()->getLocalUserId());
 		}
 
-		$recoveryCodes = RecoveryCode::getListForUser(local_user());
+		$recoveryCodes = RecoveryCode::getListForUser(DI::userSession()->getLocalUserId());
 
-		$verified = DI::pConfig()->get(local_user(), '2fa', 'verified');
-		
+		$verified = $this->pConfig->get(DI::userSession()->getLocalUserId(), '2fa', 'verified');
+
 		return Renderer::replaceMacros(Renderer::getMarkupTemplate('settings/twofactor/recovery.tpl'), [
 			'$form_security_token'     => self::getFormSecurityToken('settings_2fa_recovery'),
 			'$password_security_token' => self::getFormSecurityToken('settings_2fa_password'),
 
-			'$title'              => DI::l10n()->t('Two-factor recovery codes'),
-			'$help_label'         => DI::l10n()->t('Help'),
-			'$message'            => DI::l10n()->t('<p>Recovery codes can be used to access your account in the event you lose access to your device and cannot receive two-factor authentication codes.</p><p><strong>Put these in a safe spot!</strong> If you lose your device and don’t have the recovery codes you will lose access to your account.</p>'),
+			'$title'              => $this->t('Two-factor recovery codes'),
+			'$help_label'         => $this->t('Help'),
+			'$message'            => $this->t('<p>Recovery codes can be used to access your account in the event you lose access to your device and cannot receive two-factor authentication codes.</p><p><strong>Put these in a safe spot!</strong> If you lose your device and don’t have the recovery codes you will lose access to your account.</p>'),
 			'$recovery_codes'     => $recoveryCodes,
-			'$regenerate_message' => DI::l10n()->t('When you generate new recovery codes, you must copy the new codes. Your old codes won’t work anymore.'),
-			'$regenerate_label'   => DI::l10n()->t('Generate new recovery codes'),
+			'$regenerate_message' => $this->t('When you generate new recovery codes, you must copy the new codes. Your old codes won’t work anymore.'),
+			'$regenerate_label'   => $this->t('Generate new recovery codes'),
 			'$verified'           => $verified,
-			'$verify_label'       => DI::l10n()->t('Next: Verification'),
+			'$verify_label'       => $this->t('Next: Verification'),
 		]);
 	}
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -34,10 +34,10 @@ class SavedSearches
 	 * @return string
 	 * @throws \Exception
 	 */
-	public static function getHTML($return_url, $search = '')
+	public static function getHTML(string $return_url, string $search = ''): string
 	{
 		$saved = [];
-		$saved_searches = DBA::select('search', ['id', 'term'], ['uid' => local_user()]);
+		$saved_searches = DBA::select('search', ['id', 'term'], ['uid' => DI::userSession()->getLocalUserId()], ['order' => ['term']]);
 		while ($saved_search = DBA::fetch($saved_searches)) {
 			$saved[] = [
 				'id'          => $saved_search['id'],

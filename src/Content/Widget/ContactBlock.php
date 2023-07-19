@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -42,11 +42,17 @@ class ContactBlock
 	 *
 	 * @template widget/contacts.tpl
 	 * @hook contact_block_end (contacts=>array, output=>string)
-	 * @return string
+	 * @return string Formatted HTML code or empty string
 	 */
-	public static function getHTML(array $profile)
+	public static function getHTML(array $profile, int $visitor_uid = null): string
 	{
 		$o = '';
+
+		if (is_null($visitor_uid) || ($visitor_uid == $profile['uid'])) {
+			$contact_uid = $profile['uid'];
+		} else {
+			$contact_uid = 0;
+		}
 
 		$shown = DI::pConfig()->get($profile['uid'], 'system', 'display_friend_count', 24);
 		if ($shown == 0) {
@@ -60,13 +66,13 @@ class ContactBlock
 		$contacts = [];
 
 		$total = DBA::count('contact', [
-			'uid' => $profile['uid'],
-			'self' => false,
+			'uid'     => $profile['uid'],
+			'self'    => false,
 			'blocked' => false,
 			'pending' => false,
-			'hidden' => false,
+			'hidden'  => false,
 			'archive' => false,
-			'failed' => false,
+			'failed'  => false,
 			'network' => [Protocol::DFRN, Protocol::ACTIVITYPUB, Protocol::OSTATUS, Protocol::DIASPORA, Protocol::FEED],
 		]);
 
@@ -82,24 +88,23 @@ class ContactBlock
 				$rel = [Contact::FOLLOWER, Contact::FRIEND];
 			}
 
-			$contact_ids_stmt = DBA::select('contact', ['id'], [
-				'uid' => $profile['uid'],
-				'self' => false,
+			$personal_contacts = DBA::selectToArray('contact', ['uri-id'], [
+				'uid'     => $profile['uid'],
+				'self'    => false,
 				'blocked' => false,
 				'pending' => false,
-				'hidden' => false,
+				'hidden'  => false,
 				'archive' => false,
-				'rel' => $rel,
+				'rel'     => $rel,
 				'network' => Protocol::FEDERATED,
-			], ['limit' => $shown]);
+			], [
+				'limit' => $shown,
+			]);
 
-			if (DBA::isResult($contact_ids_stmt)) {
-				$contact_ids = [];
-				while($contact = DBA::fetch($contact_ids_stmt)) {
-					$contact_ids[] = $contact["id"];
-				}
+			$contact_uriids = array_column($personal_contacts, 'uri-id');
 
-				$contacts_stmt = DBA::select('contact', ['id', 'uid', 'addr', 'url', 'name', 'thumb', 'avatar', 'network'], ['id' => $contact_ids]);
+			if (!empty($contact_uriids)) {
+				$contacts_stmt = DBA::select('contact', ['id', 'uid', 'addr', 'url', 'name', 'thumb', 'avatar', 'network'], ['uri-id' => $contact_uriids, 'uid' => $contact_uid]);
 
 				if (DBA::isResult($contacts_stmt)) {
 					$contacts_title = DI::l10n()->tt('%d Contact', '%d Contacts', $total);
@@ -113,8 +118,6 @@ class ContactBlock
 
 				DBA::close($contacts_stmt);
 			}
-
-			DBA::close($contact_ids_stmt);
 		}
 
 		$tpl = Renderer::getMarkupTemplate('widget/contacts.tpl');

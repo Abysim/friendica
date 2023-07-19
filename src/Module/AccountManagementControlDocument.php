@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,6 +22,7 @@
 namespace Friendica\Module;
 
 use Friendica\BaseModule;
+use Friendica\Core\System;
 
 /**
  * Static definition for the Firefox Account Manager
@@ -30,7 +31,7 @@ use Friendica\BaseModule;
  */
 class AccountManagementControlDocument extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		$output = [
 			'version' => 1,
@@ -78,7 +79,6 @@ class AccountManagementControlDocument extends BaseModule
 			],
 		];
 
-		echo json_encode($output);
-		exit();
+		System::jsonExit($output);
 	}
 }

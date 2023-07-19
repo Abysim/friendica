@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -51,7 +51,7 @@ class Expire
 			foreach (Hook::getByName('expire') as $hook) {
 				if ($hook[1] == $hook_function) {
 					Logger::info('Calling expire hook', ['hook' => $hook[1]]);
-					Hook::callSingle($a, 'expire', $hook, $data);
+					Hook::callSingle('expire', $hook, $data);
 				}
 			}
 			return;
@@ -59,10 +59,10 @@ class Expire
 
 		Logger::notice('start expiry');
 
-		$r = DBA::p("SELECT `uid`, `username` FROM `user` WHERE `expire` != 0");
+		$r = DBA::select('user', ['uid', 'username'], ["`expire` != ?", 0]);
 		while ($row = DBA::fetch($r)) {
 			Logger::info('Calling expiry', ['user' => $row['uid'], 'username' => $row['username']]);
-			Worker::add(['priority' => $a->queue['priority'], 'created' => $a->queue['created'], 'dont_fork' => true],
+			Worker::add(['priority' => $a->getQueueValue('priority'), 'created' => $a->getQueueValue('created'), 'dont_fork' => true],
 				'Expire', (int)$row['uid']);
 		}
 		DBA::close($r);
@@ -70,7 +70,7 @@ class Expire
 		Logger::notice('calling hooks');
 		foreach (Hook::getByName('expire') as $hook) {
 			Logger::info('Calling expire', ['hook' => $hook[1]]);
-			Worker::add(['priority' => $a->queue['priority'], 'created' => $a->queue['created'], 'dont_fork' => true],
+			Worker::add(['priority' => $a->getQueueValue('priority'), 'created' => $a->getQueueValue('created'), 'dont_fork' => true],
 				'Expire', 'hook', $hook[1]);
 		}
 

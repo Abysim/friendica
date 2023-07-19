@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,7 +21,15 @@
 
 namespace Friendica\Core;
 
-use Friendica\DI;
+use Friendica\Database\DBA;
+use Friendica\Model\Item;
+use Friendica\Model\User;
+use Friendica\Network\HTTPException;
+use Friendica\Protocol\Activity;
+use Friendica\Protocol\ActivityPub;
+use Friendica\Protocol\Diaspora;
+use Friendica\Protocol\OStatus;
+use Friendica\Protocol\Salmon;
 
 /**
  * Manage compatibility with federated networks
@@ -44,11 +52,12 @@ class Protocol
 
 	// Supported through a connector
 	const DIASPORA2 = 'dspc';    // Diaspora connector
-	const LINKEDIN  = 'lnkd';    // LinkedIn
 	const PUMPIO    = 'pump';    // pump.io
 	const STATUSNET = 'stac';    // Statusnet connector
 	const TWITTER   = 'twit';    // Twitter
 	const DISCOURSE = 'dscs';    // Discourse
+	const TUMBLR    = 'tmbl';    // Tumblr
+	const BLUESKY   = 'bsky';    // Bluesky
 
 	// Dead protocols
 	const APPNET    = 'apdn';    // app.net - Dead protocol
@@ -58,6 +67,7 @@ class Protocol
 	// Currently unsupported
 	const ICALENDAR = 'ical';    // iCalendar
 	const MYSPACE   = 'mysp';    // MySpace
+	const LINKEDIN  = 'lnkd';    // LinkedIn
 	const NEWS      = 'nntp';    // Network News Transfer Protocol
 	const PNUT      = 'pnut';    // pnut.io
 	const XMPP      = 'xmpp';    // XMPP
@@ -66,95 +76,261 @@ class Protocol
 	const PHANTOM   = 'unkn';    // Place holder
 
 	/**
-	 * Returns the address string for the provided profile URL
+	 * Returns whether the provided protocol supports following
 	 *
-	 * @param string $profile_url
-	 * @return string
-	 * @throws \Exception
+	 * @param $protocol
+	 * @return bool
+	 * @throws HTTPException\InternalServerErrorException
 	 */
-	public static function getAddrFromProfileUrl($profile_url)
+	public static function supportsFollow($protocol): bool
 	{
-		$network = self::matchByProfileUrl($profile_url, $matches);
-
-		if ($network === self::PHANTOM) {
-			return "";
+		if (in_array($protocol, self::NATIVE_SUPPORT)) {
+			return true;
 		}
 
-		$addr = $matches[2] . '@' . $matches[1];
+		$hook_data = [
+			'protocol' => $protocol,
+			'result' => null
+		];
+		Hook::callAll('support_follow', $hook_data);
 
-		return $addr;
+		return $hook_data['result'] === true;
 	}
 
 	/**
-	 * Guesses the network from a profile URL
+	 * Returns whether the provided protocol supports revoking inbound follows
 	 *
-	 * @param string $profile_url
-	 * @param array  $matches preg_match return array: [0] => Full match [1] => hostname [2] => username
-	 * @return string
+	 * @param $protocol
+	 * @return bool
+	 * @throws HTTPException\InternalServerErrorException
 	 */
-	public static function matchByProfileUrl($profile_url, &$matches = [])
+	public static function supportsRevokeFollow($protocol): bool
 	{
-		if (preg_match('=https?://(twitter\.com)/(.*)=ism', $profile_url, $matches)) {
-			return self::TWITTER;
+		if (in_array($protocol, self::NATIVE_SUPPORT)) {
+			return true;
 		}
 
-		if (preg_match('=https?://(alpha\.app\.net)/(.*)=ism', $profile_url, $matches)) {
-			return self::APPNET;
+		$hook_data = [
+			'protocol' => $protocol,
+			'result' => null
+		];
+		Hook::callAll('support_revoke_follow', $hook_data);
+
+		return $hook_data['result'] === true;
+	}
+
+	/**
+	 * Send a follow message to a remote server.
+	 *
+	 * @param int     $uid      User Id
+	 * @param array   $contact  Contact being followed
+	 * @param ?string $protocol Expected protocol
+	 * @return bool Only returns false in the unlikely case an ActivityPub contact ID doesn't exist (???)
+	 * @throws HTTPException\InternalServerErrorException
+	 * @throws \ImagickException
+	 */
+	public static function follow(int $uid, array $contact, ?string $protocol = null): bool
+	{
+		$owner = User::getOwnerDataById($uid);
+		if (!DBA::isResult($owner)) {
+			return true;
 		}
 
-		if (preg_match('=https?://(plus\.google\.com)/(.*)=ism', $profile_url, $matches)) {
-			return self::GPLUS;
-		}
+		$protocol = $protocol ?? $contact['protocol'];
 
-		if (preg_match('=https?://(.*)/profile/(.*)=ism', $profile_url, $matches)) {
-			return self::DFRN;
-		}
+		if (in_array($protocol, [Protocol::OSTATUS, Protocol::DFRN])) {
+			// create a follow slap
+			$item = [
+				'verb'    => Activity::FOLLOW,
+				'gravity' => Item::GRAVITY_ACTIVITY,
+				'follow'  => $contact['url'],
+				'body'    => '',
+				'title'   => '',
+				'guid'    => '',
+				'uri-id'  => 0,
+			];
 
-		if (preg_match('=https?://(.*)/u/(.*)=ism', $profile_url, $matches)) {
-			return self::DIASPORA;
-		}
+			$slap = OStatus::salmon($item, $owner);
 
-		if (preg_match('=https?://(.*)/channel/(.*)=ism', $profile_url, $matches)) {
-			// RedMatrix/Hubzilla is identified as Diaspora - friendica can't connect directly to it
-			return self::DIASPORA;
-		}
-
-		if (preg_match('=https?://(.*)/user/(.*)=ism', $profile_url, $matches)) {
-			$statusnet_host = $matches[1];
-			$statusnet_user = $matches[2];
-			$UserData = DI::httpRequest()->fetch('http://' . $statusnet_host . '/api/users/show.json?user_id=' . $statusnet_user);
-			$user = json_decode($UserData);
-			if ($user) {
-				$matches[2] = $user->screen_name;
-				return self::STATUSNET;
+			if (!empty($contact['notify'])) {
+				Salmon::slapper($owner, $contact['notify'], $slap);
 			}
+		} elseif ($protocol == Protocol::DIASPORA) {
+			$contact = Diaspora::sendShare($owner, $contact);
+			Logger::notice('share returns: ' . $contact);
+		} elseif ($protocol == Protocol::ACTIVITYPUB) {
+			$activity_id = ActivityPub\Transmitter::activityIDFromContact($contact['id']);
+			if (empty($activity_id)) {
+				// This really should never happen
+				return false;
+			}
+
+			$success = ActivityPub\Transmitter::sendActivity('Follow', $contact['url'], $owner['uid'], $activity_id);
+			Logger::notice('Follow returns: ' . $success);
 		}
 
-		// Mastodon, Pleroma
-		if (preg_match('=https?://(.+?)/users/(.+)=ism', $profile_url, $matches)
-			|| preg_match('=https?://(.+?)/@(.+)=ism', $profile_url, $matches)
-		) {
-			return self::ACTIVITYPUB;
-		}
-
-		// pumpio (http://host.name/user)
-		if (preg_match('=https?://([\.\w]+)/([\.\w]+)$=ism', $profile_url, $matches)) {
-			return self::PUMPIO;
-		}
-
-		return self::PHANTOM;
+		return true;
 	}
 
 	/**
-	 * Returns a formatted mention from a profile URL and a display name
+	 * Sends an unfollow message. Does not remove the contact
 	 *
-	 * @param string $profile_url
-	 * @param string $display_name
-	 * @return string
-	 * @throws \Exception
+	 * @param array $contact Target public contact (uid = 0) array
+	 * @param array $owner   Source owner-view record
+	 * @return bool|null true if successful, false if not, null if no remote action was performed
+	 * @throws HTTPException\InternalServerErrorException
+	 * @throws \ImagickException
 	 */
-	public static function formatMention($profile_url, $display_name)
+	public static function unfollow(array $contact, array $owner): ?bool
 	{
-		return $display_name . ' (' . self::getAddrFromProfileUrl($profile_url) . ')';
+		if (empty($contact['network'])) {
+			Logger::notice('Contact has got no network, we quit here', ['id' => $contact['id']]);
+			return null;
+		}
+
+		$protocol = $contact['network'];
+		if (($protocol == Protocol::DFRN) && !empty($contact['protocol'])) {
+			$protocol = $contact['protocol'];
+		}
+
+		if (in_array($protocol, [Protocol::OSTATUS, Protocol::DFRN])) {
+			// create an unfollow slap
+			$item = [
+				'verb'    => Activity::O_UNFOLLOW,
+				'gravity' => Item::GRAVITY_ACTIVITY,
+				'follow'  => $contact['url'],
+				'body'    => '',
+				'title'   => '',
+				'guid'    => '',
+				'uri-id'  => 0,
+			];
+
+			$slap = OStatus::salmon($item, $owner);
+
+			if (empty($contact['notify'])) {
+				Logger::notice('OStatus/DFRN Contact is missing notify, we quit here', ['id' => $contact['id']]);
+				return null;
+			}
+
+			return Salmon::slapper($owner, $contact['notify'], $slap) === 0;
+		} elseif ($protocol == Protocol::DIASPORA) {
+			return Diaspora::sendUnshare($owner, $contact) > 0;
+		} elseif ($protocol == Protocol::ACTIVITYPUB) {
+			return ActivityPub\Transmitter::sendContactUndo($contact['url'], $contact['id'], $owner);
+		}
+
+		// Catch-all hook for connector addons
+		$hook_data = [
+			'contact' => $contact,
+			'uid'     => $owner['uid'],
+			'result'  => null,
+		];
+		Hook::callAll('unfollow', $hook_data);
+
+		return $hook_data['result'];
+	}
+
+	/**
+	 * Revoke an incoming follow from the provided contact
+	 *
+	 * @param array $contact Target public contact (uid == 0) array
+	 * @param array $owner   Source owner-view record
+	 * @return bool|null true if successful, false if not, null if no action was performed
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 * @throws \ImagickException
+	 */
+	public static function revokeFollow(array $contact, array $owner): ?bool
+	{
+		if (empty($contact['network'])) {
+			throw new \InvalidArgumentException('Missing network key in contact array');
+		}
+
+		$protocol = $contact['network'];
+		if ($protocol == Protocol::DFRN && !empty($contact['protocol'])) {
+			$protocol = $contact['protocol'];
+		}
+
+		if ($protocol == Protocol::ACTIVITYPUB) {
+			return ActivityPub\Transmitter::sendContactReject($contact['url'], $contact['hub-verify'], $owner);
+		}
+
+		// Catch-all hook for connector addons
+		$hook_data = [
+			'contact' => $contact,
+			'uid'     => $owner['uid'],
+			'result'  => null,
+		];
+		Hook::callAll('revoke_follow', $hook_data);
+
+		return $hook_data['result'];
+	}
+
+	/**
+	 * Send a block message to a remote server. Only useful for connector addons.
+	 *
+	 * @param array $contact Public contact record to block
+	 * @param int   $uid     User issuing the block
+	 * @return bool|null true if successful, false if not, null if no action was performed
+	 * @throws HTTPException\InternalServerErrorException
+	 */
+	public static function block(array $contact, int $uid): ?bool
+	{
+		// Catch-all hook for connector addons
+		$hook_data = [
+			'contact' => $contact,
+			'uid' => $uid,
+			'result' => null,
+		];
+		Hook::callAll('block', $hook_data);
+
+		return $hook_data['result'];
+	}
+
+	/**
+	 * Send an unblock message to a remote server. Only useful for connector addons.
+	 *
+	 * @param array $contact Public contact record to unblock
+	 * @param int   $uid     User revoking the block
+	 * @return bool|null true if successful, false if not, null if no action was performed
+	 * @throws HTTPException\InternalServerErrorException
+	 */
+	public static function unblock(array $contact, int $uid): ?bool
+	{
+		// Catch-all hook for connector addons
+		$hook_data = [
+			'contact' => $contact,
+			'uid' => $uid,
+			'result' => null,
+		];
+		Hook::callAll('unblock', $hook_data);
+
+		return $hook_data['result'];
+	}
+
+	/**
+	 * Returns whether the provided protocol supports probing for contacts
+	 *
+	 * @param $protocol
+	 * @return bool
+	 * @throws HTTPException\InternalServerErrorException
+	 */
+	public static function supportsProbe($protocol): bool
+	{
+		// "Mail" can only be probed for a specific user in a specific condition, so we are ignoring it here.
+		if ($protocol == self::MAIL) {
+			return false;
+		}
+
+		if (in_array($protocol, array_merge(self::NATIVE_SUPPORT, [self::ZOT, self::PHANTOM]))) {
+			return true;
+		}
+
+		$hook_data = [
+			'protocol' => $protocol,
+			'result' => null
+		];
+		Hook::callAll('support_probe', $hook_data);
+
+		return $hook_data['result'] === true;
 	}
 }

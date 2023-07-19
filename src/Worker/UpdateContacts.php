@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,10 +22,11 @@
 namespace Friendica\Worker;
 
 use Friendica\Core\Logger;
-use Friendica\Core\Protocol;
 use Friendica\Core\Worker;
 use Friendica\Database\DBA;
 use Friendica\DI;
+use Friendica\Model\Contact;
+use Friendica\Model\GServer;
 use Friendica\Util\DateTimeFormat;
 
 /**
@@ -35,8 +36,6 @@ class UpdateContacts
 {
 	public static function execute()
 	{
-		$base_condition = ['network' => array_merge(Protocol::FEDERATED, [Protocol::ZOT, Protocol::PHANTOM]), 'self' => false];
-
 		$update_limit = DI::config()->get('system', 'contact_update_limit');
 		if (empty($update_limit)) {
 			return;
@@ -49,63 +48,40 @@ class UpdateContacts
 			return;
 		}
 
-		$condition = DBA::mergeConditions($base_condition,
-			["`uid` != ? AND (`last-update` < ? OR (NOT `failed` AND `last-update` < ?))",
-			0, DateTimeFormat::utc('now - 1 month'), DateTimeFormat::utc('now - 1 week')]);
-		$ids = self::getContactsToUpdate($condition, [], $limit);
-		Logger::info('Fetched federated user contacts', ['count' => count($ids)]);
+		Logger::info('Updating contact', ['count' => $limit]);
 
-		$conditions = ["`id` IN (SELECT `author-id` FROM `post-user`)", "`id` IN (SELECT `owner-id` FROM `post-user`)", 
-			"`id` IN (SELECT `causer-id` FROM `post-user`)", "`id` IN (SELECT `cid` FROM `post-tag`)",
-			"`id` IN (SELECT `cid` FROM `user-contact`)"];
+		$condition = ['self' => false];
 
-		foreach ($conditions as $contact_condition) {
-			$condition = DBA::mergeConditions($base_condition,
-				[$contact_condition . " AND (`last-update` < ? OR (NOT `failed` AND `last-update` < ?))",
-				DateTimeFormat::utc('now - 1 month'), DateTimeFormat::utc('now - 1 week')]);
-			$ids = self::getContactsToUpdate($condition, $ids, $limit);
-			Logger::info('Fetched interacting federated contacts', ['count' => count($ids), 'condition' => $contact_condition]);
+		if (DI::config()->get('system', 'update_active_contacts')) {
+			$condition = array_merge(['local-data' => true], $condition);
 		}
 
-		if (count($ids) > $limit) {
-			$ids = array_slice($ids, 0, $limit, true);
-		}
-
-		if (!DI::config()->get('system', 'update_active_contacts')) {
-			// Add every contact (mostly failed ones) that hadn't been updated for six months
-			// and every non failed contact that hadn't been updated for a month
-			$condition = DBA::mergeConditions($base_condition,
-				["(`last-update` < ? OR (NOT `failed` AND `last-update` < ?))",
-					DateTimeFormat::utc('now - 6 month'), DateTimeFormat::utc('now - 1 month')]);
-			$previous = count($ids);
-			$ids = self::getContactsToUpdate($condition, $ids, $limit - $previous);
-			Logger::info('Fetched federated contacts', ['count' => count($ids) - $previous]);
-		}
-
+		$condition = DBA::mergeConditions(["`next-update` < ?", DateTimeFormat::utcNow()], $condition);
+		$contacts = DBA::select('contact', ['id', 'url', 'gsid', 'baseurl'], $condition, ['order' => ['next-update'], 'limit' => $limit]);
 		$count = 0;
-		foreach ($ids as $id) {
-			if (Worker::add(PRIORITY_LOW, "UpdateContact", $id)) {
-				++$count;
-			}
-		}
-
-		Logger::info('Initiated update for federated contacts', ['count' => $count]);
-	}
-
-	/**
-	 * Returns contact ids based on a given condition
-	 *
-	 * @param array $condition
-	 * @param array $ids
-	 * @return array contact ids
-	 */
-	private static function getContactsToUpdate(array $condition, array $ids = [], int $limit)
-	{
-		$contacts = DBA::select('contact', ['id'], $condition, ['limit' => $limit]);
 		while ($contact = DBA::fetch($contacts)) {
-			$ids[$contact['id']] = $contact['id'];
+			if (Contact::isLocal($contact['url'])) {
+				continue;
+			}
+
+			try {
+				if ((!empty($contact['gsid']) || !empty($contact['baseurl'])) && GServer::reachable($contact)) {
+					$stamp = (float)microtime(true);
+					$success = Contact::updateFromProbe($contact['id']);
+					Logger::debug('Direct update', ['id' => $contact['id'], 'count' => $count, 'duration' => round((float)microtime(true) - $stamp, 3), 'success' => $success]);
+					++$count;
+				} elseif (UpdateContact::add(['priority' => Worker::PRIORITY_LOW, 'dont_fork' => true], $contact['id'])) {
+					Logger::debug('Update by worker', ['id' => $contact['id'], 'count' => $count]);
+					++$count;
+				}
+			} catch (\InvalidArgumentException $e) {
+				Logger::notice($e->getMessage(), ['contact' => $contact]);
+			}
+
+			Worker::coolDown();
 		}
 		DBA::close($contacts);
-		return $ids;
+
+		Logger::info('Initiated update for federated contacts', ['count' => $count]);
 	}
 }

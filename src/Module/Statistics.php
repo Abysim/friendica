@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,28 +21,40 @@
 
 namespace Friendica\Module;
 
+use Friendica\App;
 use Friendica\BaseModule;
 use Friendica\Core\Addon;
-use Friendica\DI;
+use Friendica\Core\Config\Capability\IManageConfigValues;
+use Friendica\Core\KeyValueStorage\Capabilities\IManageKeyValuePairs;
+use Friendica\Core\L10n;
+use Friendica\Core\System;
 use Friendica\Network\HTTPException\NotFoundException;
+use Friendica\Util\Profiler;
+use Psr\Log\LoggerInterface;
 
 class Statistics extends BaseModule
 {
-	public static function init(array $parameters = [])
+	/** @var IManageConfigValues */
+	protected $config;
+	/** @var IManageKeyValuePairs */
+	protected $keyValue;
+	
+	public function __construct(L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, IManageConfigValues $config, IManageKeyValuePairs $keyValue, Response $response, array $server, array $parameters = [])
 	{
-		if (!DI::config()->get("system", "nodeinfo")) {
+		parent::__construct($l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
+
+		$this->config   = $config;
+		$this->keyValue = $keyValue;
+		if (!$this->config->get("system", "nodeinfo")) {
 			throw new NotFoundException();
 		}
 	}
 
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-		$config = DI::config();
-		$logger = DI::logger();
-
 		$registration_open =
-			intval($config->get('config', 'register_policy')) !== Register::CLOSED
-			&& !$config->get('config', 'invitation_only');
+			intval($this->config->get('config', 'register_policy')) !== Register::CLOSED
+			&& !$this->config->get('config', 'invitation_only');
 
 		/// @todo mark the "service" addons and load them dynamically here
 		$services = [
@@ -59,20 +71,18 @@ class Statistics extends BaseModule
 		];
 
 		$statistics = array_merge([
-			'name'                  => $config->get('config', 'sitename'),
-			'network'               => FRIENDICA_PLATFORM,
-			'version'               => FRIENDICA_VERSION . '-' . DB_UPDATE_VERSION,
+			'name'                  => $this->config->get('config', 'sitename'),
+			'network'               => App::PLATFORM,
+			'version'               => App::VERSION . '-' . DB_UPDATE_VERSION,
 			'registrations_open'    => $registration_open,
-			'total_users'           => $config->get('nodeinfo', 'total_users'),
-			'active_users_halfyear' => $config->get('nodeinfo', 'active_users_halfyear'),
-			'active_users_monthly'  => $config->get('nodeinfo', 'active_users_monthly'),
-			'local_posts'           => $config->get('nodeinfo', 'local_posts'),
+			'total_users'           => $this->keyValue->get('nodeinfo_total_users'),
+			'active_users_halfyear' => $this->keyValue->get('nodeinfo_active_users_halfyear'),
+			'active_users_monthly'  => $this->keyValue->get('nodeinfo_active_users_monthly'),
+			'local_posts'           => $this->keyValue->get('nodeinfo_local_posts'),
 			'services'              => $services,
 		], $services);
 
-		header("Content-Type: application/json");
-		echo json_encode($statistics, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-		$logger->debug("statistics.", ['statistics' => $statistics]);
-		exit();
+		$this->logger->debug("statistics.", ['statistics' => $statistics]);
+		System::jsonExit($statistics);
 	}
 }

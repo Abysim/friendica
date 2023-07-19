@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,8 +22,8 @@
 namespace Friendica\Test\src\Core\Cache;
 
 use Exception;
-use Friendica\Core\Cache\MemcacheCache;
-use Friendica\Core\Config\IConfig;
+use Friendica\Core\Cache\Type\MemcacheCache;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Mockery;
 
 /**
@@ -34,7 +34,7 @@ class MemcacheCacheTest extends MemoryCacheTest
 {
 	protected function getInstance()
 	{
-		$configMock = Mockery::mock(IConfig::class);
+		$configMock = Mockery::mock(IManageConfigValues::class);
 
 		$host = $_SERVER['MEMCACHE_HOST'] ?? 'localhost';
 		$port = $_SERVER['MEMCACHE_PORT'] ?? '11211';
@@ -66,6 +66,7 @@ class MemcacheCacheTest extends MemoryCacheTest
 	 * @small
 	 *
 	 * @dataProvider dataSimple
+	 * @doesNotPerformAssertions
 	 */
 	public function testGetAllKeys($value1, $value2, $value3)
 	{

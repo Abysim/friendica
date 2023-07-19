@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,6 +22,7 @@
 namespace Friendica\Module\WellKnown;
 
 use Friendica\BaseModule;
+use Friendica\Core\System;
 use Friendica\DI;
 
 /**
@@ -30,7 +31,7 @@ use Friendica\DI;
  */
 class NodeInfo extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		self::printWellKnown();
 	}
@@ -45,14 +46,12 @@ class NodeInfo extends BaseModule
 		$nodeinfo = [
 			'links' => [
 				['rel'  => 'http://nodeinfo.diaspora.software/ns/schema/1.0',
-				'href' => DI::baseUrl()->get() . '/nodeinfo/1.0'],
+				'href' => DI::baseUrl() . '/nodeinfo/1.0'],
 				['rel'  => 'http://nodeinfo.diaspora.software/ns/schema/2.0',
-				'href' => DI::baseUrl()->get() . '/nodeinfo/2.0'],
+				'href' => DI::baseUrl() . '/nodeinfo/2.0'],
 			]
 		];
 
-		header('Content-type: application/json; charset=utf-8');
-		echo json_encode($nodeinfo, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-		exit;
+		System::jsonExit($nodeinfo);
 	}
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -32,10 +32,9 @@ class Search
 	 * Returns the list of user defined tags (e.g. #Friendica)
 	 *
 	 * @return array
-	 *
 	 * @throws \Exception
 	 */
-	public static function getUserTags()
+	public static function getUserTags(): array
 	{
 		$termsStmt = DBA::p("SELECT DISTINCT(`term`) FROM `search`");
 

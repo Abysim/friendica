@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -29,6 +29,7 @@ use Friendica\Database\DBStructure;
 use Friendica\DI;
 use Friendica\Model\Item;
 use Friendica\Model\Post;
+use Friendica\Util\DateTimeFormat;
 
 class ExpirePosts
 {
@@ -51,11 +52,11 @@ class ExpirePosts
 			self::addMissingEntries();
 		}
 
-		// Set the expiry for origin posta
-		Worker::add(PRIORITY_LOW, 'Expire');
+		// Set the expiry for origin posts
+		Worker::add(Worker::PRIORITY_LOW, 'Expire');
 
 		// update nodeinfo data after everything is cleaned up
-		Worker::add(PRIORITY_LOW, 'NodeInfo');
+		Worker::add(Worker::PRIORITY_LOW, 'NodeInfo');
 	}
 
 	/**
@@ -67,7 +68,7 @@ class ExpirePosts
 	{
 		Logger::notice('Delete expired posts');
 		// physically remove anything that has been deleted for more than two months
-		$condition = ["`gravity` = ? AND `deleted` AND `changed` < UTC_TIMESTAMP() - INTERVAL 60 DAY", GRAVITY_PARENT];
+		$condition = ["`gravity` = ? AND `deleted` AND `changed` < ?", Item::GRAVITY_PARENT, DateTimeFormat::utc('now - 60 days')];
 		$rows = Post::select(['guid', 'uri-id', 'uid'],  $condition);
 		while ($row = Post::fetch($rows)) {
 			Logger::info('Delete expired item', ['uri-id' => $row['uri-id'], 'guid' => $row['guid']]);
@@ -119,9 +120,9 @@ class ExpirePosts
 		Logger::notice('Adding missing entries');
 
 		$rows = 0;
-		$userposts = DBA::select('post-user', [], ["`uri-id` not in (select `uri-id` from `post`)"], ['group_by' => ['uri-id']]);
+		$userposts = DBA::select('post-user', [], ["`uri-id` not in (select `uri-id` from `post`)"]);
 		while ($fields = DBA::fetch($userposts)) {
-			$post_fields = DBStructure::getFieldsForTable('post', $fields);
+			$post_fields = DI::dbaDefinition()->truncateFieldsForTable('post', $fields);
 			DBA::insert('post', $post_fields, Database::INSERT_IGNORE);
 			$rows++;
 		}
@@ -133,9 +134,9 @@ class ExpirePosts
 		}
 
 		$rows = 0;
-		$userposts = DBA::select('post-user', [], ["`gravity` = ? AND `uri-id` not in (select `uri-id` from `post-thread`)", GRAVITY_PARENT], ['group_by' => ['uri-id']]);
+		$userposts = DBA::select('post-user', [], ["`gravity` = ? AND `uri-id` not in (select `uri-id` from `post-thread`)", Item::GRAVITY_PARENT]);
 		while ($fields = DBA::fetch($userposts)) {
-			$post_fields = DBStructure::getFieldsForTable('post-thread', $fields);
+			$post_fields = DI::dbaDefinition()->truncateFieldsForTable('post-thread', $fields);
 			$post_fields['commented'] = $post_fields['changed'] = $post_fields['created'];
 			DBA::insert('post-thread', $post_fields, Database::INSERT_IGNORE);
 			$rows++;
@@ -148,9 +149,9 @@ class ExpirePosts
 		}
 
 		$rows = 0;
-		$userposts = DBA::select('post-user', [], ["`gravity` = ? AND `id` not in (select `post-user-id` from `post-thread-user`)", GRAVITY_PARENT]);
+		$userposts = DBA::select('post-user', [], ["`gravity` = ? AND `id` not in (select `post-user-id` from `post-thread-user`)", Item::GRAVITY_PARENT]);
 		while ($fields = DBA::fetch($userposts)) {
-			$post_fields = DBStructure::getFieldsForTable('post-thread-user', $fields);
+			$post_fields = DI::dbaDefinition()->truncateFieldsForTable('post-thread-user', $fields);
 			$post_fields['commented'] = $post_fields['changed'] = $post_fields['created'];
 			DBA::insert('post-thread-user', $post_fields, Database::INSERT_IGNORE);
 			$rows++;
@@ -170,7 +171,7 @@ class ExpirePosts
 	{
 		// We have to avoid deleting newly created "item-uri" entries.
 		// So we fetch a post that had been stored yesterday and only delete older ones.
-		$item = Post::selectFirst(['uri-id'], ["`uid` = ? AND `received` < UTC_TIMESTAMP() - INTERVAL ? DAY", 0, 1],
+		$item = Post::selectFirstThread(['uri-id'], ["`uid` = ? AND `received` < ?", 0, DateTimeFormat::utc('now - 1 day')],
 			['order' => ['received' => true]]);
 		if (empty($item['uri-id'])) {
 			Logger::warning('No item with uri-id found - we better quit here');
@@ -181,7 +182,19 @@ class ExpirePosts
 			AND NOT EXISTS(SELECT `uri-id` FROM `post-user` WHERE `uri-id` = `item-uri`.`id`)
 			AND NOT EXISTS(SELECT `parent-uri-id` FROM `post-user` WHERE `parent-uri-id` = `item-uri`.`id`)
 			AND NOT EXISTS(SELECT `thr-parent-id` FROM `post-user` WHERE `thr-parent-id` = `item-uri`.`id`)
-			AND NOT EXISTS(SELECT `external-id` FROM `post-user` WHERE `external-id` = `item-uri`.`id`)", $item['uri-id']]);
+			AND NOT EXISTS(SELECT `external-id` FROM `post-user` WHERE `external-id` = `item-uri`.`id`)
+			AND NOT EXISTS(SELECT `conversation-id` FROM `post-thread` WHERE `conversation-id` = `item-uri`.`id`)
+			AND NOT EXISTS(SELECT `uri-id` FROM `mail` WHERE `uri-id` = `item-uri`.`id`)
+			AND NOT EXISTS(SELECT `uri-id` FROM `event` WHERE `uri-id` = `item-uri`.`id`)
+			AND NOT EXISTS(SELECT `uri-id` FROM `user-contact` WHERE `uri-id` = `item-uri`.`id`)
+			AND NOT EXISTS(SELECT `uri-id` FROM `contact` WHERE `uri-id` = `item-uri`.`id`)
+			AND NOT EXISTS(SELECT `uri-id` FROM `apcontact` WHERE `uri-id` = `item-uri`.`id`)
+			AND NOT EXISTS(SELECT `uri-id` FROM `diaspora-contact` WHERE `uri-id` = `item-uri`.`id`)
+			AND NOT EXISTS(SELECT `uri-id` FROM `inbox-status` WHERE `uri-id` = `item-uri`.`id`)
+			AND NOT EXISTS(SELECT `uri-id` FROM `post-delivery` WHERE `uri-id` = `item-uri`.`id`)
+			AND NOT EXISTS(SELECT `uri-id` FROM `post-delivery` WHERE `inbox-id` = `item-uri`.`id`)
+			AND NOT EXISTS(SELECT `parent-uri-id` FROM `mail` WHERE `parent-uri-id` = `item-uri`.`id`)
+			AND NOT EXISTS(SELECT `thr-parent-id` FROM `mail` WHERE `thr-parent-id` = `item-uri`.`id`)", $item['uri-id']]);
 
 		Logger::notice('Start deleting orphaned URI-ID', ['last-id' => $item['uri-id']]);
 		$affected_count = 0;
@@ -214,10 +227,12 @@ class ExpirePosts
 		if (!empty($expire_days)) {
 			Logger::notice('Start collecting expired threads', ['expiry_days' => $expire_days]);
 			$uris = DBA::select('item-uri', ['id'], ["`id` IN
-				(SELECT `uri-id` FROM `post-thread` WHERE `received` < UTC_TIMESTAMP() - INTERVAL ? DAY
+				(SELECT `uri-id` FROM `post-thread` WHERE `received` < ?
 					AND NOT `uri-id` IN (SELECT `uri-id` FROM `post-thread-user`
-						WHERE (`mention` OR `starred` OR `wall` OR `pinned`) AND `uri-id` = `post-thread`.`uri-id`)
+						WHERE (`mention` OR `starred` OR `wall`) AND `uri-id` = `post-thread`.`uri-id`)
 					AND NOT `uri-id` IN (SELECT `uri-id` FROM `post-category`
+						WHERE `uri-id` = `post-thread`.`uri-id`)
+					AND NOT `uri-id` IN (SELECT `uri-id` FROM `post-collection`
 						WHERE `uri-id` = `post-thread`.`uri-id`)
 					AND NOT `uri-id` IN (SELECT `uri-id` FROM `post-media`
 						WHERE `uri-id` = `post-thread`.`uri-id`)
@@ -227,7 +242,7 @@ class ExpirePosts
 						WHERE (`origin` OR `event-id` != 0 OR `post-type` = ?) AND `parent-uri-id` = `post-thread`.`uri-id`)
 					AND NOT `uri-id` IN (SELECT `uri-id` FROM `post-content`
 						WHERE `resource-id` != 0 AND `uri-id` = `post-thread`.`uri-id`))",
-				$expire_days, Item::PT_PERSONAL_NOTE]);
+			    DateTimeFormat::utc('now - ' . (int)$expire_days . ' days'), Item::PT_PERSONAL_NOTE]);
 
 			Logger::notice('Start deleting expired threads');
 			$affected_count = 0;
@@ -244,12 +259,12 @@ class ExpirePosts
 		if (!empty($expire_days_unclaimed)) {
 			Logger::notice('Start collecting unclaimed public items', ['expiry_days' => $expire_days_unclaimed]);
 			$uris = DBA::select('item-uri', ['id'], ["`id` IN
-				(SELECT `uri-id` FROM `post-user` WHERE `gravity` = ? AND `uid` = ? AND `received` < UTC_TIMESTAMP() - INTERVAL ? DAY
+				(SELECT `uri-id` FROM `post-user` WHERE `gravity` = ? AND `uid` = ? AND `received` < ?
 					AND NOT `uri-id` IN (SELECT `parent-uri-id` FROM `post-user` AS `i` WHERE `i`.`uid` != ?
 						AND `i`.`parent-uri-id` = `post-user`.`uri-id`)
 					AND NOT `uri-id` IN (SELECT `parent-uri-id` FROM `post-user` AS `i` WHERE `i`.`uid` = ?
-						AND `i`.`parent-uri-id` = `post-user`.`uri-id` AND `i`.`received` > UTC_TIMESTAMP() - INTERVAL ? DAY))",
-				GRAVITY_PARENT, 0, $expire_days_unclaimed, 0, 0, $expire_days_unclaimed]);
+						AND `i`.`parent-uri-id` = `post-user`.`uri-id` AND `i`.`received` > ?))",
+				Item::GRAVITY_PARENT, 0, DateTimeFormat::utc('now - ' . (int)$expire_days_unclaimed . ' days'), 0, 0, DateTimeFormat::utc('now - ' . (int)$expire_days_unclaimed . ' days')]);
 
 			Logger::notice('Start deleting unclaimed public items');
 			$affected_count = 0;

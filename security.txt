@@ -1,6 +1,6 @@
 Contact: mailto:info@friendi.ca
 
-Expires: Wed, 30 Jun 2021 23:59 +0000
+Expires: 2024-04-30T23:59:59Z
 
 Preferred-Languages: en
 

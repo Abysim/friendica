@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,18 +22,14 @@
 namespace Friendica\Test\src\Core\Cache;
 
 use Friendica\Core\Cache;
-use Friendica\Factory\ConfigFactory;
 use Friendica\Test\DatabaseTestTrait;
-use Friendica\Test\Util\Database\StaticDatabase;
+use Friendica\Test\Util\CreateDatabaseTrait;
 use Friendica\Test\Util\VFSTrait;
-use Friendica\Util\ConfigFileLoader;
-use Friendica\Util\Profiler;
-use Mockery;
-use Psr\Log\NullLogger;
 
 class DatabaseCacheTest extends CacheTest
 {
 	use DatabaseTestTrait;
+	use CreateDatabaseTrait;
 	use VFSTrait;
 
 	protected function setUp(): void
@@ -47,18 +43,7 @@ class DatabaseCacheTest extends CacheTest
 
 	protected function getInstance()
 	{
-		$logger = new NullLogger();
-		$profiler = Mockery::mock(Profiler::class);
-		$profiler->shouldReceive('saveTimestamp')->withAnyArgs()->andReturn(true);
-
-		// load real config to avoid mocking every config-entry which is related to the Database class
-		$configFactory = new ConfigFactory();
-		$loader = new ConfigFileLoader($this->root->url());
-		$configCache = $configFactory->createCache($loader);
-
-		$dba = new StaticDatabase($configCache, $profiler, $logger);
-
-		$this->cache = new Cache\DatabaseCache('database', $dba);
+		$this->cache = new Cache\Type\DatabaseCache('database', $this->getDbInstance());
 		return $this->cache;
 	}
 

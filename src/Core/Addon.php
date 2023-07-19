@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,8 +21,8 @@
 
 namespace Friendica\Core;
 
-use Friendica\Database\DBA;
 use Friendica\DI;
+use Friendica\Model\Contact;
 use Friendica\Util\Strings;
 
 /**
@@ -51,7 +51,7 @@ class Addon
 	 * @return array
 	 * @throws \Exception
 	 */
-	public static function getAvailableList()
+	public static function getAvailableList(): array
 	{
 		$addons = [];
 		$files = glob('addon/*/');
@@ -81,18 +81,23 @@ class Addon
 	 * @return array
 	 * @throws \Exception
 	 */
-	public static function getAdminList()
+	public static function getAdminList(): array
 	{
 		$addons_admin = [];
-		$addonsAdminStmt = DBA::select('addon', ['name'], ['plugin_admin' => 1], ['order' => ['name']]);
-		while ($addon = DBA::fetch($addonsAdminStmt)) {
-			$addons_admin[$addon['name']] = [
-				'url' => 'admin/addons/' . $addon['name'],
-				'name' => $addon['name'],
+		$addons = array_filter(DI::config()->get('addons') ?? []);
+
+		ksort($addons);
+		foreach ($addons as $name => $data) {
+			if (empty($data['admin'])) {
+				continue;
+			}
+
+			$addons_admin[$name] = [
+				'url' => 'admin/addons/' . $name,
+				'name' => $name,
 				'class' => 'addon'
 			];
 		}
-		DBA::close($addonsAdminStmt);
 
 		return $addons_admin;
 	}
@@ -112,8 +117,7 @@ class Addon
 	 */
 	public static function loadAddons()
 	{
-		$installed_addons = DBA::selectToArray('addon', ['name'], ['installed' => true]);
-		self::$addons = array_column($installed_addons, 'name');
+		self::$addons = array_keys(array_filter(DI::config()->get('addons') ?? []));
 	}
 
 	/**
@@ -123,12 +127,12 @@ class Addon
 	 * @return void
 	 * @throws \Exception
 	 */
-	public static function uninstall($addon)
+	public static function uninstall(string $addon)
 	{
 		$addon = Strings::sanitizeFilePathItem($addon);
 
-		Logger::notice("Addon {addon}: {action}", ['action' => 'uninstall', 'addon' => $addon]);
-		DBA::delete('addon', ['name' => $addon]);
+		Logger::debug("Addon {addon}: {action}", ['action' => 'uninstall', 'addon' => $addon]);
+		DI::config()->delete('addons', $addon);
 
 		@include_once('addon/' . $addon . '/' . $addon . '.php');
 		if (function_exists($addon . '_uninstall')) {
@@ -148,29 +152,28 @@ class Addon
 	 * @return bool
 	 * @throws \Exception
 	 */
-	public static function install($addon)
+	public static function install(string $addon): bool
 	{
 		$addon = Strings::sanitizeFilePathItem($addon);
 
+		$addon_file_path = 'addon/' . $addon . '/' . $addon . '.php';
+
 		// silently fail if addon was removed of if $addon is funky
-		if (!file_exists('addon/' . $addon . '/' . $addon . '.php')) {
+		if (!file_exists($addon_file_path)) {
 			return false;
 		}
 
-		Logger::notice("Addon {addon}: {action}", ['action' => 'install', 'addon' => $addon]);
-		$t = @filemtime('addon/' . $addon . '/' . $addon . '.php');
-		@include_once('addon/' . $addon . '/' . $addon . '.php');
+		Logger::debug("Addon {addon}: {action}", ['action' => 'install', 'addon' => $addon]);
+		$t = @filemtime($addon_file_path);
+		@include_once($addon_file_path);
 		if (function_exists($addon . '_install')) {
 			$func = $addon . '_install';
 			$func(DI::app());
 		}
 
-		DBA::insert('addon', [
-			'name' => $addon,
-			'installed' => true,
-			'timestamp' => $t,
-			'plugin_admin' => function_exists($addon . '_addon_admin'),
-			'hidden' => file_exists('addon/' . $addon . '/.hidden')
+		DI::config()->set('addons', $addon, [
+			'last_update' => $t,
+			'admin' => function_exists($addon . '_addon_admin'),
 		]);
 
 		if (!self::isEnabled($addon)) {
@@ -182,23 +185,27 @@ class Addon
 
 	/**
 	 * reload all updated addons
+	 *
+	 * @return void
+	 * @throws \Exception
+	 *
 	 */
 	public static function reload()
 	{
-		$addons = DBA::selectToArray('addon', [], ['installed' => true]);
+		$addons = array_filter(DI::config()->get('addons') ?? []);
 
-		foreach ($addons as $addon) {
-			$addonname = Strings::sanitizeFilePathItem(trim($addon['name']));
-			$fname = 'addon/' . $addonname . '/' . $addonname . '.php';
-			$t = @filemtime($fname);
-			if (!file_exists($fname) || ($addon['timestamp'] == $t)) {
+		foreach ($addons as $name => $data) {
+			$addonname = Strings::sanitizeFilePathItem(trim($name));
+			$addon_file_path = 'addon/' . $addonname . '/' . $addonname . '.php';
+			if (file_exists($addon_file_path) && $data['last_update'] == filemtime($addon_file_path)) {
+				// Addon unmodified, skipping
 				continue;
 			}
 
-			Logger::notice("Addon {addon}: {action}", ['action' => 'reload', 'addon' => $addon['name']]);
+			Logger::debug("Addon {addon}: {action}", ['action' => 'reload', 'addon' => $name]);
 
-			self::uninstall($fname);
-			self::install($fname);
+			self::uninstall($name);
+			self::install($name);
 		}
 	}
 
@@ -219,7 +226,7 @@ class Addon
 	 * @return array with the addon information
 	 * @throws \Exception
 	 */
-	public static function getInfo($addon)
+	public static function getInfo(string $addon): array
 	{
 		$addon = Strings::sanitizeFilePathItem($addon);
 
@@ -236,9 +243,9 @@ class Addon
 			return $info;
 		}
 
-		$stamp1 = microtime(true);
+		DI::profiler()->startRecording('file');
 		$f = file_get_contents("addon/$addon/$addon.php");
-		DI::profiler()->saveTimestamp($stamp1, "file");
+		DI::profiler()->stopRecording();
 
 		$r = preg_match("|/\*.*\*/|msU", $f, $m);
 
@@ -257,6 +264,12 @@ class Addon
 					if ($type == "author" || $type == "maintainer") {
 						$r = preg_match("|([^<]+)<([^>]+)>|", $v, $m);
 						if ($r) {
+							if (!empty($m[2]) && empty(parse_url($m[2], PHP_URL_SCHEME))) {
+								$contact = Contact::getByURL($m[2], false);
+								if (!empty($contact['url'])) {
+									$m[2] = $contact['url'];
+								}
+							}
 							$info[$type][] = ['name' => $m[1], 'link' => $m[2]];
 						} else {
 							$info[$type][] = ['name' => $v];
@@ -278,7 +291,7 @@ class Addon
 	 * @param string $addon
 	 * @return boolean
 	 */
-	public static function isEnabled($addon)
+	public static function isEnabled(string $addon): bool
 	{
 		return in_array($addon, self::$addons);
 	}
@@ -288,7 +301,7 @@ class Addon
 	 *
 	 * @return array
 	 */
-	public static function getEnabledList()
+	public static function getEnabledList(): array
 	{
 		return self::$addons;
 	}
@@ -299,63 +312,15 @@ class Addon
 	 * @return array
 	 * @throws \Exception
 	 */
-	public static function getVisibleList()
+	public static function getVisibleList(): array
 	{
 		$visible_addons = [];
-		$stmt = DBA::select('addon', ['name'], ['hidden' => false, 'installed' => true]);
-		if (DBA::isResult($stmt)) {
-			foreach (DBA::toArray($stmt) as $addon) {
-				$visible_addons[] = $addon['name'];
-			}
+		$addons = array_filter(DI::config()->get('addons') ?? []);
+
+		foreach ($addons as $name => $data) {
+			$visible_addons[] = $name;
 		}
 
 		return $visible_addons;
-	}
-
-	/**
-	 * Shim of Hook::register left for backward compatibility purpose.
-	 *
-	 * @see        Hook::register
-	 * @deprecated since version 2018.12
-	 * @param string $hook     the name of the hook
-	 * @param string $file     the name of the file that hooks into
-	 * @param string $function the name of the function that the hook will call
-	 * @param int    $priority A priority (defaults to 0)
-	 * @return mixed|bool
-	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
-	 */
-	public static function registerHook($hook, $file, $function, $priority = 0)
-	{
-		return Hook::register($hook, $file, $function, $priority);
-	}
-
-	/**
-	 * Shim of Hook::unregister left for backward compatibility purpose.
-	 *
-	 * @see        Hook::unregister
-	 * @deprecated since version 2018.12
-	 * @param string $hook     the name of the hook
-	 * @param string $file     the name of the file that hooks into
-	 * @param string $function the name of the function that the hook called
-	 * @return boolean
-	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
-	 */
-	public static function unregisterHook($hook, $file, $function)
-	{
-		return Hook::unregister($hook, $file, $function);
-	}
-
-	/**
-	 * Shim of Hook::callAll left for backward-compatibility purpose.
-	 *
-	 * @see        Hook::callAll
-	 * @deprecated since version 2018.12
-	 * @param string        $name of the hook to call
-	 * @param string|array &$data to transmit to the callback handler
-	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
-	 */
-	public static function callHooks($name, &$data = null)
-	{
-		Hook::callAll($name, $data);
 	}
 }

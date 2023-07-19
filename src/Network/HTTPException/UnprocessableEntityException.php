@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,7 @@ use Friendica\Network\HTTPException;
 
 class UnprocessableEntityException extends HTTPException
 {
-	protected $code = 422;
+	protected $code        = 422;
+	protected $httpdesc    = 'Unprocessable Entity';
+	protected $explanation = 'The request was well-formed but was unable to be followed due to semantic errors.';
 }

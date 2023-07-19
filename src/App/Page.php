@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -26,17 +26,20 @@ use DOMDocument;
 use DOMXPath;
 use Friendica\App;
 use Friendica\Content\Nav;
-use Friendica\Core\Config\IConfig;
-use Friendica\Core\PConfig\IPConfig;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\Core\Hook;
 use Friendica\Core\L10n;
+use Friendica\Core\Logger;
+use Friendica\Core\PConfig\Capability\IManagePersonalConfigValues;
 use Friendica\Core\Renderer;
+use Friendica\Core\System;
 use Friendica\Core\Theme;
-use Friendica\Module\Special\HTTPException as ModuleHTTPException;
+use Friendica\Module\Response;
 use Friendica\Network\HTTPException;
 use Friendica\Util\Network;
-use Friendica\Util\Strings;
 use Friendica\Util\Profiler;
+use Friendica\Util\Strings;
+use Psr\Http\Message\ResponseInterface;
 
 /**
  * Contains the page specific environment variables for the current Page
@@ -70,90 +73,84 @@ class Page implements ArrayAccess
 		'right_aside' => '',
 		'template'    => '',
 		'title'       => '',
+		'section'     => '',
+		'module'      => '',
 	];
 	/**
 	 * @var string The basepath of the page
 	 */
 	private $basePath;
 
+	private $timestamp = 0;
+	private $method    = '';
+	private $module    = '';
+	private $command   = '';
+
 	/**
 	 * @param string $basepath The Page basepath
 	 */
 	public function __construct(string $basepath)
 	{
+		$this->timestamp = microtime(true);
 		$this->basePath = $basepath;
 	}
 
+	public function setLogging(string $method, string $module, string $command)
+	{
+		$this->method  = $method;
+		$this->module  = $module;
+		$this->command = $command;
+	}
+
+	public function logRuntime(IManageConfigValues $config, string $origin = '')
+	{
+		$ignore = $config->get('system', 'runtime_ignore');
+		if (in_array($this->module, $ignore) || in_array($this->command, $ignore)) {
+			return;
+		}
+
+		$signature = !empty($_SERVER['HTTP_SIGNATURE']);
+		$load      = number_format(System::currentLoad(), 2);
+		$runtime   = number_format(microtime(true) - $this->timestamp, 3);
+		if ($runtime > $config->get('system', 'runtime_loglimit')) {
+			Logger::debug('Runtime', ['method' => $this->method, 'module' => $this->module, 'runtime' => $runtime, 'load' => $load, 'origin' => $origin, 'signature' => $signature, 'request' => $_SERVER['REQUEST_URI'] ?? '']);
+		}
+	}
+
+	// ArrayAccess interface
+
 	/**
-	 * Whether a offset exists
-	 *
-	 * @link  https://php.net/manual/en/arrayaccess.offsetexists.php
-	 *
-	 * @param mixed $offset <p>
-	 *                      An offset to check for.
-	 *                      </p>
-	 *
-	 * @return boolean true on success or false on failure.
-	 * </p>
-	 * <p>
-	 * The return value will be casted to boolean if non-boolean was returned.
-	 * @since 5.0.0
+	 * @inheritDoc
 	 */
-	public function offsetExists($offset)
+	#[\ReturnTypeWillChange]
+	public function offsetExists($offset): bool
 	{
 		return isset($this->page[$offset]);
 	}
 
 	/**
-	 * Offset to retrieve
-	 *
-	 * @link  https://php.net/manual/en/arrayaccess.offsetget.php
-	 *
-	 * @param mixed $offset <p>
-	 *                      The offset to retrieve.
-	 *                      </p>
-	 *
-	 * @return mixed Can return all value types.
-	 * @since 5.0.0
+	 * @inheritDoc
 	 */
+	#[\ReturnTypeWillChange]
 	public function offsetGet($offset)
 	{
 		return $this->page[$offset] ?? null;
 	}
 
 	/**
-	 * Offset to set
-	 *
-	 * @link  https://php.net/manual/en/arrayaccess.offsetset.php
-	 *
-	 * @param mixed $offset <p>
-	 *                      The offset to assign the value to.
-	 *                      </p>
-	 * @param mixed $value  <p>
-	 *                      The value to set.
-	 *                      </p>
-	 *
-	 * @return void
-	 * @since 5.0.0
+	 * @inheritDoc
 	 */
-	public function offsetSet($offset, $value)
+	#[\ReturnTypeWillChange]
+	public function offsetSet($offset, $value): void
 	{
 		$this->page[$offset] = $value;
 	}
 
 	/**
-	 * Offset to unset
-	 *
-	 * @link  https://php.net/manual/en/arrayaccess.offsetunset.php
-	 *
-	 * @param mixed $offset <p>
-	 *                      The offset to unset.
-	 *                      </p>
-	 *
-	 * @return void
-	 * @since 5.0.0
+	 * @inheritDoc
 	 */
-	public function offsetUnset($offset)
+	#[\ReturnTypeWillChange]
+	public function offsetUnset($offset): void
 	{
 		if (isset($this->page[$offset])) {
 			unset($this->page[$offset]);
@@ -169,9 +166,9 @@ class Page implements ArrayAccess
 	 * @param string $media
 	 * @see Page::initHead()
 	 */
-	public function registerStylesheet($path, string $media = 'screen')
+	public function registerStylesheet(string $path, string $media = 'screen')
 	{
-		$path = Network::appendQueryParam($path, ['v' => FRIENDICA_VERSION]);
+		$path = Network::appendQueryParam($path, ['v' => App::VERSION]);
 
 		if (mb_strpos($path, $this->basePath . DIRECTORY_SEPARATOR) === 0) {
 			$path = mb_substr($path, mb_strlen($this->basePath . DIRECTORY_SEPARATOR));
@@ -190,17 +187,18 @@ class Page implements ArrayAccess
 	 * - Infinite scroll data
 	 * - head.tpl template
 	 *
-	 * @param App      $app     The Friendica App instance
-	 * @param Module   $module  The loaded Friendica module
-	 * @param L10n     $l10n    The l10n language instance
-	 * @param IConfig  $config  The Friendica configuration
-	 * @param IPConfig $pConfig The Friendica personal configuration (for user)
+	 * @param App                         $app      The Friendica App instance
+	 * @param Arguments                   $args     The Friendica App Arguments
+	 * @param L10n                        $l10n     The l10n language instance
+	 * @param IManageConfigValues         $config   The Friendica configuration
+	 * @param IManagePersonalConfigValues $pConfig  The Friendica personal configuration (for user)
+	 * @param int                         $localUID The local user id
 	 *
 	 * @throws HTTPException\InternalServerErrorException
 	 */
-	private function initHead(App $app, Module $module, L10n $l10n, IConfig $config, IPConfig $pConfig)
+	private function initHead(App $app, Arguments $args, L10n $l10n, IManageConfigValues $config, IManagePersonalConfigValues $pConfig, int $localUID)
 	{
-		$interval = ((local_user()) ? $pConfig->get(local_user(), 'system', 'update_interval') : 40000);
+		$interval = ($localUID ? $pConfig->get($localUID, 'system', 'update_interval') : 40000);
 
 		// If the update is 'deactivated' set it to the highest integer number (~24 days)
 		if ($interval < 0) {
@@ -212,8 +210,8 @@ class Page implements ArrayAccess
 		}
 
 		// Default title: current module called
-		if (empty($this->page['title']) && $module->getName()) {
-			$this->page['title'] = ucfirst($module->getName());
+		if (empty($this->page['title']) && $args->getModuleName()) {
+			$this->page['title'] = ucfirst($args->getModuleName());
 		}
 
 		// Prepend the sitename to the page title
@@ -229,7 +227,7 @@ class Page implements ArrayAccess
 
 		$shortcut_icon = $config->get('system', 'shortcut_icon');
 		if ($shortcut_icon == '') {
-			$shortcut_icon = 'images/friendica-32.png';
+			$shortcut_icon = 'images/friendica.svg';
 		}
 
 		$touch_icon = $config->get('system', 'touch_icon');
@@ -245,23 +243,74 @@ class Page implements ArrayAccess
 		 * being first
 		 */
 		$this->page['htmlhead'] = Renderer::replaceMacros($tpl, [
-			'$local_user'      => local_user(),
-			'$generator'       => 'Friendica' . ' ' . FRIENDICA_VERSION,
-			'$delitem'         => $l10n->t('Delete this item?'),
-			'$blockAuthor'     => $l10n->t('Block this author? They won\'t be able to follow you nor see your public posts, and you won\'t be able to see their posts and their notifications.'),
+			'$l10n' => [
+				'delitem'        => $l10n->t('Delete this item?'),
+				'blockAuthor'    => $l10n->t('Block this author? They won\'t be able to follow you nor see your public posts, and you won\'t be able to see their posts and their notifications.'),
+				'ignoreAuthor'   => $l10n->t('Ignore this author? You won\'t be able to see their posts and their notifications.'),
+				'collapseAuthor' => $l10n->t('Collapse this author\'s posts?'),
+
+				'likeError'     => $l10n->t('Like not successful'),
+				'dislikeError'  => $l10n->t('Dislike not successful'),
+				'announceError' => $l10n->t('Sharing not successful'),
+				'attendError'   => $l10n->t('Attendance unsuccessful'),
+				'srvError'      => $l10n->t('Backend error'),
+				'netError'      => $l10n->t('Network error'),
+
+				// Dropzone
+				'dictDefaultMessage'           => $l10n->t('Drop files here to upload'),
+				'dictFallbackMessage'          => $l10n->t("Your browser does not support drag and drop file uploads."),
+				'dictFallbackText'             => $l10n->t('Please use the fallback form below to upload your files like in the olden days.'),
+				'dictFileTooBig'               => $l10n->t('File is too big ({{filesize}}MiB). Max filesize: {{maxFilesize}}MiB.'),
+				'dictInvalidFileType'          => $l10n->t("You can't upload files of this type."),
+				'dictResponseError'            => $l10n->t('Server responded with {{statusCode}} code.'),
+				'dictCancelUpload'             => $l10n->t('Cancel upload'),
+				'dictUploadCanceled'           => $l10n->t('Upload canceled.'),
+				'dictCancelUploadConfirmation' => $l10n->t('Are you sure you want to cancel this upload?'),
+				'dictRemoveFile'               => $l10n->t('Remove file'),
+				'dictMaxFilesExceeded'         => $l10n->t("You can't upload any more files."),
+			],
+
+			'$local_user'      => $localUID,
+			'$generator'       => 'Friendica' . ' ' . App::VERSION,
 			'$update_interval' => $interval,
 			'$shortcut_icon'   => $shortcut_icon,
 			'$touch_icon'      => $touch_icon,
 			'$block_public'    => intval($config->get('system', 'block_public')),
 			'$stylesheets'     => $this->stylesheets,
+
+			// Dropzone
+			'$max_imagesize' => round(\Friendica\Util\Strings::getBytesFromShorthand($config->get('system', 'maximagesize')) / 1000000, 1),
+
 		]) . $this->page['htmlhead'];
+	}
+
+	/**
+	 * Returns the complete URL of the current page, e.g.: http(s)://something.com/network
+	 *
+	 * Taken from http://webcheatsheet.com/php/get_current_page_url.php
+	 */
+	private function curPageURL(): string
+	{
+		$pageURL = 'http';
+		if (!empty($_SERVER["HTTPS"]) && ($_SERVER["HTTPS"] == "on")) {
+			$pageURL .= "s";
+		}
+
+		$pageURL .= "://";
+
+		if ($_SERVER["SERVER_PORT"] != "80" && $_SERVER["SERVER_PORT"] != "443") {
+			$pageURL .= $_SERVER["SERVER_NAME"] . ":" . $_SERVER["SERVER_PORT"] . $_SERVER["REQUEST_URI"];
+		} else {
+			$pageURL .= $_SERVER["SERVER_NAME"] . $_SERVER["REQUEST_URI"];
+		}
+		return $pageURL;
 	}
 
 	/**
 	 * Initializes Page->page['footer'].
 	 *
 	 * Includes:
-	 * - Javascript homebase
+	 * - JavaScript homebase
 	 * - Mobile toggle link
 	 * - Registered footer scripts (through App->registerFooterScript())
 	 * - footer.tpl template
@@ -277,8 +326,8 @@ class Page implements ArrayAccess
 		// If you're just visiting, let javascript take you home
 		if (!empty($_SESSION['visitor_home'])) {
 			$homebase = $_SESSION['visitor_home'];
-		} elseif (!empty($app->user['nickname'])) {
-			$homebase = 'profile/' . $app->user['nickname'];
+		} elseif (!empty($app->getLoggedInUserNickname())) {
+			$homebase = 'profile/' . $app->getLoggedInUserNickname();
 		}
 
 		if (isset($homebase)) {
@@ -290,9 +339,9 @@ class Page implements ArrayAccess
 		 */
 		if ($mode->isMobile() || $mode->isTablet()) {
 			if (isset($_SESSION['show-mobile']) && !$_SESSION['show-mobile']) {
-				$link = 'toggle_mobile?address=' . urlencode(curPageURL());
+				$link = 'toggle_mobile?address=' . urlencode($this->curPageURL());
 			} else {
-				$link = 'toggle_mobile?off=1&address=' . urlencode(curPageURL());
+				$link = 'toggle_mobile?off=1&address=' . urlencode($this->curPageURL());
 			}
 			$this->page['footer'] .= Renderer::replaceMacros(Renderer::getMarkupTemplate("toggle_mobile_footer.tpl"), [
 				'$toggle_link' => $link,
@@ -315,34 +364,19 @@ class Page implements ArrayAccess
 	 * - module content
 	 * - hooks for content
 	 *
-	 * @param Module $module The module
-	 * @param Mode   $mode   The Friendica execution mode
+	 * @param ResponseInterface  $response The Module response class
+	 * @param Mode               $mode     The Friendica execution mode
 	 *
 	 * @throws HTTPException\InternalServerErrorException
 	 */
-	private function initContent(Module $module, Mode $mode)
+	private function initContent(ResponseInterface $response, Mode $mode)
 	{
-		$content = '';
-
-		try {
-			$moduleClass = $module->getClassName();
-
-			$arr = ['content' => $content];
-			Hook::callAll($moduleClass . '_mod_content', $arr);
-			$content = $arr['content'];
-			$arr     = ['content' => call_user_func([$moduleClass, 'content'], $module->getParameters())];
-			Hook::callAll($moduleClass . '_mod_aftercontent', $arr);
-			$content .= $arr['content'];
-		} catch (HTTPException $e) {
-			$content = ModuleHTTPException::content($e);
-		}
-
 		// initialise content region
 		if ($mode->isNormal()) {
 			Hook::callAll('page_content_top', $this->page['content']);
 		}
 
-		$this->page['content'] .= $content;
+		$this->page['content'] .= (string)$response->getBody();
 	}
 
 	/**
@@ -357,7 +391,7 @@ class Page implements ArrayAccess
 	 */
 	public function registerFooterScript($path)
 	{
-		$path = Network::appendQueryParam($path, ['v' => FRIENDICA_VERSION]);
+		$path = Network::appendQueryParam($path, ['v' => App::VERSION]);
 
 		$url = str_replace($this->basePath . DIRECTORY_SEPARATOR, '', $path);
 
@@ -365,21 +399,59 @@ class Page implements ArrayAccess
 	}
 
 	/**
+	 * Directly exit with the current response (include setting all headers)
+	 *
+	 * @param ResponseInterface $response
+	 */
+	public function exit(ResponseInterface $response)
+	{
+		header(sprintf("HTTP/%s %s %s",
+			$response->getProtocolVersion(),
+			$response->getStatusCode(),
+			$response->getReasonPhrase())
+		);
+
+		foreach ($response->getHeaders() as $key => $header) {
+			if (is_array($header)) {
+				$header_str = implode(',', $header);
+			} else {
+				$header_str = $header;
+			}
+
+			if (empty($key)) {
+				header($header_str);
+			} else {
+				header("$key: $header_str");
+			}
+		}
+
+		echo $response->getBody();
+	}
+
+	/**
 	 * Executes the creation of the current page and prints it to the screen
 	 *
-	 * @param App      $app     The Friendica App
-	 * @param BaseURL  $baseURL The Friendica Base URL
-	 * @param Mode     $mode    The current node mode
-	 * @param Module   $module  The loaded Friendica module
-	 * @param L10n     $l10n    The l10n language class
-	 * @param IConfig  $config  The Configuration of this node
-	 * @param IPConfig $pconfig The personal/user configuration
-	 *
+	 * @param App                         $app      The Friendica App
+	 * @param BaseURL                     $baseURL  The Friendica Base URL
+	 * @param Arguments                   $args     The Friendica App arguments
+	 * @param Mode                        $mode     The current node mode
+	 * @param ResponseInterface           $response The Response of the module class, including type, content & headers
+	 * @param L10n                        $l10n     The l10n language class
+	 * @param Profiler                    $profiler
+	 * @param IManageConfigValues         $config   The Configuration of this node
+	 * @param IManagePersonalConfigValues $pconfig  The personal/user configuration
+	 * @param Nav                         $nav
+	 * @param int                         $localUID
+	 * @throws HTTPException\MethodNotAllowedException
 	 * @throws HTTPException\InternalServerErrorException
+	 * @throws HTTPException\ServiceUnavailableException
 	 */
-	public function run(App $app, BaseURL $baseURL, Mode $mode, Module $module, L10n $l10n, Profiler $profiler, IConfig $config, IPConfig $pconfig)
+	public function run(App $app, BaseURL $baseURL, Arguments $args, Mode $mode, ResponseInterface $response, L10n $l10n, Profiler $profiler, IManageConfigValues $config, IManagePersonalConfigValues $pconfig, Nav $nav, int $localUID)
 	{
-		$moduleName = $module->getName();
+		$moduleName = $args->getModuleName();
+
+		$this->command = $moduleName;
+		$this->method  = $args->getMethod();
 
 		/* Create the page content.
 		 * Calls all hooks which are including content operations
@@ -387,8 +459,7 @@ class Page implements ArrayAccess
 		 * Sets the $Page->page['content'] variable
 		 */
 		$timestamp = microtime(true);
-		$this->initContent($module, $mode);
-		$profiler->set(microtime(true) - $timestamp, 'content');
+		$this->initContent($response, $mode);
 
 		// Load current theme info after module has been initialized as theme could have been set in module
 		$currentTheme = $app->getCurrentTheme();
@@ -409,12 +480,14 @@ class Page implements ArrayAccess
 		 * all the module functions have executed so that all
 		 * theme choices made by the modules can take effect.
 		 */
-		$this->initHead($app, $module, $l10n, $config, $pconfig);
+		$this->initHead($app, $args, $l10n, $config, $pconfig, $localUID);
 
 		/* Build the page ending -- this is stuff that goes right before
 		 * the closing </body> tag
 		 */
 		$this->initFooter($app, $mode, $l10n);
+
+		$profiler->set(microtime(true) - $timestamp, 'aftermath');
 
 		if (!$mode->isAjax()) {
 			Hook::callAll('page_end', $this->page['content']);
@@ -423,7 +496,21 @@ class Page implements ArrayAccess
 		// Add the navigation (menu) template
 		if ($moduleName != 'install' && $moduleName != 'maintenance') {
 			$this->page['htmlhead'] .= Renderer::replaceMacros(Renderer::getMarkupTemplate('nav_head.tpl'), []);
-			$this->page['nav']      = Nav::build($app);
+			$this->page['nav']      = $nav->getHtml();
+		}
+
+		foreach ($response->getHeaders() as $key => $header) {
+			if (is_array($header)) {
+				$header_str = implode(',', $header);
+			} else {
+				$header_str = $header;
+			}
+
+			if (empty($key)) {
+				header($header_str);
+			} else {
+				header("$key: $header_str");
+			}
 		}
 
 		// Build the page - now that we have all the components
@@ -435,7 +522,7 @@ class Page implements ArrayAccess
 
 			$content = mb_convert_encoding($this->page["content"], 'HTML-ENTITIES', "UTF-8");
 
-			/// @TODO one day, kill those error-surpressing @ stuff, or PHP should ban it
+			/// @TODO one day, kill those error-suppressing @ stuff, or PHP should ban it
 			@$doc->loadHTML($content);
 
 			$xpath = new DOMXPath($doc);
@@ -450,21 +537,21 @@ class Page implements ArrayAccess
 			}
 
 			if ($_GET["mode"] == "raw") {
-				header("Content-type: text/html; charset=utf-8");
-
-				echo substr($target->saveHTML(), 6, -8);
-
-				exit();
+				System::httpExit(substr($target->saveHTML(), 6, -8), Response::TYPE_HTML);
 			}
 		}
 
 		$page    = $this->page;
-		$profile = $app->profile;
 
-		header("X-Friendica-Version: " . FRIENDICA_VERSION);
+		// add and escape some common but crucial content for direct "echo" in HTML (security)
+		$page['title']   = htmlspecialchars($page['title'] ?? '');
+		$page['section'] = htmlspecialchars($args->get(0) ?? 'generic');
+		$page['module']  = htmlspecialchars($args->getModuleName() ?? '');
+
+		header("X-Friendica-Version: " . App::VERSION);
 		header("Content-type: text/html; charset=utf-8");
 
-		if ($config->get('system', 'hsts') && ($baseURL->getSSLPolicy() == BaseURL::SSL_POLICY_FULL)) {
+		if ($config->get('system', 'hsts') && ($baseURL->getScheme() === 'https')) {
 			header("Strict-Transport-Security: max-age=31536000");
 		}
 

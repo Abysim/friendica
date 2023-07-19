@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -49,7 +49,7 @@ class BoundariesPager extends Pager
 	 * @param string  $last_item_id  The id† of the last item in the displayed item list
 	 * @param integer $itemsPerPage  An optional number of items per page to override the default value
 	 */
-	public function __construct(L10n $l10n, $queryString, $first_item_id = null, $last_item_id = null, $itemsPerPage = 50)
+	public function __construct(L10n $l10n, string $queryString, string $first_item_id = null, string $last_item_id = null, int $itemsPerPage = 50)
 	{
 		parent::__construct($l10n, $queryString, $itemsPerPage);
 
@@ -73,12 +73,12 @@ class BoundariesPager extends Pager
 		}
 	}
 
-	public function getStart()
+	public function getStart(): int
 	{
 		throw new \BadMethodCallException();
 	}
 
-	public function getPage()
+	public function getPage(): int
 	{
 		throw new \BadMethodCallException();
 	}
@@ -94,7 +94,7 @@ class BoundariesPager extends Pager
 	 * $params = ['order' => ['sort_field' => true], 'limit' => $itemsPerPage];
 	 * $items = DBA::toArray(DBA::select($table, $fields, $condition, $params));
 	 *
-	 * $pager = new BoundariesPager($a->query_string, $items[0]['sort_field'], $items[coutn($items) - 1]['sort_field'], $itemsPerPage);
+	 * $pager = new BoundariesPager($a->query_string, $items[0]['sort_field'], $items[count($items) - 1]['sort_field'], $itemsPerPage);
 	 *
 	 * $html = $pager->renderMinimal(count($items));
 	 *
@@ -102,7 +102,7 @@ class BoundariesPager extends Pager
 	 * @return string HTML string of the pager
 	 * @throws \Exception
 	 */
-	public function renderMinimal(int $itemCount)
+	public function renderMinimal(int $itemCount): string
 	{
 		$displayedItemCount = max(0, intval($itemCount));
 
@@ -130,7 +130,10 @@ class BoundariesPager extends Pager
 		return Renderer::replaceMacros($tpl, ['pager' => $data]);
 	}
 
-	public function renderFull($itemCount)
+	/**
+	 * Unsupported method, must be type-compatible
+	 */
+	public function renderFull(int $itemCount): string
 	{
 		throw new \BadMethodCallException();
 	}

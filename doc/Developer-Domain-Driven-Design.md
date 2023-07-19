@@ -30,23 +30,24 @@ function doSomething(array $intros)
     }
 }
 
-$intros = \Friendica\Database\DBA::selectToArray('intros', [], ['uid' => local_user()]);
+$intros = \Friendica\Database\DBA::selectToArray('intros', [], ['uid' => Session::getLocalUser()]);
 
 doSomething($intros);
 ```
 
 After:
+
 ```php
-function doSomething(\Friendica\Collection\Introductions $intros)
+function doSomething(\Friendica\Contact\Introductions\Collection\Introductions $intros)
 {
     foreach ($intros as $intro) {
-        /** @var $intro \Friendica\Model\Introduction */
+        /** @var $intro \Friendica\Contact\Introductions\Entity\Introduction */
         $introId = $intro->id;
     }
 }
 
-/** @var $intros \Friendica\Collection\Introductions */
-$intros = \Friendica\DI::intro()->select(['uid' => local_user()]);
+/** @var $intros \Friendica\Contact\Introductions\Collection\Introductions */
+$intros = \Friendica\DI::intro()->selectForUser(Session::getLocalUser());
 
 doSomething($intros);
 ```

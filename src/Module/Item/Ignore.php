@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,9 +22,9 @@
 namespace Friendica\Module\Item;
 
 use Friendica\BaseModule;
-use Friendica\Core\Session;
 use Friendica\Core\System;
 use Friendica\DI;
+use Friendica\Model\Item;
 use Friendica\Model\Post;
 use Friendica\Network\HTTPException;
 
@@ -33,31 +33,31 @@ use Friendica\Network\HTTPException;
  */
 class Ignore extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		$l10n = DI::l10n();
 
-		if (!Session::isAuthenticated()) {
+		if (!DI::userSession()->isAuthenticated()) {
 			throw new HttpException\ForbiddenException($l10n->t('Access denied.'));
 		}
 
-		if (empty($parameters['id'])) {
+		if (empty($this->parameters['id'])) {
 			throw new HTTPException\BadRequestException();
 		}
 
-		$itemId = intval($parameters['id']);
+		$itemId = intval($this->parameters['id']);
 
 		$dba = DI::dba();
 
-		$thread = Post::selectFirst(['uri-id', 'uid'], ['id' => $itemId, 'gravity' => GRAVITY_PARENT]);
+		$thread = Post::selectFirst(['uri-id', 'uid'], ['id' => $itemId, 'gravity' => Item::GRAVITY_PARENT]);
 		if (!$dba->isResult($thread)) {
 			throw new HTTPException\NotFoundException();
 		}
 
-		$ignored = !Post\ThreadUser::getIgnored($thread['uri-id'], local_user());
+		$ignored = !Post\ThreadUser::getIgnored($thread['uri-id'], DI::userSession()->getLocalUserId());
 
-		if (in_array($thread['uid'], [0, local_user()])) {
-			Post\ThreadUser::setIgnored($thread['uri-id'], local_user(), $ignored);
+		if (in_array($thread['uid'], [0, DI::userSession()->getLocalUserId()])) {
+			Post\ThreadUser::setIgnored($thread['uri-id'], DI::userSession()->getLocalUserId(), $ignored);
 		} else {
 			throw new HTTPException\BadRequestException();
 		}

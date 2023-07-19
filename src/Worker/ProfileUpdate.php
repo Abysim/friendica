@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,6 +24,7 @@ namespace Friendica\Worker;
 use Friendica\Core\Logger;
 use Friendica\Core\Worker;
 use Friendica\DI;
+use Friendica\Protocol\Delivery;
 use Friendica\Protocol\Diaspora;
 use Friendica\Protocol\ActivityPub;
 
@@ -31,7 +32,14 @@ use Friendica\Protocol\ActivityPub;
  * Send updated profile data to Diaspora and ActivityPub
  */
 class ProfileUpdate {
-	public static function execute($uid = 0) {
+	/**
+	 * Sends updated profile data to Diaspora and ActivityPub
+	 *
+	 * @param int $uid User id (optional, default: 0)
+	 * @return void
+	 */
+	public static function execute(int $uid = 0)
+	{
 		if (empty($uid)) {
 			return;
 		}
@@ -41,9 +49,15 @@ class ProfileUpdate {
 		$inboxes = ActivityPub\Transmitter::fetchTargetInboxesforUser($uid);
 
 		foreach ($inboxes as $inbox => $receivers) {
-			Logger::log('Profile update for user ' . $uid . ' to ' . $inbox .' via ActivityPub', Logger::DEBUG);
-			Worker::add(['priority' => $a->queue['priority'], 'created' => $a->queue['created'], 'dont_fork' => true],
-				'APDelivery', Delivery::PROFILEUPDATE, 0, $inbox, $uid, $receivers);
+			Logger::info('Profile update for user ' . $uid . ' to ' . $inbox .' via ActivityPub');
+			Worker::add(['priority' => $a->getQueueValue('priority'), 'created' => $a->getQueueValue('created'), 'dont_fork' => true],
+				'APDelivery',
+				Delivery::PROFILEUPDATE,
+				0,
+				$inbox,
+				$uid,
+				$receivers
+			);
 		}
 
 		Diaspora::sendProfile($uid);

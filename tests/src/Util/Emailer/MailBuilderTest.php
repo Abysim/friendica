@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,9 +22,9 @@
 namespace Friendica\Test\src\Util\Emailer;
 
 use Friendica\App\BaseURL;
-use Friendica\Core\Config\IConfig;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\Core\L10n;
-use Friendica\Network\HTTPException\InternalServerErrorException;
+use Friendica\Network\HTTPException\UnprocessableEntityException;
 use Friendica\Object\EMail\IEmail;
 use Friendica\Test\MockedTest;
 use Friendica\Test\Util\SampleMailBuilder;
@@ -41,7 +41,7 @@ class MailBuilderTest extends MockedTest
 {
 	use VFSTrait;
 
-	/** @var IConfig|MockInterface */
+	/** @var IManageConfigValues|MockInterface */
 	private $config;
 	/** @var L10n|MockInterface */
 	private $l10n;
@@ -57,11 +57,11 @@ class MailBuilderTest extends MockedTest
 
 		$this->setUpVfsDir();
 
-		$this->config  = \Mockery::mock(IConfig::class);
+		$this->config  = \Mockery::mock(IManageConfigValues::class);
 		$this->l10n    = \Mockery::mock(L10n::class);
 		$this->baseUrl = \Mockery::mock(BaseURL::class);
-		$this->baseUrl->shouldReceive('getHostname')->andReturn('friendica.local');
-		$this->baseUrl->shouldReceive('get')->andReturn('http://friendica.local');
+		$this->baseUrl->shouldReceive('getHost')->andReturn('friendica.local');
+		$this->baseUrl->shouldReceive('__toString')->andReturn('http://friendica.local');
 
 		$this->defaultHeaders = [];
 	}
@@ -93,6 +93,7 @@ class MailBuilderTest extends MockedTest
 	 * Test if the builder can create full rendered emails
 	 *
 	 * @todo Create test once "Renderer" and "BBCode" are dynamic
+	 * @doesNotPerformAssertions
 	 */
 	public function testBuilderWithNonRawEmail()
 	{
@@ -132,7 +133,7 @@ class MailBuilderTest extends MockedTest
 	 */
 	public function testBuilderWithEmptyMail()
 	{
-		$this->expectException(InternalServerErrorException::class);
+		$this->expectException(UnprocessableEntityException::class);
 		$this->expectExceptionMessage("Recipient address is missing.");
 
 		$builder = new SampleMailBuilder($this->l10n, $this->baseUrl, $this->config, new NullLogger());
@@ -145,7 +146,7 @@ class MailBuilderTest extends MockedTest
 	 */
 	public function testBuilderWithEmptySender()
 	{
-		$this->expectException(InternalServerErrorException::class);
+		$this->expectException(UnprocessableEntityException::class);
 		$this->expectExceptionMessage("Sender address or name is missing.");
 
 		$builder = new SampleMailBuilder($this->l10n, $this->baseUrl, $this->config, new NullLogger());

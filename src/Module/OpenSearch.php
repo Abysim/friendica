@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,6 +24,7 @@ namespace Friendica\Module;
 use DOMDocument;
 use DOMElement;
 use Friendica\BaseModule;
+use Friendica\Core\System;
 use Friendica\DI;
 use Friendica\Util\XML;
 
@@ -36,24 +37,23 @@ class OpenSearch extends BaseModule
 	/**
 	 * @throws \Exception
 	 */
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-		header('Content-type: application/opensearchdescription+xml');
-
-		$hostname = DI::baseUrl()->getHostname();
-		$baseUrl  = DI::baseUrl()->get();
+		$hostname = DI::baseUrl()->getHost();
+		$baseUrl  = (string)DI::baseUrl();
 
 		/** @var DOMDocument $xml */
-		$xml = null;
-
 		XML::fromArray([
 			'OpenSearchDescription' => [
 				'@attributes' => [
 					'xmlns' => 'http://a9.com/-/spec/opensearch/1.1',
 				],
-				'ShortName'   => "Friendica $hostname",
-				'Description' => "Search in Friendica $hostname",
-				'Contact'     => 'https://github.com/friendica/friendica/issues',
+				'ShortName'      => "Friendica $hostname",
+				'Description'    => "Search in Friendica $hostname",
+				'Contact'        => 'https://github.com/friendica/friendica/issues',
+				'InputEncoding'  => 'UTF-8',
+				'OutputEncoding' => 'UTF-8',
+				'Developer'      => 'Friendica Developer Team',
 			],
 		], $xml);
 
@@ -85,8 +85,6 @@ class OpenSearch extends BaseModule
 			'template' => "$baseUrl/opensearch",
 		]);
 
-		echo $xml->saveXML();
-
-		exit();
+		System::httpExit($xml->saveXML(), Response::TYPE_XML, 'application/opensearchdescription+xml');
 	}
 }

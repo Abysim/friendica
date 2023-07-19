@@ -76,12 +76,40 @@ blockquote {
 .fakelink {
 	cursor: pointer;
 }
+.btn.btn-link.fakelink {
+	box-shadow: none;
+	padding: 0 2px;
+	vertical-align: baseline;
+	outline-offset: 0;
+}
+
 .hidden {
 	display: none !important;
 }
 .minimize {
 	max-height: 0px !important;
 	overflow: hidden !important;
+}
+
+/**
+ * details tag
+ */
+details {
+	padding: .5em .5em 0;
+}
+details details {
+	padding-left: .5em;
+}
+details summary {
+	font-weight: bold;
+	display: list-item;
+}
+
+/**
+ * clickable table rows
+ */
+.table > tbody > td[role="button"] {
+	cursor: pointer;
 }
 
 /**
@@ -338,6 +366,10 @@ btn-eventnav:hover {
 }
 aside .badge {
 	opacity: 0.7;
+}
+.forum-widget-entry .badge,
+.sidebar-group-li .badge {
+	margin-top: 6px;
 }
 
 /* disabled elements */
@@ -779,13 +811,15 @@ nav.navbar .nav > li > button:focus {
 }
 #offcanvasUsermenu a {
 	display: block;
+	margin: -10px -15px;
+	padding: 10px 15px;
 }
 #offcanvasUsermenu li.nav-sitename {
 	font-weight: bold;
 }
 #topbar-first .dropdown.account li#nav-sitename {
-	padding-left: 15px;
-	padding-right: 15px;
+	padding-left: 20px;
+	padding-right: 20px;
 	font-weight: bold;
 	word-break: break-word;
 }
@@ -794,6 +828,10 @@ nav.navbar .nav > li > button:focus {
 	background-color: $nav_bg;
 }
 /* Nav Search */
+.menu-popup {
+	max-height: calc(100vh - 55px);
+	overflow-y: auto;
+}
 #topbar-first #search-box .navbar-form {
 	margin: 0px;
 	padding: 12px 12px;
@@ -935,13 +973,15 @@ ul li .intro-wrapper button.intro-action-link {
 	background-color: $nav_bg;
 	border: none;
 }
+.dropdown-menu .divider {
+	margin: 5px 0;
+}
 .nav-pills .dropdown-menu li.divider,
 .nav-tabs .dropdown-menu li.divider,
 .account .dropdown-menu li.divider,
 .contact-photo-wrapper .dropdown-menu li.divider {
 	background-color: $menu_background_hover_color;
 	border-bottom: none;
-	margin: 9px 1px !important;
 }
 .nav-pills .dropdown-menu li > a,
 .nav-tabs .dropdown-menu li > a,
@@ -959,9 +999,6 @@ ul li .intro-wrapper button.intro-action-link {
 .contact-photo-wrapper .dropdown-menu li .btn-link {
 	color: $nav_icon_color;
 	font-weight: 400;
-	font-size: 13px;
-	padding: 4px 15px;
-	text-transform: capitalize;
 	width: 100%;
 	text-align: left;
 }
@@ -1017,7 +1054,6 @@ aside .widget,
 	position: relative;
 	margin-bottom: 20px;
 	padding: 10px;
-	font-size: 13px;
 	overflow: auto;
 }
 aside .widget h3,
@@ -1025,7 +1061,7 @@ aside .widget h3,
 	font-weight: bold;
 	font-size: 16px;
 	margin: 0;
-	padding-bottom: 20px;
+	padding-bottom: 10px;
 }
 
 aside .widget ul,
@@ -1038,10 +1074,11 @@ aside .widget ul,
 	list-style: none;
 }
 
+aside .widget li .label {
+	float: left;
+}
 aside .widget li,
 .nav-container .widget li {
-	padding-top: 2px;
-	padding-bottom: 2px;
 	padding-left: 20px;
 	padding-right: 10px;
 }
@@ -1053,6 +1090,12 @@ aside .widget li.selected,
 	background-color: rgba(247, 247, 247, $contentbg_transp);
 	border-left: 3px solid $link_color !important;
 	padding-left: 17px;
+}
+.side-link-link,
+aside .widget li a {
+	display: block;
+	padding-top: 6px;
+	padding-bottom: 6px;
 }
 aside .widget li a,
 aside .widget li a:hover {
@@ -1090,7 +1133,7 @@ aside > #datebrowse-sidebar .posted-date-selector-months > ul > li:hover {
 	-ms-transition: all 0.2s ease-in-out;
 	transition: all 0.2s ease-in-out;
 }
-#forumlist-sidbar-ul li:hover a > .forumlist-img {
+#forumlist-sidebar-ul li:hover a > .forumlist-img {
 	-webkit-filter: unset;
 	filter: unset;
 	opacity: unset;
@@ -1166,9 +1209,9 @@ aside .vcard .title {
 }
 aside .vcard .detail {
 	display: table;
-	padding: 5px 0;
+	padding: 2px 0;
 }
-aside .xmpp {
+aside .xmpp, aside .matrix {
 	display: table;
 }
 aside .vcard .icon {
@@ -1180,13 +1223,15 @@ aside .vcard .icon {
 	overflow: auto;
 	margin-bottom: 10px;
 }
+aside .vcard #subscribe-feed-link-button,
 aside .vcard #dfrn-request-link-button,
-aside .vcard #wallmessage-link-botton {
+aside .vcard #wallmessage-link-button {
 	width: 50%;
 	margin: 0 0 0 -5px;
 	float: left;
 	padding: 0 5px;
 }
+aside .vcard #subscribe-feed-link,
 aside .vcard #dfrn-request-link,
 aside .vcard #wallmessage-link {
 	width: 100%;
@@ -1238,7 +1283,7 @@ aside .vcard #wallmessage-link {
 	color: $font_color;
 	font-size: 12px;
 }
-.network-content-wrapper > #viewcontact_wrapper-network,
+.network-content-wrapper > .generic-page-wrapper,
 #nav-short-info .contact-wrapper .contact-photo-overlay,
 #nav-short-info .contact-wrapper .contact-actions {
 	display: none;
@@ -1271,7 +1316,11 @@ div#sidebar-group-list {
 }
 
 .group-edit-tool {
+	padding-top: 0;
 	color: $font_color_darker;
+}
+.sidebar-widget-header .group-edit-tool {
+	margin-top: -5px;
 }
 
 .faded-icon {
@@ -1287,9 +1336,12 @@ div#sidebar-group-list {
 	margin-left: 20px;
 }
 
-aside #group-sidebar .sidebar-group-li:hover .group-edit-tool.faded-icon,
-aside #saved-search-list .saved-search-li:hover .savedsearchdrop.faded-icon,
-aside .widget:hover .widget-action.faded-icon {
+aside .widget-action {
+	padding: 5px 10px;
+}
+aside #group-sidebar .sidebar-group-li .group-edit-tool.faded-icon:hover,
+aside #saved-search-list .saved-search-li .savedsearchdrop.faded-icon:hover,
+aside .widget.widget-action.faded-icon:hover {
 	opacity: 0.8;
 	transition: all 0.25s ease-in-out;
 }
@@ -1299,7 +1351,7 @@ aside .widget .widget-action.faded-icon:hover {
 	opacity: 1;
 }
 aside #group-sidebar li .group-checkbox {
-	margin: 0;
+	margin: 6px 0 0;
 }
 aside #group-sidebar li .group-edit-tool {
 	padding-right: 10px;
@@ -1534,17 +1586,17 @@ textarea.comment-edit-text:focus + .comment-edit-form .preview {
 }
 .fbrowser .fbrowser-content-container {
 	overflow-y: auto;
-	max-height: calc(100vh - 175px);
+	max-height: calc(100vh - 233px);
 }
 @media (min-width: 768px) {
 	.fbrowser .fbrowser-content-container {
-		max-height: calc(100vh - 220px);
+		max-height: calc(100vh - 277px);
 	}
 }
-.fbrowser.image .photo-album-image-wrapper {
+.fbrowser.photo .photo-album-image-wrapper {
 	box-shadow: 2px 2px 5px 0px rgba(0, 0, 0, 0.2);
 }
-.fbrowser.image .photo-album-image-wrapper .caption {
+.fbrowser.photo .photo-album-image-wrapper .caption {
 	pointer-events: none;
 }
 .fbrowser .profile-rotator-wrapper {
@@ -1695,13 +1747,13 @@ aside .panel-body {
 }
 
 /* wall items action dropdown menu */
-.media [role="heading"] {
+.media .contact-info {
 	position: relative;
 }
 
 /* Workaround for Firefox where the post heading covers the avatar, preventing hovercard interaction,
  48px is the width of the avatar image and should be adjusted accordingly if it ever changes. */
-.media .dropdown.pull-left + [role="heading"] {
+.media .dropdown.pull-left + .contact-info {
 	margin-left: 48px;
 }
 
@@ -1710,26 +1762,33 @@ aside .panel-body {
 	right: 0;
 	top: 0;
 }
-.shared_header .preferences {
-	top: 7px;
-	right: 9px;
+.shared_header {
+	margin-left: 0px;
+	margin-top: 0px;
+	padding-top: 0px;
+	margin-bottom: 10px;
+	border-top: none;
+	color: inherit;
 }
+.preferences .plink {
+	margin-left: 5px;
+}
+
+blockquote.shared_content {
+	padding: 0px;
+	margin-inline-start: 0px;
+	color: inherit;
+}
+
 .wall-item-network {
 	font-size: 13px;
 }
 
 /* wall items contact info */
-.media .media-body {
-	font-size: 13px;
-}
 .media .media-body h4.media-heading {
 	font-size: 14px;
 	font-weight: 500;
 	color: $font_color_darker;
-}
-.media .media-body .addional-info a,
-.media .media-body h5.media-heading > a {
-	display: block;
 }
 .media .contact-info-comment {
 	display: table-cell;
@@ -1739,7 +1798,7 @@ aside .panel-body {
 	margin: 0 0 5px;
 }
 .media-heading {
-	margin: 0 0 5px;
+	margin: 0px;
 }
 .wall-item-name,
 .shared-author {
@@ -1838,19 +1897,6 @@ aside .panel-body {
 .vevent:hover {
 	box-shadow: 0 0 0 1.5px rgba(0, 0, 0, 0.15) inset, 0 1px 1px rgba(0, 0, 0, 0.05);
 }
-.shared_header {
-	margin-left: 0px;
-	margin-top: 0px;
-	padding-top: 0px;
-	margin-bottom: 10px;
-	border-top: none;
-	color: inherit;
-}
-blockquote.shared_content {
-	padding: 0px;
-	margin-left: 0px;
-	color: inherit;
-}
 code > .hl-main {
 	padding: 10px 10px 1px 0;
 }
@@ -1901,6 +1947,9 @@ code > .hl-main {
 	margin: 10px 0;
 	font-size: 13px;
 }
+.wall-item-tags:empty {
+	margin: 0;
+}
 
 .wall-item-tags a {
 	color: $font_color_darker;
@@ -1924,14 +1973,16 @@ code > .hl-main {
 	margin: 0;
 	justify-content: space-between;
 }
+.wall-item-actions .btn,
 .wall-item-actions a,
 .wall-item-actions button {
-	font-size: 13px;
 	color: $font_color_darker;
+	background-color: transparent;
 }
 .wall-item-actions .active {
 	font-weight: bold;
 	color: $link_color;
+	box-shadow: none;
 }
 .wall-item-actions-left {
 	display: table-cell;
@@ -1940,27 +1991,54 @@ code > .hl-main {
 .wall-item-actions-right {
 	display: flex;
 }
-.wall-item-actions .checkbox {
-	margin: 0;
-	margin-left: 20px;
+.wall-item-actions-items {
+	flex-grow: 1;
 }
-.wall-item-actions .button-comments,
-.wall-item-actions .button-votes,
-.wall-item-actions .button-likes {
-	text-transform: capitalize;
+.wall-item-actions-row {
+	display: flex;
+}
+.wall-item-actions-row .btn {
+	width: 100%;
+}
+.wall-item-actions-row > * {
+	flex: 1 1 0;
+}
+.wall-item-actions .checkbox {
+	margin: 0 0 0 15px;
+}
+@media screen and (max-width: 767px) {
+	.wall-item-actions .btn,
+	.wall-item-actions a,
+	.wall-item-actions button {
+		padding-right: 0;
+		padding-left: 0;
+	}
+	.wall-item-actions .checkbox {
+		margin-top: 8px;
+		flex: 0 1 auto;
+	}
+	.wall-item-actions .like-rotator {
+		position: absolute;
+		top: 8px;
+		right: 0;
+	}
 }
 .wall-item-actions button:hover {
-	color: $font_color_darker;
 	text-decoration: underline;
 }
 .wall-item-actions .separator {
 	margin: 0 0.3em;
 }
-
+.wall-item-responses {
+	margin-top: .3em;
+}
 .wall-item-responses > div > p {
 	margin: 0;
 }
-
+.btn-group-event {
+	display: flex;
+	flex-basis: auto;
+}
 /* wall item hover effects */
 
 @media (min-width: 768px) {
@@ -1988,8 +2066,7 @@ code > .hl-main {
 	}
 	/* Like/Comment/etc buttons */
 	.wall-item-container .wall-item-links,
-	.wall-item-container .wall-item-actions button,
-	.wall-item-container .body-attach > a {
+	.wall-item-container .wall-item-actions button > a {
 		opacity: 0.4;
 
 		-webkit-transition: all 0.25s ease-in-out;
@@ -1999,8 +2076,7 @@ code > .hl-main {
 		transition: all 0.25s ease-in-out;
 	}
 	.wall-item-container:hover .wall-item-links,
-	.wall-item-container:hover .wall-item-actions button,
-	.wall-item-container:hover .body-attach > a {
+	.wall-item-container:hover .wall-item-actions button > a {
 		opacity: 1;
 
 		-webkit-transition: all 0.25s ease-in-out;
@@ -2047,12 +2123,12 @@ wall-item-comment-wrapper.well hr {
 	margin-top: 0;
 }
 .hide-comments-outer {
+	display: block;
 	background-color: rgba(0, 0, 0, 0.03);
-	padding: 0.5em;
-	border-radius: 0.5em 0.5em 0 0;
-}
-.hide-comments-total {
-	cursor: pointer;
+	padding: 0.3em 10px;
+	width: 100%;
+	border: none;
+	text-align: left;
 }
 
 /*
@@ -2104,7 +2180,7 @@ wall-item-comment-wrapper.well hr {
 nav .acpopup {
 	margin-left: -23px;
 }
-/** @todo: we schould consider the possebility to overwrite bootstrap dropdowns
+/** @todo: we should consider the possibility to overwrite bootstrap dropdowns
  at the beginning of this file to get rid of the !important */
 .textcomplete-item > a {
 	color: $font_color_darker !important;
@@ -2147,10 +2223,14 @@ img.acpopup-img {
 
 /* Menubar Tabs */
 section > .tabbar-wrapper {
-	/* The tabbar shouldn't' be visibile inside
+	/* The tabbar shouldn't' be visible inside
 the section element. Only after we have
 moved it to the nav through js */
 	display: none !important;
+}
+.tabbar-wrapper__link {
+	padding-right: 10px;
+	padding-left: 10px;
 }
 #tabmenu,
 .tabbar-wrapper,
@@ -2168,7 +2248,6 @@ ul.tabs {
 	list-style: none;
 	height: 100%;
 	padding: 0;
-	padding-top: 10px;
 	margin: 0;
 }
 ul.tabs li {
@@ -2181,8 +2260,9 @@ ul.tabs li {
 	transition: all 0.15s ease;
 }
 ul.tabs li a {
-	margin-left: 10px;
-	margin-right: 10px;
+	display: block;
+	padding-top: 11px;
+	padding-bottom: 11px;
 }
 ul.tabs li:hover,
 ul.tabs li.active {
@@ -2192,7 +2272,7 @@ ul.tabs li.active {
 	padding-top: 0;
 }
 #dropdownMenuTools-xs {
-	padding: 9px 10px;
+	padding: 9px 15px;
 }
 ul.tabbar ul.tabs-extended:hover li.dropdown {
 	border-bottom: 0;
@@ -2214,6 +2294,12 @@ ul.dropdown-menu li:hover {
 	box-sizing: border-box;
 }
 /* Dropdown Menu */
+.dropdown-menu li .btn-link,
+.dropdown-menu li a,
+.tabs .dropdown-menu li a {
+	padding: 6px 20px;
+	font-size: 14px;
+}
 .dropdown-menu li a,
 .dropdown-menu li .btn-link {
 	color: $font_color_darker;
@@ -2228,7 +2314,7 @@ ul.dropdown-menu li:hover {
 	margin-top: 3px;
 }
 
-/* Notificaiotn badges */
+/* Notification badges */
 #mail-update-li.show {
 	display: inline-block !important;
 }
@@ -2471,20 +2557,18 @@ ul.viewcontact_wrapper > li {
 }
 .contact-wrapper .contact-actions {
 	display: flex;
+	position: relative;
+	margin: -8px -8px 0 0;
 }
 .contact-wrapper .contact-action-link,
 .contact-wrapper .contact-action-link:hover,
 .textcomplete-item .contact-wrapper .contact-action-link {
-	padding: 0 5px;
 	color: $font_color_darker;
 	border: 0;
 }
 .contact-wrapper .contact-action-link {
-	opacity: 0.1;
-	transition: all 0.25s ease-in-out;
-}
-ul li:hover .contact-wrapper .contact-action-link {
-	opacity: 0.8;
+	background-color: transparent;
+	opacity: 0.3;
 	transition: all 0.25s ease-in-out;
 }
 ul li:hover .contact-wrapper .contact-action-link:hover {
@@ -2493,14 +2577,6 @@ ul li:hover .contact-wrapper .contact-action-link:hover {
 #contacts-search-wrapper,
 #directory-search-wrapper {
 	padding: 10px 0;
-}
-#contact-drop-confirm .contact-actions,
-#contact-drop-confirm .contact-photo-overlay,
-#contact-drop-confirm .contact-photo-menu {
-	display: none;
-}
-#contact-drop-confirm #confirm-form {
-	margin-top: 20px;
 }
 
 /* contact-edit */
@@ -2551,13 +2627,13 @@ ul li:hover .contact-wrapper .contact-action-link:hover {
 }
 #group-update-wrapper .viewcontact_wrapper .contact-group-actions {
 	height: 100%;
-	margin-top: -10px;
 	display: flex;
+	flex-direction: column;
+	justify-content: center;
 }
 #group-update-wrapper .viewcontact_wrapper .contact-group-link {
 	opacity: 0.8;
 	font-size: 20px;
-	line-height: 50px;
 }
 #group-update-wrapper .viewcontact_wrapper .contact-action-link:hover {
 	opacity: 1;
@@ -2898,14 +2974,18 @@ ul li:hover .contact-wrapper .contact-action-link:hover {
 .section-subtitle-wrapper {
 	padding: 1px 10px;
 }
+.accordion-toggle {
+	width: 100%;
+    text-align: left;
+}
 details.profile-jot-net[open] summary:before,
-.panel .section-subtitle-wrapper a.accordion-toggle:before {
+.panel .section-subtitle-wrapper .accordion-toggle:before {
 	font-family: ForkAwesome;
 	content: "\f0d7";
 	padding-right: 5px;
 }
 details.profile-jot-net summary:before,
-.panel .section-subtitle-wrapper a.accordion-toggle.collapsed:before {
+.panel .section-subtitle-wrapper .accordion-toggle.collapsed:before {
 	font-family: ForkAwesome;
 	content: "\f0da";
 }
@@ -2962,18 +3042,28 @@ details.profile-jot-net[open] summary:before {
 	margin-top: 10px;
 	margin-bottom: 10px;
 }
+.section-subtitle-wrapper > h2 .accordion-toggle {
+	margin-top: -10px;
+	margin-bottom: -10px;
+	padding-top: 10px;
+	padding-bottom: 10px;
+}
+
+.section-subtitle-wrapper > h3 {
+	font-size: 16px;
+	margin-top: 8px;
+	margin-bottom: 8px;
+}
 
 .fakelink > h3:before {
 	padding-right: 10px;
 }
-.widget.fakelink > h3:before,
-.settings-block.fakelink > h3:before {
+.widget.fakelink > h3:before {
 	font-family: ForkAwesome;
 	content: "\f0da"; /* Right Plain Pointer */
 }
 .widget > .fakelink > h3:before,
-#sidebar-group-header > .fakelink > h3:before,
-.settings-block > .fakelink > h3:before {
+#sidebar-group-header > .fakelink > h3:before {
 	font-family: ForkAwesome;
 	content: "\f0d7"; /* Bottom Plain Pointer */
 }
@@ -3076,7 +3166,7 @@ ul.notif-network-list li.unseen {
 
 /* Search Page */
 
-/* This is a little bit hacky. Since the search page is used for diferent
+/* This is a little bit hacky. Since the search page is used for different
 content types we can't apply the generic-page-wrapper class.
 So we apply the css of the generic-page-wrapper class to the ul element with some
 little modifications to emulate a standard page template */
@@ -3418,6 +3508,7 @@ section .profile-match-wrapper {
 .mod-home.is-not-singleuser nav.navbar,
 .mod-login nav.navbar {
 	background-color: transparent;
+	position: inherit;
 }
 .mod-home.is-not-singleuser #topbar-second,
 .mod-login #topbar-second {
@@ -3572,7 +3663,7 @@ section .profile-match-wrapper {
 	background: transparent;
 	cursor: pointer;
 }
-.fc .fc-listMonth-view .seperator {
+.fc .fc-listMonth-view .separator {
 	margin-left: 30px;
 	width: 60px;
 }
@@ -3595,6 +3686,11 @@ section .profile-match-wrapper {
 .event-card .event-hover-location .location {
 	color: $font_color;
 	font-size: 13px;
+}
+
+
+.generic-page-wrapper.contact-follow-wrapper {
+	min-height: auto;
 }
 
 /* Medium devices (desktops, 992px and up) */

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,8 +22,10 @@
 namespace Friendica\Model;
 
 use Friendica\Core\Addon;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\Database\DBA;
 use Friendica\DI;
+use Friendica\Model\Item;
 use stdClass;
 
 /**
@@ -53,19 +55,19 @@ class Nodeinfo
 
 		$userStats = User::getStatistics();
 
-		$config->set('nodeinfo', 'total_users', $userStats['total_users']);
-		$config->set('nodeinfo', 'active_users_halfyear', $userStats['active_users_halfyear']);
-		$config->set('nodeinfo', 'active_users_monthly', $userStats['active_users_monthly']);
-		$config->set('nodeinfo', 'active_users_weekly', $userStats['active_users_weekly']);
+		DI::keyValue()->set('nodeinfo_total_users', $userStats['total_users']);
+		DI::keyValue()->set('nodeinfo_active_users_halfyear', $userStats['active_users_halfyear']);
+		DI::keyValue()->set('nodeinfo_active_users_monthly', $userStats['active_users_monthly']);
+		DI::keyValue()->set('nodeinfo_active_users_weekly', $userStats['active_users_weekly']);
 
 		$logger->info('user statistics', $userStats);
 
-		$posts = DBA::count('post-thread', ["EXISTS(SELECT `uri-id` FROM `post-user` WHERE NOT `deleted` AND `origin` AND `uri-id` = `post-thread`.`uri-id`)"]);
-		$comments = DBA::count('post', ["NOT `deleted` AND `gravity` = ? AND EXISTS(SELECT `uri-id` FROM `post-user` WHERE `origin` AND `uri-id` = `post`.`uri-id`)", GRAVITY_COMMENT]);
-		$config->set('nodeinfo', 'local_posts', $posts);
-		$config->set('nodeinfo', 'local_comments', $comments);
+		$posts = DBA::count('post-thread', ["`uri-id` IN (SELECT `uri-id` FROM `post-user` WHERE NOT `deleted` AND `origin`)"]);
+		$comments = DBA::count('post', ["NOT `deleted` AND `gravity` = ? AND `uri-id` IN (SELECT `uri-id` FROM `post-user` WHERE `origin`)", Item::GRAVITY_COMMENT]);
+		DI::keyValue()->set('nodeinfo_local_posts', $posts);
+		DI::keyValue()->set('nodeinfo_local_comments', $comments);
 
-		$logger->info('User actitivy', ['posts' => $posts, 'comments' => $comments]);
+		$logger->info('User activity', ['posts' => $posts, 'comments' => $comments]);
 	}
 
 	/**
@@ -78,18 +80,17 @@ class Nodeinfo
 		$config = DI::config();
 
 		$usage = new stdClass();
+		$usage->users = new \stdClass;
 
 		if (!empty($config->get('system', 'nodeinfo'))) {
-			$usage->users = [
-				'total'          => intval($config->get('nodeinfo', 'total_users')),
-				'activeHalfyear' => intval($config->get('nodeinfo', 'active_users_halfyear')),
-				'activeMonth'    => intval($config->get('nodeinfo', 'active_users_monthly'))
-			];
-			$usage->localPosts = intval($config->get('nodeinfo', 'local_posts'));
-			$usage->localComments = intval($config->get('nodeinfo', 'local_comments'));
+			$usage->users->total = intval(DI::keyValue()->get('nodeinfo_total_users'));
+			$usage->users->activeHalfyear = intval(DI::keyValue()->get('nodeinfo_active_users_halfyear'));
+			$usage->users->activeMonth = intval(DI::keyValue()->get('nodeinfo_active_users_monthly'));
+			$usage->localPosts = intval(DI::keyValue()->get('nodeinfo_local_posts'));
+			$usage->localComments = intval(DI::keyValue()->get('nodeinfo_local_comments'));
 
 			if ($version2) {
-				$usage->users['activeWeek'] = intval($config->get('nodeinfo', 'active_users_weekly'));
+				$usage->users->activeWeek = intval(DI::keyValue()->get('nodeinfo_active_users_weekly'));
 			}
 		}
 
@@ -101,7 +102,7 @@ class Nodeinfo
 	 *
 	 * @return array with supported services
 	*/
-	public static function getServices()
+	public static function getServices(): array
 	{
 		$services = [
 			'inbound'  => [],
@@ -156,20 +157,21 @@ class Nodeinfo
 		return $services;
 	}
 
-	public static function getOrganization($config)
+	/**
+	 * Gathers organization information and returns it as an array
+	 *
+	 * @param IManageConfigValues $config Configuration instance
+	 * @return array Organization information
+	 * @throws \Exception
+	 */
+	public static function getOrganization(IManageConfigValues $config): array
 	{
-		$organization = ['name' => null, 'contact' => null, 'account' => null];
+		$administrator = User::getFirstAdmin(['username', 'email', 'nickname']);
 
-		if (!empty($config->get('config', 'admin_email'))) {
-			$adminList = explode(',', str_replace(' ', '', $config->get('config', 'admin_email')));
-			$organization['contact'] = $adminList[0];
-			$administrator = User::getByEmail($adminList[0], ['username', 'nickname']);
-			if (!empty($administrator)) {
-				$organization['name'] = $administrator['username'];
-				$organization['account'] = DI::baseUrl()->get() . '/profile/' . $administrator['nickname'];
-			}
-		}
-
-		return $organization;
+		return [
+			'name'    => $administrator['username'] ?? null,
+			'contact' => $administrator['email']    ?? null,
+			'account' => $administrator['nickname'] ?? '' ? DI::baseUrl() . '/profile/' . $administrator['nickname'] : null,
+		];
 	}
 }

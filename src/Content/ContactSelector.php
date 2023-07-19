@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -41,7 +41,7 @@ class ContactSelector
 	 * @param boolean $disabled optional, default false
 	 * @return string
 	 */
-	public static function pollInterval($current, $disabled = false)
+	public static function pollInterval(string $current, bool $disabled = false): string
 	{
 		$dis = (($disabled) ? ' disabled="disabled" ' : '');
 		$o = '';
@@ -84,7 +84,7 @@ class ContactSelector
 	 * @return string Server URL
 	 * @throws \Exception
 	 */
-	private static function getServerURLForProfile($profile)
+	private static function getServerURLForProfile(string $profile): string
 	{
 		if (!empty(self::$server_url[$profile])) {
 			return self::$server_url[$profile];
@@ -111,13 +111,16 @@ class ContactSelector
 	}
 
 	/**
+	 * Determines network name
+	 *
 	 * @param string $network  network of the contact
 	 * @param string $profile  optional, default empty
 	 * @param string $protocol (Optional) Protocol that is used for the transmission
+	 * @param int $gsid Server id
 	 * @return string
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function networkToName($network, $profile = '', $protocol = '', $gsid = 0)
+	public static function networkToName(string $network, string $profile = '', string $protocol = '', int $gsid = null): string
 	{
 		$nets = [
 			Protocol::DFRN      =>   DI::l10n()->t('DFRN'),
@@ -137,6 +140,8 @@ class ContactSelector
 			Protocol::STATUSNET =>   DI::l10n()->t('GNU Social Connector'),
 			Protocol::ACTIVITYPUB => DI::l10n()->t('ActivityPub'),
 			Protocol::PNUT      =>   DI::l10n()->t('pnut'),
+			Protocol::TUMBLR    =>   DI::l10n()->t('Tumblr'),
+			Protocol::BLUESKY   =>   DI::l10n()->t('Bluesky'),
 		];
 
 		Hook::callAll('network_to_name', $nets);
@@ -179,12 +184,15 @@ class ContactSelector
 	}
 
 	/**
+	 * Determines network's icon name
+	 *
 	 * @param string $network network
 	 * @param string $profile optional, default empty
-	 * @return string
+	 * @param int $gsid Server id
+	 * @return string Name for network icon
 	 * @throws \Exception
 	 */
-	public static function networkToIcon($network, $profile = "")
+	public static function networkToIcon(string $network, string $profile = "", int $gsid = null): string
 	{
 		$nets = [
 			Protocol::DFRN      =>   'friendica',
@@ -204,6 +212,8 @@ class ContactSelector
 			Protocol::STATUSNET =>   'gnu-social',
 			Protocol::ACTIVITYPUB => 'activitypub',
 			Protocol::PNUT      =>   'file-text-o', /// @todo
+			Protocol::TUMBLR    =>   'tumblr',
+			Protocol::BLUESKY   =>   'circle', /// @todo
 		];
 
 		$platform_icons = ['diaspora' => 'diaspora', 'friendica' => 'friendica', 'friendika' => 'friendica',
@@ -218,7 +228,14 @@ class ContactSelector
 		$network_icon = str_replace($search, $replace, $network);
 
 		if ((in_array($network, Protocol::FEDERATED)) && ($profile != "")) {
-			$gserver = self::getServerForProfile($profile);
+			if (!empty($gsid) && !empty(self::$serverdata[$gsid])) {
+				$gserver = self::$serverdata[$gsid];
+			} elseif (!empty($gsid)) {
+				$gserver = DBA::selectFirst('gserver', ['platform', 'network'], ['id' => $gsid]);
+				self::$serverdata[$gsid] = $gserver;
+			} else {
+				$gserver = self::getServerForProfile($profile);
+			}
 			if (!empty($gserver['platform'])) {
 				$network_icon = $platform_icons[strtolower($gserver['platform'])] ?? $network_icon;
 			}

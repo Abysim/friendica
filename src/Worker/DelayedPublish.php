@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -29,17 +29,17 @@ class DelayedPublish
 	 /**
 	 * Publish a post, used for delayed postings
 	  *
-	  * @param array $item
-	  * @param integer $notify
-	  * @param array $taglist
-	  * @param array $attachments
-	  * @param bool  $unprepared
+	  * @param array  $item
+	  * @param int    $notify
+	  * @param array  $taglist
+	  * @param array  $attachments
+	  * @param int    $preparation_mode
 	  * @param string $uri
 	  * @return void
 	  */
-	public static function execute(array $item, int $notify = 0, array $taglist = [], array $attachments = [], bool $unprepared = false, string $uri = '')
+	public static function execute(array $item, int $notify = 0, array $taglist = [], array $attachments = [], int $preparation_mode = Post\Delayed::PREPARED, string $uri = '')
 	{
-		$id = Post\Delayed::publish($item, $notify, $taglist, $attachments, $unprepared, $uri);
-		Logger::notice('Post published', ['id' => $id, 'uid' => $item['uid'], 'notify' => $notify, 'unprepared' => $unprepared]);
+		$id = Post\Delayed::publish($item, $notify, $taglist, $attachments, $preparation_mode, $uri);
+		Logger::notice('Post published', ['id' => $id, 'uid' => $item['uid'], 'notify' => $notify, 'unprepared' => $preparation_mode]);
 	}
 }

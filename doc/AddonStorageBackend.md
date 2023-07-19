@@ -4,24 +4,26 @@ Friendica Storage Backend Addon development
 * [Home](help)
 
 Storage backends can be added via addons.
-A storage backend is implemented as a class, and the plugin register the class to make it avaiable to the system.
+A storage backend is implemented as a class, and the plugin register the class to make it available to the system.
 
 ## The Storage Backend Class
 
 The class must live in `Friendica\Addon\youraddonname` namespace, where `youraddonname` the folder name of your addon.
 
-The class must implement `Friendica\Model\Storage\IStorage` interface. All method in the interface must be implemented:
+There are two different interfaces you need to implement.
 
-namespace Friendica\Model\Storage;
+### `ICanWriteToStorage`
+
+The class must implement `Friendica\Core\Storage\Capability\ICanWriteToStorage` interface. All method in the interface must be implemented:
 
 ```php
-interface IStorage
+namespace Friendica\Core\Storage\Capability\ICanWriteToStorage;
+
+interface ICanWriteToStorage
 {
 	public function get(string $reference);
 	public function put(string $data, string $reference = '');
 	public function delete(string $reference);
-	public function getOptions();
-	public function saveOptions(array $data);
 	public function __toString();
 	public static function getName();
 }
@@ -31,7 +33,22 @@ interface IStorage
 - `put(string $data, string $reference)` saves data in `$data` to position `$reference`, or a new position if `$reference` is empty.
 - `delete(string $reference)` delete data pointed by `$reference`
 
+### `ICanConfigureStorage`
+
 Each storage backend can have options the admin can set in admin page.
+To make the options possible, you need to implement the `Friendica\Core\Storage\Capability\ICanConfigureStorage` interface.
+
+All methods in the interface must be implemented:
+
+```php
+namespace Friendica\Core\Storage\Capability\ICanConfigureStorage;
+
+interface ICanConfigureStorage
+{
+	public function getOptions();
+	public function saveOptions(array $data);
+}
+```
 
 - `getOptions()` returns an array with details about each option to build the interface.
 - `saveOptions(array $data)` get `$data` from admin page, validate it and save it.
@@ -79,11 +96,11 @@ Each label should be translatable
 	];
 
 
-See doxygen documentation of `IStorage` interface for details about each method.
+See doxygen documentation of `IWritableStorage` interface for details about each method.
 
 ## Register a storage backend class
 
-Each backend must be registered in the system when the plugin is installed, to be aviable.
+Each backend must be registered in the system when the plugin is installed, to be available.
 
 `DI::facStorage()->register(string $class)` is used to register the backend class.
 
@@ -91,7 +108,7 @@ When the plugin is uninstalled, registered backends must be unregistered using
 `DI::facStorage()->unregister(string $class)`.
 
 You have to register a new hook in your addon, listening on `storage_instance(App $a, array $data)`.
-In case `$data['name']` is your storage class name, you have to instance a new instance of your `Friendica\Model\Storage\IStorage` class.
+In case `$data['name']` is your storage class name, you have to instance a new instance of your `Friendica\Core\Storage\Capability\ICanReadFromStorage` class.
 Set the instance of your class as `$data['storage']` to pass it back to the backend.
 
 This is necessary because it isn't always clear, if you need further construction arguments.
@@ -105,8 +122,9 @@ Each new Storage class should be added to the test-environment at [Storage Tests
 Add a new test class which's naming convention is `StorageClassTest`, which extend the `StorageTest` in the same directory.
 
 Override the two necessary instances:
+
 ```php
-use Friendica\Model\Storage\IStorage;
+use Friendica\Core\Storage\Capability\ICanWriteToStorage;
 
 abstract class StorageTest 
 {
@@ -114,13 +132,48 @@ abstract class StorageTest
 	abstract protected function getInstance();
 
 	// Assertion for the option array you return for your new StorageClass
-	abstract protected function assertOption(IStorage $storage);
+	abstract protected function assertOption(ICanWriteToStorage $storage);
+} 
+```
+
+## Exception handling
+
+There are two intended types of exceptions for storages
+
+### `ReferenceStorageException`
+
+This storage exception should be used in case the caller tries to use an invalid references.
+This could happen in case the caller tries to delete or update an unknown reference.
+The implementation of the storage backend must not ignore invalid references.
+
+Avoid throwing the common `StorageException` instead of the `ReferenceStorageException` at this particular situation!
+
+### `StorageException`
+
+This is the common exception in case unexpected errors happen using the storage backend.
+If there's a predecessor to this exception (e.g. you caught an exception and are throwing this exception), you should add the predecessor for transparency reasons.
+
+Example:
+
+```php
+use Friendica\Core\Storage\Capability\ICanWriteToStorage;
+
+class ExampleStorage implements ICanWriteToStorage 
+{
+	public function get(string $reference) : string
+	{
+		try {
+			throw new Exception('a real bad exception');
+		} catch (Exception $exception) {
+			throw new \Friendica\Core\Storage\Exception\StorageException(sprintf('The Example Storage throws an exception for reference %s', $reference), 500, $exception);
+		}
+	}
 } 
 ```
 
 ## Example
 
-Here an hypotetical addon which register an unusefull storage backend.
+Here is a hypothetical addon which register a useless storage backend.
 Let's call it `samplestorage`.
 
 This backend will discard all data we try to save and will return always the same image when we ask for some data.
@@ -133,39 +186,34 @@ The file will be `addon/samplestorage/SampleStorageBackend.php`:
 <?php
 namespace Friendica\Addon\samplestorage;
 
-use Friendica\Model\Storage\IStorage;
+use Friendica\Core\Storage\Capability\ICanWriteToStorage;
 
-use Friendica\Core\Config\IConfig;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\Core\L10n;
 
-class SampleStorageBackend implements IStorage
+class SampleStorageBackend implements ICanWriteToStorage
 {
 	const NAME = 'Sample Storage';
 
-	/** @var IConfig */
-	private $config;
-	/** @var L10n */
-	private $l10n;
+	/** @var string */
+	private $filename;
 
 	/**
 	  * SampleStorageBackend constructor.
-	  * @param IConfig $config The configuration of Friendica
-	  *									  
+ 	  * 
 	  * You can add here every dynamic class as dependency you like and add them to a private field
 	  * Friendica automatically creates these classes and passes them as argument to the constructor									   
 	  */
-	public function __construct(IConfig $config, L10n $l10n) 
+	public function __construct(string $filename) 
 	{
-		$this->config = $config;
-		$this->l10n   = $l10n;
+		$this->filename = $filename;
 	}
 
 	public function get(string $reference)
 	{
 		// we return always the same image data. Which file we load is defined by
 		// a config key
-		$filename = $this->config->get('storage', 'samplestorage', 'sample.jpg');
-		return file_get_contents($filename);
+		return file_get_contents($this->filename);
 	}
 	
 	public function put(string $data, string $reference = '')
@@ -183,6 +231,51 @@ class SampleStorageBackend implements IStorage
 		return true;
 	}
 	
+	public function __toString()
+	{
+		return self::NAME;
+	}
+
+	public static function getName()
+	{
+		return self::NAME;
+	}
+}
+```
+
+```php
+<?php
+namespace Friendica\Addon\samplestorage;
+
+use Friendica\Core\Storage\Capability\ICanConfigureStorage;
+
+use Friendica\Core\Config\Capability\IManageConfigValues;
+use Friendica\Core\L10n;
+
+class SampleStorageBackendConfig implements ICanConfigureStorage
+{
+	/** @var \Friendica\Core\Config\Capability\IManageConfigValues */
+	private $config;
+	/** @var L10n */
+	private $l10n;
+
+	/**
+	  * SampleStorageBackendConfig constructor.
+ 	  * 
+	  * You can add here every dynamic class as dependency you like and add them to a private field
+	  * Friendica automatically creates these classes and passes them as argument to the constructor									   
+	  */
+	public function __construct(IManageConfigValues $config, L10n $l10n) 
+	{
+		$this->config = $config;
+		$this->l10n   = $l10n;
+	}
+
+	public function getFileName(): string
+	{
+		return $this->config->get('storage', 'samplestorage', 'sample.jpg');
+	}
+
 	public function getOptions()
 	{
 		$filename = $this->config->get('storage', 'samplestorage', 'sample.jpg');
@@ -216,15 +309,6 @@ class SampleStorageBackend implements IStorage
 		return [];
 	}
 
-	public function __toString()
-	{
-		return self::NAME;
-	}
-
-	public static function getName()
-	{
-		return self::NAME;
-	}
 }
 ```
 
@@ -236,42 +320,45 @@ The file is `addon/samplestorage/samplestorage.php`
 <?php
 /**
  * Name: Sample Storage Addon
- * Description: A sample addon which implements an unusefull storage backend
+ * Description: A sample addon which implements a very limited storage backend
  * Version: 1.0.0
  * Author: Alice <https://alice.social/~alice>
  */
 
 use Friendica\Addon\samplestorage\SampleStorageBackend;
+use Friendica\Addon\samplestorage\SampleStorageBackendConfig;
 use Friendica\DI;
 
 function samplestorage_install()
 {
-	// on addon install, we register our class with name "Sample Storage".
-	// note: we use `::class` property, which returns full class name as string
-	// this save us the problem of correctly escape backslashes in class name
+	Hook::register('storage_instance' , __FILE__, 'samplestorage_storage_instance');
+	Hook::register('storage_config' , __FILE__, 'samplestorage_storage_config');
 	DI::storageManager()->register(SampleStorageBackend::class);
 }
 
-function samplestorage_unistall()
+function samplestorage_storage_uninstall()
 {
-	// when the plugin is uninstalled, we unregister the backend.
 	DI::storageManager()->unregister(SampleStorageBackend::class);
 }
 
-function samplestorage_storage_instance(\Friendica\App $a, array $data)
+function samplestorage_storage_instance(App $a, array &$data)
 {
-    if ($data['name'] === SampleStorageBackend::getName()) {
-    // instance a new sample storage instance and pass it back to the core for usage
-        $data['storage'] = new SampleStorageBackend(DI::config(), DI::l10n(), DI::cache());
-    }
+	$config          = new SampleStorageBackendConfig(DI::l10n(), DI::config());
+	$data['storage'] = new SampleStorageBackendConfig($config->getFileName());
 }
+
+function samplestorage_storage_config(App $a, array &$data)
+{
+	$data['storage_config'] = new SampleStorageBackendConfig(DI::l10n(), DI::config());
+}
+
 ```
 
 **Theoretically - until tests for Addons are enabled too - create a test class with the name `addon/tests/SampleStorageTest.php`:
 
 ```php
-use Friendica\Model\Storage\IStorage;
-use Friendica\Test\src\Model\Storage\StorageTest;
+use Friendica\Core\Storage\Capability\ICanWriteToStorage;
+use Friendica\Test\src\Core\Storage\StorageTest;
 
 class SampleStorageTest extends StorageTest 
 {
@@ -284,7 +371,7 @@ class SampleStorageTest extends StorageTest
 	}
 
 	// Assertion for the option array you return for your new StorageClass
-	protected function assertOption(IStorage $storage)
+	protected function assertOption(ICanWriteToStorage $storage)
 	{
 		$this->assertEquals([
 			'filename' => [

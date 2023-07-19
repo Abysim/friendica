@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -33,7 +33,7 @@ class ExtendedPDO extends PDO
 	/**
 	 * @var array Database drivers that support SAVEPOINT * statements.
 	 */
-	protected static $_supportedDrivers = ["pgsql", "mysql"];
+	protected static $_supportedDrivers = ['pgsql', 'mysql'];
 
 	/**
 	 * @var int the current transaction depth
@@ -69,7 +69,7 @@ class ExtendedPDO extends PDO
 	{
 		if($this->_transactionDepth <= 0 || !$this->hasSavepoint()) {
 			parent::beginTransaction();
-			$this->_transactionDepth = $this->_transactionDepth < 0 ? 0 : $this->_transactionDepth;
+			$this->_transactionDepth = 0;
 		} else {
 			$this->exec("SAVEPOINT LEVEL{$this->_transactionDepth}");
 		}
@@ -80,38 +80,41 @@ class ExtendedPDO extends PDO
 	/**
 	 * Commit current transaction
 	 *
-	 * @return bool|void
+	 * @return bool
 	 */
-	public function commit()
+	public function commit(): bool
 	{
+		// We don't want to "really" commit something, so skip the most outer hierarchy
+		if ($this->_transactionDepth <= 1 && $this->hasSavepoint()) {
+			$this->_transactionDepth = $this->_transactionDepth <= 0 ? 0 : 1;
+			return true;
+		}
+
 		$this->_transactionDepth--;
 
-		if($this->_transactionDepth <= 0 || !$this->hasSavepoint()) {
-			parent::commit();
-			$this->_transactionDepth = $this->_transactionDepth < 0 ? 0 : $this->_transactionDepth;
-		} else {
-			$this->exec("RELEASE SAVEPOINT LEVEL{$this->_transactionDepth}");
-		}
+		return $this->exec("RELEASE SAVEPOINT LEVEL{$this->_transactionDepth}");
 	}
 
 	/**
 	 * Rollback current transaction,
 	 *
 	 * @throws PDOException if there is no transaction started
-	 * @return bool|void
+	 * @return bool Whether rollback was successful
 	 */
-	public function rollBack()
+	public function rollback(): bool
 	{
-		if ($this->_transactionDepth <= 0) {
-			throw new PDOException('Rollback error : There is no transaction started');
-		}
-
 		$this->_transactionDepth--;
 
-		if($this->_transactionDepth == 0 || !$this->hasSavepoint()) {
-			parent::rollBack();
+		if ($this->_transactionDepth <= 0 || !$this->hasSavepoint()) {
+			$this->_transactionDepth = 0;
+			try {
+				return parent::rollBack();
+			} catch (PDOException $e) {
+				// this shouldn't happen, but it does ...
+			}
 		} else {
-			$this->exec("ROLLBACK TO SAVEPOINT LEVEL{$this->_transactionDepth}");
+			return $this->exec("ROLLBACK TO SAVEPOINT LEVEL{$this->_transactionDepth}");
 		}
+		return false;
 	}
 }

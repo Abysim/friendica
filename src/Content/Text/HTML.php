@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,7 +23,7 @@ namespace Friendica\Content\Text;
 
 use DOMDocument;
 use DOMXPath;
-use Friendica\Content\Widget\ContactBlock;
+use Friendica\Protocol\HTTP\MediaType;
 use Friendica\Core\Hook;
 use Friendica\Core\Renderer;
 use Friendica\Core\Search;
@@ -33,6 +33,7 @@ use Friendica\Util\Network;
 use Friendica\Util\Strings;
 use Friendica\Util\XML;
 use League\HTMLToMarkdown\HtmlConverter;
+use Psr\Http\Message\UriInterface;
 
 class HTML
 {
@@ -61,7 +62,7 @@ class HTML
 	 *                                    inner value from an attribute value and disregard the tag children.
 	 * @return bool Whether a replacement was done
 	 */
-	private static function tagToBBCodeSub(DOMDocument $doc, string $tag, array $attributes, string $startbb, string $endbb, bool $ignoreChildren = false)
+	private static function tagToBBCodeSub(DOMDocument $doc, string $tag, array $attributes, string $startbb, string $endbb, bool $ignoreChildren = false): bool
 	{
 		$savestart = str_replace('$', '\x01', $startbb);
 		$replace = false;
@@ -114,7 +115,7 @@ class HTML
 					/** @var \DOMNode $child */
 					foreach ($node->childNodes as $key => $child) {
 						/* Remove empty text nodes at the start or at the end of the children list */
-						if ($key > 0 && $key < $node->childNodes->length - 1 || $child->nodeName != '#text' || trim($child->nodeValue)) {
+						if ($key > 0 && $key < $node->childNodes->length - 1 || $child->nodeName != '#text' || trim($child->nodeValue) !== '') {
 							$newNode = $child->cloneNode(true);
 							$node->parentNode->insertBefore($newNode, $node);
 						}
@@ -141,8 +142,17 @@ class HTML
 	 * @return string
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function toBBCode($message, $basepath = '')
+	public static function toBBCode(string $message, string $basepath = ''): string
 	{
+		/*
+		 * Check if message is empty to prevent a lot of code below from being executed
+		 * for just an empty message.
+		 */
+		if ($message === '') {
+			return '';
+		}
+
+		DI::profiler()->startRecording('rendering');
 		$message = str_replace("\r", "", $message);
 
 		$message = Strings::performWithEscapedBlocks($message, '#<pre><code.*</code></pre>#iUs', function ($message) {
@@ -270,9 +280,9 @@ class HTML
 			self::tagToBBCode($doc, 'div', [], "\r", "\r");
 			self::tagToBBCode($doc, 'p', [], "\n", "\n");
 
-			self::tagToBBCode($doc, 'ul', [], "[list]", "[/list]");
-			self::tagToBBCode($doc, 'ol', [], "[list=1]", "[/list]");
-			self::tagToBBCode($doc, 'li', [], "[*]", "");
+			self::tagToBBCode($doc, 'ul', [], "[ul]", "\n[/ul]");
+			self::tagToBBCode($doc, 'ol', [], "[ol]", "\n[/ol]");
+			self::tagToBBCode($doc, 'li', [], "\n[li]", "[/li]");
 
 			self::tagToBBCode($doc, 'hr', [], "[hr]", "");
 
@@ -338,33 +348,6 @@ class HTML
 				$message = str_replace("\n\n\n", "\n\n", $message);
 			} while ($oldmessage != $message);
 
-			do {
-				$oldmessage = $message;
-				$message = str_replace(
-					[
-						"[/size]\n\n",
-						"\n[hr]",
-						"[hr]\n",
-						"\n[list",
-						"[/list]\n",
-						"\n[/",
-						"[list]\n",
-						"[list=1]\n",
-						"\n[*]"],
-					[
-						"[/size]\n",
-						"[hr]",
-						"[hr]",
-						"[list",
-						"[/list]",
-						"[/",
-						"[list]",
-						"[list=1]",
-						"[*]"],
-					$message
-				);
-			} while ($message != $oldmessage);
-
 			$message = str_replace(
 				['[b][b]', '[/b][/b]', '[i][i]', '[/i][/i]'],
 				['[b]', '[/b]', '[i]', '[/i]'],
@@ -385,7 +368,7 @@ class HTML
 					$prefix = '[code=' . $matches[1] . ']';
 				}
 
-				return $prefix . PHP_EOL . trim($matches[2]) . PHP_EOL . '[/code]';
+				return $prefix . "\n" . html_entity_decode($matches[2]) . "\n" . '[/code]';
 			},
 			$message
 		);
@@ -396,6 +379,7 @@ class HTML
 			$message = self::qualifyURLs($message, $basepath);
 		}
 
+		DI::profiler()->stopRecording();
 		return $message;
 	}
 
@@ -407,7 +391,7 @@ class HTML
 	 *
 	 * @return string The expanded URL
 	 */
-	private static function qualifyURLsSub($matches, $basepath)
+	private static function qualifyURLsSub(array $matches, string $basepath): string
 	{
 		$base = parse_url($basepath);
 		unset($base['query']);
@@ -434,7 +418,7 @@ class HTML
 	 *
 	 * @return string Body with expanded URLs
 	 */
-	private static function qualifyURLs($body, $basepath)
+	private static function qualifyURLs(string $body, string $basepath): string
 	{
 		$URLSearchString = "^\[\]";
 
@@ -460,7 +444,7 @@ class HTML
 		return $body;
 	}
 
-	private static function breakLines($line, $level, $wraplength = 75)
+	private static function breakLines(string $line, int $level, int $wraplength = 75): string
 	{
 		if ($wraplength == 0) {
 			$wraplength = 2000000;
@@ -501,7 +485,7 @@ class HTML
 		return implode("\n", $newlines);
 	}
 
-	private static function quoteLevel($message, $wraplength = 75)
+	private static function quoteLevel(string $message, int $wraplength = 75): string
 	{
 		$lines = explode("\n", $message);
 
@@ -537,7 +521,7 @@ class HTML
 		return implode("\n", $newlines);
 	}
 
-	private static function collectURLs($message)
+	private static function collectURLs(string $message): array
 	{
 		$pattern = '/<a.*?href="(.*?)".*?>(.*?)<\/a>/is';
 		preg_match_all($pattern, $message, $result, PREG_SET_ORDER);
@@ -583,8 +567,9 @@ class HTML
 	 * @param bool   $compact    True: Completely strips image tags; False: Keeps image URLs
 	 * @return string
 	 */
-	public static function toPlaintext(string $html, $wraplength = 75, $compact = false)
+	public static function toPlaintext(string $html, int $wraplength = 75, bool $compact = false): string
 	{
+		DI::profiler()->startRecording('rendering');
 		$message = str_replace("\r", "", $html);
 
 		$doc = new DOMDocument();
@@ -593,6 +578,7 @@ class HTML
 		$message = mb_convert_encoding($message, 'HTML-ENTITIES', "UTF-8");
 
 		if (empty($message)) {
+			DI::profiler()->stopRecording();
 			return '';
 		}
 
@@ -606,6 +592,7 @@ class HTML
 		$urls = self::collectURLs($message);
 
 		if (empty($message)) {
+			DI::profiler()->stopRecording();
 			return '';
 		}
 
@@ -689,6 +676,7 @@ class HTML
 
 		$message = self::quoteLevel(trim($message), $wraplength);
 
+		DI::profiler()->stopRecording();
 		return trim($message);
 	}
 
@@ -699,11 +687,13 @@ class HTML
 	 * @param string $html
 	 * @return string
 	 */
-	public static function toMarkdown($html)
+	public static function toMarkdown(string $html): string
 	{
+		DI::profiler()->startRecording('rendering');
 		$converter = new HtmlConverter(['hard_break' => true]);
 		$markdown = $converter->convert($html);
 
+		DI::profiler()->stopRecording();
 		return $markdown;
 	}
 
@@ -713,29 +703,29 @@ class HTML
 	 * @param string $s
 	 * @return string
 	 */
-	public static function toBBCodeVideo($s)
+	public static function toBBCodeVideo(string $s): string
 	{
 		$s = preg_replace(
 			'#<object[^>]+>(.*?)https?://www.youtube.com/((?:v|cp)/[A-Za-z0-9\-_=]+)(.*?)</object>#ism',
 			'[youtube]$2[/youtube]',
 			$s
 		);
-	
+
 		$s = preg_replace(
 			'#<iframe[^>](.*?)https?://www.youtube.com/embed/([A-Za-z0-9\-_=]+)(.*?)</iframe>#ism',
 			'[youtube]$2[/youtube]',
 			$s
 		);
-	
+
 		$s = preg_replace(
 			'#<iframe[^>](.*?)https?://player.vimeo.com/video/([0-9]+)(.*?)</iframe>#ism',
 			'[vimeo]$2[/vimeo]',
 			$s
 		);
-	
+
 		return $s;
 	}
-	
+
 	/**
 	 * transform link href and img src from relative to absolute
 	 *
@@ -743,47 +733,37 @@ class HTML
 	 * @param string $base base url
 	 * @return string
 	 */
-	public static function relToAbs($text, $base)
+	public static function relToAbs(string $text, string $base): string
 	{
 		if (empty($base)) {
 			return $text;
 		}
-	
+
 		$base = rtrim($base, '/');
-	
+
 		$base2 = $base . "/";
-	
+
 		// Replace links
 		$pattern = "/<a([^>]*) href=\"(?!http|https|\/)([^\"]*)\"/";
 		$replace = "<a\${1} href=\"" . $base2 . "\${2}\"";
 		$text = preg_replace($pattern, $replace, $text);
-	
+
 		$pattern = "/<a([^>]*) href=\"(?!http|https)([^\"]*)\"/";
 		$replace = "<a\${1} href=\"" . $base . "\${2}\"";
 		$text = preg_replace($pattern, $replace, $text);
-	
+
 		// Replace images
 		$pattern = "/<img([^>]*) src=\"(?!http|https|\/)([^\"]*)\"/";
 		$replace = "<img\${1} src=\"" . $base2 . "\${2}\"";
 		$text = preg_replace($pattern, $replace, $text);
-	
+
 		$pattern = "/<img([^>]*) src=\"(?!http|https)([^\"]*)\"/";
 		$replace = "<img\${1} src=\"" . $base . "\${2}\"";
 		$text = preg_replace($pattern, $replace, $text);
-	
-	
+
+
 		// Done
 		return $text;
-	}
-
-	/**
-	 * return div element with class 'clear'
-	 * @return string
-	 * @deprecated
-	 */
-	public static function clearDiv()
-	{
-		return '<div class="clear"></div>';
 	}
 
 	/**
@@ -792,29 +772,13 @@ class HTML
 	 * @return string html for loader
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function scrollLoader()
+	public static function scrollLoader(): string
 	{
 		$tpl = Renderer::getMarkupTemplate("scroll_loader.tpl");
 		return Renderer::replaceMacros($tpl, [
 			'wait' => DI::l10n()->t('Loading more entries...'),
 			'end' => DI::l10n()->t('The end')
 		]);
-	}
-
-	/**
-	 * Get html for contact block.
-	 *
-	 * @deprecated since version 2019.03
-	 * @see ContactBlock::getHTML()
-	 * @return string
-	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
-	 * @throws \ImagickException
-	 */
-	public static function contactBlock()
-	{
-		$a = DI::app();
-
-		return ContactBlock::getHTML($a->profile);
 	}
 
 	/**
@@ -837,7 +801,7 @@ class HTML
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	public static function micropro($contact, $redirect = false, $class = '', $textmode = false)
+	public static function micropro(array $contact, bool $redirect = false, string $class = '', bool $textmode = false): string
 	{
 		// Use the contact URL if no address is available
 		if (empty($contact['addr'])) {
@@ -850,7 +814,7 @@ class HTML
 
 		if ($redirect) {
 			$url = Contact::magicLinkByContact($contact);
-			if (strpos($url, 'redir/') === 0) {
+			if (strpos($url, 'contact/redir/') === 0) {
 				$sparkle = ' sparkle';
 			}
 		}
@@ -877,13 +841,12 @@ class HTML
 	 *
 	 * @param string $s     Search query.
 	 * @param string $id    HTML id
-	 * @param string $url   Search url.
-	 * @param bool   $aside Display the search widgit aside.
+	 * @param bool   $aside Display the search widget aside.
 	 *
 	 * @return string Formatted HTML.
 	 * @throws \Exception
 	 */
-	public static function search($s, $id = 'search-box', $aside = true)
+	public static function search(string $s, string $id = 'search-box', bool $aside = true): string
 	{
 		$mode = 'text';
 
@@ -919,19 +882,6 @@ class HTML
 	}
 
 	/**
-	 * Replace naked text hyperlink with HTML formatted hyperlink
-	 *
-	 * @param string $s
-	 * @return string
-	 */
-	public static function toLink($s)
-	{
-		$s = preg_replace("/(https?\:\/\/[a-zA-Z0-9\:\/\-\?\&\;\.\=\_\~\#\'\%\$\!\+]*)/", ' <a href="$1" target="_blank" rel="noopener noreferrer">$1</a>', $s);
-		$s = preg_replace("/\<(.*?)(src|href)=(.*?)\&amp\;(.*?)\>/ism", '<$1$2=$3&$4>', $s);
-		return $s;
-	}
-
-	/**
 	 * Given a HTML text and a set of filtering reasons, adds a content hiding header with the provided reasons
 	 *
 	 * Reasons are expected to have been translated already.
@@ -941,7 +891,7 @@ class HTML
 	 * @return string
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function applyContentFilter($html, array $reasons)
+	public static function applyContentFilter(string $html, array $reasons): string
 	{
 		if (count($reasons)) {
 			$tpl = Renderer::getMarkupTemplate('wall/content_filter.tpl');
@@ -961,7 +911,7 @@ class HTML
 	 * @param string $s
 	 * @return string
 	 */
-	public static function unamp($s)
+	public static function unamp(string $s): string
 	{
 		return str_replace('&amp;', '&', $s);
 	}
@@ -1002,6 +952,7 @@ class HTML
 		$config->set('Attr.AllowedRel', [
 			'noreferrer' => true,
 			'noopener' => true,
+			'tag' => true,
 		]);
 		$config->set('Attr.AllowedFrameTargets', [
 			'_blank' => true,
@@ -1029,5 +980,78 @@ class HTML
 		//var_dump($errorCollector->getRaw());
 
 		return $text;
+	}
+
+	/**
+	 * XPath arbitrary string quoting
+	 *
+	 * @see https://stackoverflow.com/a/45228168
+	 * @param string $value
+	 * @return string
+	 */
+	public static function xpathQuote(string $value): string
+	{
+		if (false === strpos($value, '"')) {
+			return '"' . $value . '"';
+		}
+
+		if (false === strpos($value, "'")) {
+			return "'" . $value . "'";
+		}
+
+		// if the value contains both single and double quotes, construct an
+		// expression that concatenates all non-double-quote substrings with
+		// the quotes, e.g.:
+		//
+		//    concat("'foo'", '"', "bar")
+		return 'concat(' . implode(', \'"\', ', array_map([self::class, 'xpathQuote'], explode('"', $value))) . ')';
+	}
+
+	/**
+	 * Checks if the provided URL is present in the DOM document in an element with the rel="me" attribute
+	 *
+	 * XHTML Friends Network http://gmpg.org/xfn/
+	 *
+	 * @param DOMDocument  $doc
+	 * @param UriInterface $meUrl
+	 * @return bool
+	 */
+	public static function checkRelMeLink(DOMDocument $doc, UriInterface $meUrl): bool
+	{
+		$xpath = new \DOMXpath($doc);
+
+		// This expression checks that "me" is among the space-delimited values of the "rel" attribute.
+		// And that the href attribute contains exactly the provided URL
+		$expression = "//*[contains(concat(' ', normalize-space(@rel), ' '), ' me ')][@href = " . self::xpathQuote($meUrl) . "]";
+
+		$result = $xpath->query($expression);
+
+		return $result !== false && $result->length > 0;
+	}
+
+	/**
+	 * @param DOMDocument $doc
+	 * @return string|null Lowercase charset
+	 */
+	public static function extractCharset(DOMDocument $doc): ?string
+	{
+		$xpath = new DOMXPath($doc);
+
+		$expression = "string(//meta[@charset]/@charset)";
+		if ($charset = $xpath->evaluate($expression)) {
+			return strtolower($charset);
+		}
+
+		try {
+			// This expression looks for a meta tag with the http-equiv attribute set to "content-type" ignoring case
+			// whose content attribute contains a "charset" string and returns its value
+			$expression = "string(//meta[@http-equiv][translate(@http-equiv, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz') = 'content-type'][contains(translate(@content, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'charset')]/@content)";
+			$mediaType = MediaType::fromContentType($xpath->evaluate($expression));
+			if (isset($mediaType->parameters['charset'])) {
+				return strtolower($mediaType->parameters['charset']);
+			}
+		} catch(\InvalidArgumentException $e) {}
+
+		return null;
 	}
 }

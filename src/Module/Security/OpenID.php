@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -31,7 +31,7 @@ use LightOpenID;
  */
 class OpenID extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
 		if (DI::config()->get('system', 'no_openid')) {
 			DI::baseUrl()->redirect();
@@ -43,7 +43,7 @@ class OpenID extends BaseModule
 
 		if (!empty($_GET['openid_mode']) && !empty($session->get('openid'))) {
 
-			$openid = new LightOpenID(DI::baseUrl()->getHostname());
+			$openid = new LightOpenID(DI::baseUrl()->getHost());
 
 			$l10n = DI::l10n();
 
@@ -56,9 +56,9 @@ class OpenID extends BaseModule
 				}
 
 				// NOTE: we search both for normalised and non-normalised form of $authid
-				//       because the normalization step was removed from setting
-				//       mod/settings.php in 8367cad so it might have left mixed
-				//       records in the user table
+				//       because the normalization step was removed from settings
+				//       in commit 8367cadeeffec4b6792a502847304b17ceba5882, so it might
+				//       have left mixed records in the user table
 				//
 				$condition = ['blocked' => false, 'account_expired' => false, 'account_removed' => false, 'verified' => true,
 				              'openid' => [$authId, Strings::normaliseOpenID($authId)]];
@@ -73,9 +73,7 @@ class OpenID extends BaseModule
 
 					DI::auth()->setForUser(DI::app(), $user, true, true);
 
-					// just in case there was no return url set
-					// and we fell through
-					DI::baseUrl()->redirect();
+					$this->baseUrl->redirect(DI::session()->pop('return_path', ''));
 				}
 
 				// Successful OpenID login - but we can't match it to an existing account.
@@ -84,18 +82,20 @@ class OpenID extends BaseModule
 				$session->set('openid_identity', $authId);
 
 				// Detect the server URL
-				$open_id_obj = new LightOpenID(DI::baseUrl()->getHostName());
+				$open_id_obj = new LightOpenID(DI::baseUrl()->getHost());
 				$open_id_obj->identity = $authId;
 				$session->set('openid_server', $open_id_obj->discover($open_id_obj->identity));
 
 				if (intval(DI::config()->get('config', 'register_policy')) === \Friendica\Module\Register::CLOSED) {
-					notice($l10n->t('Account not found. Please login to your existing account to add the OpenID to it.'));
+					DI::sysmsg()->addNotice($l10n->t('Account not found. Please login to your existing account to add the OpenID to it.'));
 				} else {
-					notice($l10n->t('Account not found. Please register a new account or login to your existing account to add the OpenID to it.'));
+					DI::sysmsg()->addNotice($l10n->t('Account not found. Please register a new account or login to your existing account to add the OpenID to it.'));
 				}
 
 				DI::baseUrl()->redirect('login');
 			}
 		}
+
+		return '';
 	}
 }

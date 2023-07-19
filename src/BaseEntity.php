@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -52,5 +52,19 @@ abstract class BaseEntity extends BaseDataTransferObject
 		}
 
 		return $this->$name;
+	}
+
+	/**
+	 * @param mixed $name
+	 * @return bool
+	 * @throws HTTPException\InternalServerErrorException
+	 */
+	public function __isset($name): bool
+	{
+		if (!property_exists($this, $name)) {
+			throw new HTTPException\InternalServerErrorException('Unknown property ' . $name . ' of type ' . gettype($name) . ' in Entity ' . static::class);
+		}
+
+		return !empty($this->$name);
 	}
 }

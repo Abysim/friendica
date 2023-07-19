@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -35,7 +35,7 @@ if (!isset($minimal)) {
 	$minimal = false;
 }
 
-$basepath = DI::baseUrl()->getUrlPath() ? "/" . DI::baseUrl()->getUrlPath() . "/" : "/";
+$basepath = DI::baseUrl()->getPath() ? "/" . DI::baseUrl()->getPath() . "/" : "/";
 $frio = "view/theme/frio";
 $view_mode_class = (DI::mode()->isMobile() || DI::mode()->isMobile()) ? 'mobile-view' : 'desktop-view';
 $is_singleuser = DI::config()->get('system', 'singleuser');
@@ -45,7 +45,7 @@ $is_singleuser_class = $is_singleuser ? "is-singleuser" : "is-not-singleuser";
 	<head>
 		<title><?php if (!empty($page['title'])) echo $page['title'] ?></title>
 		<meta request="<?php echo htmlspecialchars($_REQUEST['pagename'] ?? '') ?>">
-		<script  type="text/javascript">var baseurl = "<?php echo DI::baseUrl(); ?>";</script>
+		<script  type="text/javascript">var baseurl = "<?php echo (string)DI::baseUrl(); ?>";</script>
 		<script type="text/javascript">var frio = "<?php echo 'view/theme/frio'; ?>";</script>
 <?php
 		// Because we use minimal for modals the header and the included js stuff should be only loaded
@@ -77,7 +77,7 @@ $is_singleuser_class = $is_singleuser ? "is-singleuser" : "is-not-singleuser";
 ?>
 	</head>
 
-	<body id="top" class="mod-<?php echo DI::module()->getName() . " " . $is_singleuser_class . " " . $view_mode_class;?>">
+	<body id="top" class="mod-<?php echo $page['module'] . " " . $is_singleuser_class . " " . $view_mode_class;?>">
 		<a href="#content" class="sr-only sr-only-focusable"><?php echo DI::l10n()->t('Skip to main content'); ?></a>
 <?php
 	if (!empty($page['nav']) && !$minimal) {
@@ -125,7 +125,7 @@ $is_singleuser_class = $is_singleuser ? "is-singleuser" : "is-not-singleuser";
 
 					<div class="col-lg-7 col-md-7 col-sm-12 col-xs-12" id="content">
 						<section class="sectiontop ';
-							echo $a->argv[0] ?? '';
+							echo $page['section'] ?? '';
 							echo '-content-wrapper">';
 							if (!empty($page['content'])) {
 								echo $page['content'];

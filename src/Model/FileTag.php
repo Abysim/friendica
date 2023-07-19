@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -35,10 +35,9 @@ class FileTag
 	 * URL encode <, >, left and right brackets
 	 *
 	 * @param string $s String to be URL encoded.
-	 *
 	 * @return string   The URL encoded string.
 	 */
-	private static function encode($s)
+	private static function encode(string $s): string
 	{
 		return str_replace(['<', '>', '[', ']'], ['%3c', '%3e', '%5b', '%5d'], $s);
 	}
@@ -47,10 +46,9 @@ class FileTag
 	 * URL decode <, >, left and right brackets
 	 *
 	 * @param string $s The URL encoded string to be decoded
-	 *
 	 * @return string   The decoded string.
 	 */
-	private static function decode($s)
+	private static function decode(string $s): string
 	{
 		return str_replace(['%3c', '%3e', '%5b', '%5d'], ['<', '>', '[', ']'], $s);
 	}
@@ -62,10 +60,9 @@ class FileTag
 	 *
 	 * @param array  $array A list of tags.
 	 * @param string $type  Optional file type.
-	 *
 	 * @return string       A list of file tags.
 	 */
-	public static function arrayToFile(array $array, string $type = 'file')
+	public static function arrayToFile(array $array, string $type = 'file'): string
 	{
 		$tag_list = '';
 		if ($type == 'file') {
@@ -92,10 +89,9 @@ class FileTag
 	 *
 	 * @param string $file File tags
 	 * @param string $type Optional file type.
-	 *
 	 * @return array        List of tag names.
 	 */
-	public static function fileToArray(string $file, string $type = 'file')
+	public static function fileToArray(string $file, string $type = 'file'): array
 	{
 		$matches = [];
 		$return = [];
@@ -113,22 +109,5 @@ class FileTag
 		}
 
 		return $return;
-	}
-
-	/**
-	 * Get file tags from list
-	 *
-	 * ex. given music,video return <music><video> or [music][video]
-	 * @param string $list A comma delimited list of tags.
-	 * @param string $type Optional file type.
-	 *
-	 * @return string       A list of file tags.
-	 * @deprecated since 2019.06 use arrayToFile() instead
-	 */
-	public static function listToFile(string $list, string $type = 'file')
-	{
-		$list_array = explode(',', $list);
-
-		return self::arrayToFile($list_array, $type);
 	}
 }

@@ -9,7 +9,7 @@ Depending on the theme you are using, there might be an additional link from the
 
 ## Event Overview
 
-The overview page shows the calendar of the current month, plus a few days days at the beginning and the end.
+The overview page shows the calendar of the current month, plus a few days at the beginning and the end.
 Listed are all events for this month, created by you, or shared with you by your contacts,
 This includes birthday reminders for contacts who share their birthday with you.
 
@@ -35,11 +35,6 @@ If you double clicked on the day box in the calendar these fields will be pre-fi
 The finishing date/time has to be after the beginning date/time of the event.
 But you don't have to specify it.
 If the event is open-ended or the finishing date/time does not matter, just select the box below the two first fields.
-
-* **Adjust for viewer timezone**: If you check this box, the beginning and finishing times will automatically converted to the local time according to the timezone setting
-
-This might prevent early birthday wishes, or the panic that you have forgotten the birthday from your buddy at the other side of the world.
-And similar events.
 
 * **Title**: a title for the event
 * **Description**: a longer description for the event

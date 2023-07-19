@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -35,10 +35,11 @@ class TrendingTags
 	/**
 	 * @param string $content 'global' (all posts) or 'local' (this node's posts only)
 	 * @param int    $period  Period in hours to consider posts
-	 * @return string
+	 *
+	 * @return string Formatted HTML code
 	 * @throws \Exception
 	 */
-	public static function getHTML($content = 'global', int $period = 24)
+	public static function getHTML(string $content = 'global', int $period = 24): string
 	{
 		if ($content == 'local') {
 			$tags = Tag::getLocalTrendingHashtags($period, 20);
@@ -49,8 +50,8 @@ class TrendingTags
 		$tpl = Renderer::getMarkupTemplate('widget/trending_tags.tpl');
 		$o = Renderer::replaceMacros($tpl, [
 			'$title' => DI::l10n()->tt('Trending Tags (last %d hour)', 'Trending Tags (last %d hours)', $period),
-			'$more' => DI::l10n()->t('More Trending Tags'),
-			'$tags' => $tags,
+			'$more'  => DI::l10n()->t('More Trending Tags'),
+			'$tags'  => $tags,
 		]);
 
 		return $o;

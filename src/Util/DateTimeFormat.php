@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -31,9 +31,18 @@ use Exception;
  */
 class DateTimeFormat
 {
-	const ATOM = 'Y-m-d\TH:i:s\Z';
+	const ATOM  = 'Y-m-d\TH:i:s\Z';
 	const MYSQL = 'Y-m-d H:i:s';
-	const HTTP = 'D, d M Y H:i:s \G\M\T';
+	const HTTP  = 'D, d M Y H:i:s \G\M\T';
+	const JSON  = 'Y-m-d\TH:i:s.v\Z';
+	const API   = 'D M d H:i:s +0000 Y';
+
+	static $localTimezone = 'UTC';
+
+	public static function setLocalTimeZone(string $timezone)
+	{
+		self::$localTimezone = $timezone;
+	}
 
 	/**
 	 * convert() shorthand for UTC.
@@ -43,7 +52,7 @@ class DateTimeFormat
 	 * @return string
 	 * @throws Exception
 	 */
-	public static function utc($time, $format = self::MYSQL)
+	public static function utc(string $time, string $format = self::MYSQL): string
 	{
 		return self::convert($time, 'UTC', 'UTC', $format);
 	}
@@ -58,7 +67,7 @@ class DateTimeFormat
 	 */
 	public static function local($time, $format = self::MYSQL)
 	{
-		return self::convert($time, date_default_timezone_get(), 'UTC', $format);
+		return self::convert($time, self::$localTimezone, 'UTC', $format);
 	}
 
 	/**
@@ -93,7 +102,7 @@ class DateTimeFormat
 	 * @return string
 	 * @throws Exception
 	 */
-	public static function utcNow($format = self::MYSQL)
+	public static function utcNow(string $format = self::MYSQL): string
 	{
 		return self::utc('now', $format);
 	}
@@ -110,7 +119,7 @@ class DateTimeFormat
 	 * @return string Formatted date according to given format
 	 * @throws Exception
 	 */
-	public static function convert($s = 'now', $tz_to = 'UTC', $tz_from = 'UTC', $format = self::MYSQL)
+	public static function convert(string $s = 'now', string $tz_to = 'UTC', string $tz_from = 'UTC', string $format = self::MYSQL): string
 	{
 		// Defaults to UTC if nothing is set, but throws an exception if set to empty string.
 		// Provide some sane defaults regardless.
@@ -126,18 +135,11 @@ class DateTimeFormat
 			$s = 'now';
 		}
 
-		/*
-		 * Slight hackish adjustment so that 'zero' datetime actually returns what is intended
-		 * otherwise we end up with -0001-11-30 ...
-		 * add 32 days so that we at least get year 00, and then hack around the fact that
-		 * months and days always start with 1.
-		 */
+		// Lowest possible datetime value
 		if (substr($s, 0, 10) <= '0001-01-01') {
-			if ($s < '0000-00-00') {
-				$s = '0000-00-00';
-			}
-			$d = new DateTime($s . ' + 32 days', new DateTimeZone('UTC'));
-			return str_replace('1', '0', $d->format($format));
+			$d = new DateTime('now', new DateTimeZone('UTC'));
+			$d->setDate(1, 1, 1)->setTime(0, 0);
+			return $d->format($format);
 		}
 
 		try {
@@ -149,8 +151,12 @@ class DateTimeFormat
 		try {
 			$d = new DateTime($s, $from_obj);
 		} catch (Exception $e) {
-			Logger::log('DateTimeFormat::convert: exception: ' . $e->getMessage());
-			$d = new DateTime('now', $from_obj);
+			try {
+				$d = new DateTime(self::fix($s), $from_obj);
+			} catch (\Throwable $e) {
+				Logger::warning('DateTimeFormat::convert: exception: ' . $e->getMessage());
+				$d = new DateTime('now', $from_obj);
+			}
 		}
 
 		try {
@@ -159,9 +165,38 @@ class DateTimeFormat
 			$to_obj = new DateTimeZone('UTC');
 		}
 
-		$d->setTimeZone($to_obj);
+		$d->setTimezone($to_obj);
 
 		return $d->format($format);
+	}
+
+	/**
+	 * Fix weird date formats.
+	 *
+	 * Note: This method isn't meant to sanitize valid date/time strings, for example it will mangle relative date
+	 * strings like "now - 3 days".
+	 *
+	 * @see \Friendica\Test\src\Util\DateTimeFormatTest::dataFix() for a list of examples handled by this method.
+	 * @param string $dateString
+	 * @return string
+	 */
+	public static function fix(string $dateString): string
+	{
+		$search  = ['Mär', 'März', 'Mai', 'Juni', 'Juli', 'Okt', 'Dez', 'ET' , 'ZZ', ' - ', '&#x2B;', '&amp;#43;', ' (Coordinated Universal Time)', '\\'];
+		$replace = ['Mar', 'Mar' , 'May', 'Jun' , 'Jul' , 'Oct', 'Dec', 'EST', 'Z' , ', ' , '+'     , '+'        , ''                             , ''];
+
+		$dateString = str_replace($search, $replace, $dateString);
+
+		$pregPatterns = [
+			['#(\w+), (\d+ \w+ \d+) (\d+:\d+:\d+) (.+)#', '$2 $3 $4'],
+			['#(\d+:\d+) (\w+), (\w+) (\d+), (\d+)#', '$1 $2 $3 $4 $5'],
+		];
+
+		foreach ($pregPatterns as $pattern) {
+			$dateString = preg_replace($pattern[0], $pattern[1], $dateString);
+		}
+
+		return $dateString;
 	}
 
 	/**

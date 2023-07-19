@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,10 +23,11 @@
 namespace Friendica\Core;
 
 use Dice\Dice;
-use Friendica\Core\Config\Cache;
+use DMS\PHPUnitExtensions\ArraySubset\ArraySubsetAsserts;
+use Friendica\Core\Config\ValueObject\Cache;
 use Friendica\DI;
-use Friendica\Network\CurlResult;
-use Friendica\Network\IHTTPRequest;
+use Friendica\Network\HTTPClient\Capability\ICanHandleHttpResponses;
+use Friendica\Network\HTTPClient\Capability\ICanSendHttpRequests;
 use Friendica\Test\MockedTest;
 use Friendica\Test\Util\VFSTrait;
 use Mockery;
@@ -35,6 +36,7 @@ use Mockery\MockInterface;
 class InstallerTest extends MockedTest
 {
 	use VFSTrait;
+	use ArraySubsetAsserts;
 
 	/**
 	 * @var L10n|MockInterface
@@ -61,7 +63,7 @@ class InstallerTest extends MockedTest
 		           ->with(L10n::class)
 		           ->andReturn($this->l10nMock);
 
-		DI::init($this->dice);
+		DI::init($this->dice, true);
 	}
 
 	public static function tearDownAfterClass(): void
@@ -102,8 +104,10 @@ class InstallerTest extends MockedTest
 		$this->mockL10nT('Error: JSON PHP module required but not installed.', 1);
 		$this->mockL10nT('File Information PHP module', 1);
 		$this->mockL10nT('Error: File Information PHP module required but not installed.', 1);
+		$this->mockL10nT('GNU Multiple Precision PHP module', 1);
+		$this->mockL10nT('Error: GNU Multiple Precision PHP module required but not installed.', 1);
 		$this->mockL10nT('Program execution functions', 1);
-		$this->mockL10nT('Error: Program execution functions required but not enabled.', 1);
+		$this->mockL10nT('Error: Program execution functions (proc_open) required but not enabled.', 1);
 	}
 
 	private function assertCheckExist($position, $title, $help, $status, $required, $assertionArray)
@@ -248,7 +252,7 @@ class InstallerTest extends MockedTest
 		self::assertFalse($install->checkFunctions());
 		self::assertCheckExist(9,
 			'Program execution functions',
-			'Error: Program execution functions required but not enabled.',
+			'Error: Program execution functions (proc_open) required but not enabled.',
 			false,
 			true,
 			$install->getChecks());
@@ -275,6 +279,17 @@ class InstallerTest extends MockedTest
 			$install->getChecks());
 
 		$this->mockFunctionL10TCalls();
+		$this->setFunctions(['gmp_strval' => false]);
+		$install = new Installer();
+		self::assertFalse($install->checkFunctions());
+		self::assertCheckExist(12,
+			'GNU Multiple Precision PHP module',
+			'Error: GNU Multiple Precision PHP module required but not installed.',
+		false,
+			true,
+			$install->getChecks());
+
+		$this->mockFunctionL10TCalls();
 		$this->setFunctions([
 			'curl_init' => true,
 			'imagecreatefromjpeg' => true,
@@ -284,6 +299,7 @@ class InstallerTest extends MockedTest
 			'posix_kill' => true,
 			'json_encode' => true,
 			'finfo_open' => true,
+			'gmp_strval' => true,
 		]);
 		$install = new Installer();
 		self::assertTrue($install->checkFunctions());
@@ -319,33 +335,33 @@ class InstallerTest extends MockedTest
 		$this->l10nMock->shouldReceive('t')->andReturnUsing(function ($args) { return $args; });
 
 		// Mocking the CURL Response
-		$curlResult = Mockery::mock(CurlResult::class);
-		$curlResult
+		$IHTTPResult = Mockery::mock(ICanHandleHttpResponses::class);
+		$IHTTPResult
 			->shouldReceive('getReturnCode')
 			->andReturn('404');
-		$curlResult
+		$IHTTPResult
 			->shouldReceive('getRedirectUrl')
 			->andReturn('');
-		$curlResult
+		$IHTTPResult
 			->shouldReceive('getError')
 			->andReturn('test Error');
 
 		// Mocking the CURL Request
-		$networkMock = Mockery::mock(IHTTPRequest::class);
+		$networkMock = Mockery::mock(ICanSendHttpRequests::class);
 		$networkMock
 			->shouldReceive('fetchFull')
 			->with('https://test/install/testrewrite')
-			->andReturn($curlResult);
+			->andReturn($IHTTPResult);
 		$networkMock
 			->shouldReceive('fetchFull')
 			->with('http://test/install/testrewrite')
-			->andReturn($curlResult);
+			->andReturn($IHTTPResult);
 
 		$this->dice->shouldReceive('create')
-		     ->with(IHTTPRequest::class)
+		     ->with(ICanSendHttpRequests::class)
 		     ->andReturn($networkMock);
 
-		DI::init($this->dice);
+		DI::init($this->dice, true);
 
 		// Mocking that we can use CURL
 		$this->setFunctions(['curl_init' => true]);
@@ -366,33 +382,33 @@ class InstallerTest extends MockedTest
 		$this->l10nMock->shouldReceive('t')->andReturnUsing(function ($args) { return $args; });
 
 		// Mocking the failed CURL Response
-		$curlResultF = Mockery::mock(CurlResult::class);
-		$curlResultF
+		$IHTTPResultF = Mockery::mock(ICanHandleHttpResponses::class);
+		$IHTTPResultF
 			->shouldReceive('getReturnCode')
 			->andReturn('404');
 
 		// Mocking the working CURL Response
-		$curlResultW = Mockery::mock(CurlResult::class);
-		$curlResultW
+		$IHTTPResultW = Mockery::mock(ICanHandleHttpResponses::class);
+		$IHTTPResultW
 			->shouldReceive('getReturnCode')
 			->andReturn('204');
 
 		// Mocking the CURL Request
-		$networkMock = Mockery::mock(IHTTPRequest::class);
+		$networkMock = Mockery::mock(ICanSendHttpRequests::class);
 		$networkMock
 			->shouldReceive('fetchFull')
 			->with('https://test/install/testrewrite')
-			->andReturn($curlResultF);
+			->andReturn($IHTTPResultF);
 		$networkMock
 			->shouldReceive('fetchFull')
 			->with('http://test/install/testrewrite')
-			->andReturn($curlResultW);
+			->andReturn($IHTTPResultW);
 
 		$this->dice->shouldReceive('create')
-		           ->with(IHTTPRequest::class)
+		           ->with(ICanSendHttpRequests::class)
 		           ->andReturn($networkMock);
 
-		DI::init($this->dice);
+		DI::init($this->dice, true);
 
 		// Mocking that we can use CURL
 		$this->setFunctions(['curl_init' => true]);

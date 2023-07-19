@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,6 +21,7 @@
 
 namespace Friendica\Module;
 
+use Friendica\App;
 use Friendica\BaseModule;
 use Friendica\Core\Addon;
 use Friendica\Core\Hook;
@@ -29,6 +30,7 @@ use Friendica\Core\System;
 use Friendica\Database\PostUpdate;
 use Friendica\DI;
 use Friendica\Model\User;
+use Friendica\Network\HTTPException;
 use Friendica\Protocol\ActivityPub;
 
 /**
@@ -37,9 +39,10 @@ use Friendica\Protocol\ActivityPub;
  */
 class Friendica extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
 		$config = DI::config();
+		$keyValue = DI::keyValue();
 
 		$visibleAddonList = Addon::getVisibleList();
 		if (!empty($visibleAddonList)) {
@@ -68,19 +71,20 @@ class Friendica extends BaseModule
 		}
 
 		$tos = ($config->get('system', 'tosdisplay')) ?
-			DI::l10n()->t('Read about the <a href="%1$s/tos">Terms of Service</a> of this node.', DI::baseUrl()->get()) :
+			DI::l10n()->t('Read about the <a href="%1$s/tos">Terms of Service</a> of this node.', DI::baseUrl()) :
 			'';
 
 		$blockList = $config->get('system', 'blocklist');
 
 		if (!empty($blockList)) {
 			$blocked = [
-				'title'  => DI::l10n()->t('On this server the following remote servers are blocked.'),
-				'header' => [
+				'title'    => DI::l10n()->t('On this server the following remote servers are blocked.'),
+				'header'   => [
 					DI::l10n()->t('Blocked domain'),
 					DI::l10n()->t('Reason for the block'),
 				],
-				'list'   => $blockList,
+				'download' => DI::l10n()->t('Download this list in CSV format'),
+				'list'     => $blockList,
 			];
 		} else {
 			$blocked = null;
@@ -94,10 +98,10 @@ class Friendica extends BaseModule
 
 		return Renderer::replaceMacros($tpl, [
 			'about'     => DI::l10n()->t('This is Friendica, version %s that is running at the web location %s. The database version is %s, the post update version is %s.',
-				'<strong>' . FRIENDICA_VERSION . '</strong>',
-				DI::baseUrl()->get(),
-				'<strong>' . DB_UPDATE_VERSION . '/' . $config->get('system', 'build') .'</strong>',
-				'<strong>' . PostUpdate::VERSION . '/' . $config->get('system', 'post_update_version') . '</strong>'),
+				'<strong>' . App::VERSION . '</strong>',
+				DI::baseUrl(),
+				'<strong>' . $config->get('system', 'build') . '/' . DB_UPDATE_VERSION . '</strong>',
+				'<strong>' . $keyValue->get('post_update_version') . '/' . PostUpdate::VERSION . '</strong>'),
 			'friendica' => DI::l10n()->t('Please visit <a href="https://friendi.ca">Friendi.ca</a> to learn more about the Friendica project.'),
 			'bugs'      => DI::l10n()->t('Bug reports and issues: please visit') . ' ' . '<a href="https://github.com/friendica/friendica/issues?state=open">' . DI::l10n()->t('the bugtracker at github') . '</a>',
 			'info'      => DI::l10n()->t('Suggestions, praise, etc. - please email "info" at "friendi - dot - ca'),
@@ -109,22 +113,22 @@ class Friendica extends BaseModule
 		]);
 	}
 
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-		if (ActivityPub::isRequest()) {
-			$data = ActivityPub\Transmitter::getProfile(0);
-			if (!empty($data)) {
+		// @TODO: Replace with parameter from router
+		if (DI::args()->getArgc() <= 1 || (DI::args()->getArgv()[1] !== 'json')) {
+			if (!ActivityPub::isRequest()) {
+				return;
+			}
+
+			try {
+				$data = ActivityPub\Transmitter::getProfile(0);
 				header('Access-Control-Allow-Origin: *');
 				header('Cache-Control: max-age=23200, stale-while-revalidate=23200');
 				System::jsonExit($data, 'application/activity+json');
+			} catch (HTTPException\NotFoundException $e) {
+				System::jsonError(404, ['error' => 'Record not found']);
 			}
-		}
-
-		$app = DI::app();
-
-		// @TODO: Replace with parameter from router
-		if ($app->argc <= 1 || ($app->argv[1] !== 'json')) {
-			return;
 		}
 
 		$config = DI::config();
@@ -147,13 +151,13 @@ class Friendica extends BaseModule
 		if (!empty($administrator)) {
 			$admin = [
 				'name'    => $administrator['username'],
-				'profile' => DI::baseUrl()->get() . '/profile/' . $administrator['nickname'],
+				'profile' => DI::baseUrl() . '/profile/' . $administrator['nickname'],
 			];
 		}
 
 		$visible_addons = Addon::getVisibleList();
 
-		$config->load('feature_lock');
+		$config->reload();
 		$locked_features = [];
 		$featureLocks = $config->get('config', 'feature_lock');
 		if (isset($featureLocks)) {
@@ -167,8 +171,8 @@ class Friendica extends BaseModule
 		}
 
 		$data = [
-			'version'          => FRIENDICA_VERSION,
-			'url'              => DI::baseUrl()->get(),
+			'version'          => App::VERSION,
+			'url'              => (string)DI::baseUrl(),
 			'addons'           => $visible_addons,
 			'locked_features'  => $locked_features,
 			'explicit_content' => intval($config->get('system', 'explicit_content', 0)),
@@ -176,13 +180,11 @@ class Friendica extends BaseModule
 			'register_policy'  => $register_policy,
 			'admin'            => $admin,
 			'site_name'        => $config->get('config', 'sitename'),
-			'platform'         => strtolower(FRIENDICA_PLATFORM),
+			'platform'         => strtolower(App::PLATFORM),
 			'info'             => $config->get('config', 'info'),
-			'no_scrape_url'    => DI::baseUrl()->get() . '/noscrape',
+			'no_scrape_url'    => DI::baseUrl() . '/noscrape',
 		];
 
-		header('Content-type: application/json; charset=utf-8');
-		echo json_encode($data);
-		exit();
+		System::jsonExit($data);
 	}
 }

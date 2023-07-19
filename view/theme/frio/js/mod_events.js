@@ -5,6 +5,8 @@
  */
 
 $(document).ready(function () {
+	let $body = $("body");
+
 	// start the fullCalendar
 	$("#events-calendar").fullCalendar({
 		firstDay: aStr.firstDay,
@@ -20,7 +22,7 @@ $(document).ready(function () {
 			week: aStr.week,
 			day: aStr.day,
 		},
-		events: baseurl + moduleUrl + "/json/",
+		events: calendar_api,
 		header: {
 			left: "",
 			//	center: 'title',
@@ -33,14 +35,13 @@ $(document).ready(function () {
 		loading: function (isLoading, view) {
 			if (!isLoading) {
 				$("td.fc-day").dblclick(function () {
-					addToModal("/events/new?start=" + $(this).data("date"));
+					addToModal("calendar/event/new?start=" + $(this).data("date"));
 				});
 			}
 		},
-		defaultView: "month",
+		defaultView: aStr.defaultView,
 		aspectRatio: 1,
 		eventRender: function (event, element, view) {
-			//console.log(view.name);
 			switch (view.name) {
 				case "month":
 					element
@@ -50,8 +51,8 @@ $(document).ready(function () {
 								event.item["author-avatar"],
 								event.item["author-name"],
 								event.title,
-								event.item.desc,
-								event.item.location,
+								event.desc,
+								event.location,
 							),
 						);
 					break;
@@ -63,8 +64,8 @@ $(document).ready(function () {
 							"<img src='{0}' style='height:12px; width:12px'>{1}<p>{2}</p><p>{3}</p>".format(
 								event.item["author-avatar"],
 								event.item["author-name"],
-								event.item.desc,
-								htmlToText(event.item.location),
+								event.desc,
+								htmlToText(event.location),
 							),
 						);
 					break;
@@ -76,8 +77,8 @@ $(document).ready(function () {
 							"<img src='{0}' style='height:24px;width:24px'>{1}<p>{2}</p><p>{3}</p>".format(
 								event.item["author-avatar"],
 								event.item["author-name"],
-								event.item.desc,
-								htmlToText(event.item.location),
+								event.desc,
+								htmlToText(event.location),
 							),
 						);
 					break;
@@ -102,18 +103,6 @@ $(document).ready(function () {
 		},
 	});
 
-	// center on date
-	var args = location.href.replace(baseurl, "").split("/");
-	if (modparams == 2) {
-		if (args.length >= 5) {
-			$("#events-calendar").fullCalendar("gotoDate", args[3], args[4] - 1);
-		}
-	} else {
-		if (args.length >= 4) {
-			$("#events-calendar").fullCalendar("gotoDate", args[2], args[3] - 1);
-		}
-	}
-
 	// echo the title
 	var view = $("#events-calendar").fullCalendar("getView");
 	$("#fc-title").text(view.title);
@@ -121,11 +110,71 @@ $(document).ready(function () {
 	// show event popup
 	var hash = location.hash.split("-");
 	if (hash.length == 2 && hash[0] == "#link") showEvent(hash[1]);
+
+	// event_edit
+
+	// Go to the permissions tab if the checkbox is checked.
+	$body
+		.on("click", "#id_share", function () {
+			if ($("#id_share").is(":checked") && !$("#id_share").attr("disabled")) {
+				$("#acl-wrapper").show();
+				$("a#event-perms-lnk").parent("li").show();
+				toggleEventNav("a#event-perms-lnk");
+				eventAclActive();
+			} else {
+				$("#acl-wrapper").hide();
+				$("a#event-perms-lnk").parent("li").hide();
+			}
+		})
+		.trigger("change");
+
+	// Disable the finish time input if the user disable it.
+	$body
+		.on("change", "#id_nofinish", function () {
+			enableDisableFinishDate();
+		})
+		.trigger("change");
+
+	// JS for the permission section.
+	$("#contact_allow, #contact_deny, #group_allow, #group_deny")
+		.change(function () {
+			var selstr;
+			$(
+				"#contact_allow option:selected, #contact_deny option:selected, #group_allow option:selected, #group_deny option:selected",
+			).each(function () {
+				selstr = $(this).html();
+				$("#jot-public").hide();
+			});
+			if (selstr == null) {
+				$("#jot-public").show();
+			}
+		})
+		.trigger("change");
+
+	// Change the event nav menu.tabs on click.
+	$body.on("click", "#event-nav > li > a", function (e) {
+		e.preventDefault();
+		toggleEventNav(this);
+	});
+
+	// This is experimental. We maybe can make use of it to inject
+	// some js code while the event modal opens.
+	//$body.on('show.bs.modal', function () {
+	//	enableDisableFinishDate();
+	//});
+
+	// Clear some elements (e.g. the event-preview container) when
+	// selecting a event nav link so it don't appear more than once.
+	$body.on("click", "#event-nav a", function (e) {
+		$("#event-preview").empty();
+		e.preventDefault();
+	});
+
 });
 
 // loads the event into a modal
 function showEvent(eventid) {
-	addToModal(baseurl + moduleUrl + "/?id=" + eventid);
+	addToModal(event_api + '/' + eventid);
 }
 
 function changeView(action, viewName) {
@@ -190,27 +239,24 @@ function eventHoverHtmlContent(event) {
 	moment.locale(locale);
 
 	// format dates to different styles
-	var startDate = moment(event.item.start).format("dd HH:mm");
-	var endDate = moment(event.item.finsih).format("dd HH:mm");
-	var monthShort = moment(event.item.start).format("MMM");
-	var dayNumberStart = moment(event.item.start).format("DD");
-	var dayNumberEnd = moment(event.item.finish).format("DD");
-	var startTime = moment(event.item.start).format("HH:mm");
-	var endTime = moment(event.item.finish).format("HH:mm");
-	var monthNumber;
+	var startDate = event.start.format('dd HH:mm');
+	var monthShort = event.start.format('MMM');
+	var dayNumberStart = event.start.format('DD');
 
 	var formattedDate = startDate;
 
 	// We only need the to format the end date if the event does have
 	// a finish date.
-	if (event.item.nofinish == 0) {
+	if (event.nofinish === 0 && event.end !== null) {
+		var dayNumberEnd = event.end.format('DD');
+		var endTime = event.end.format('HH:mm');
+
 		formattedDate = startDate + " - " + endTime;
 
 		// use a different Format (15. Feb - 18. Feb) if the events end date
 		// is not the start date
-		if (dayNumberStart != dayNumberEnd) {
-			formattedDate =
-				moment(event.item.start).format("Do MMM") + " - " + moment(event.item.finish).format("Do MMM");
+		if (dayNumberStart !== dayNumberEnd) {
+			formattedDate = event.start.format('Do MMM') + ' - ' + event.end.format('Do MMM');
 		}
 	}
 
@@ -218,11 +264,11 @@ function eventHoverHtmlContent(event) {
 	data = eventHoverBodyTemplate();
 
 	// Get only template data if there exists location data
-	if (event.item.location) {
-		var eventLocationText = htmlToText(event.item.location);
-		// Get the the html template for formatting the location
+	if (event.location) {
+		var eventLocationText = htmlToText(event.location);
+		// Get the html template for formatting the location
 		var eventLocationTemplate = eventHoverLocationTemplate();
-		// Format the event location data according to the the event location
+		// Format the event location data according to the event location
 		// template
 		eventLocation = eventLocationTemplate.format(eventLocationText);
 	}
@@ -249,12 +295,12 @@ function eventHoverHtmlContent(event) {
 	return formatted;
 }
 
-// transform the the list view event element into formatted html
+// transform the list view event element into formatted html
 function formatListViewEvent(event) {
 	// The basic template for list view
 	var template =
 		'<td class="fc-list-item-title fc-widget-content">\
-				<hr class="seperator"></hr>\
+				<hr class="separator"></hr>\
 				<div class="event-card">\
 					<div class="popover-content hovercard-content">{0}</div>\
 				</div>\
@@ -264,4 +310,58 @@ function formatListViewEvent(event) {
 
 	return formatted;
 }
+
+// event_edit
+
+// Load the html of the actual event and incect the output to the
+// event-edit section.
+function doEventPreview() {
+	$("#event-edit-preview").val(1);
+	$.post("calendar/api/create", $("#event-edit-form").serialize(), function (data) {
+		$("#event-preview").append(data);
+	});
+	$("#event-edit-preview").val(0);
+}
+
+// The following functions show/hide the specific event-edit content
+// in dependence of the selected nav.
+function eventAclActive() {
+	$("#event-edit-wrapper, #event-preview, #event-desc-wrapper").hide();
+	$("#event-acl-wrapper").show();
+}
+
+function eventPreviewActive() {
+	$("#event-acl-wrapper, #event-edit-wrapper, #event-desc-wrapper").hide();
+	$("#event-preview").show();
+	doEventPreview();
+}
+
+function eventEditActive() {
+	$("#event-acl-wrapper, #event-preview, #event-desc-wrapper").hide();
+	$("#event-edit-wrapper").show();
+
+	// Make sure jot text does have really the active class (we do this because there are some
+	// other events which trigger jot text.
+	toggleEventNav($("#event-edit-lnk"));
+}
+
+function eventDescActive() {
+	$("#event-edit-wrapper, #event-preview, #event-acl-wrapper").hide();
+	$("#event-desc-wrapper").show();
+}
+
+// Give the active "event-nav" list element the class "active".
+function toggleEventNav(elm) {
+	// Select all li of #event-nav and remove the active class.
+	$(elm).closest("#event-nav").children("li").removeClass("active");
+	// Add the active class to the parent of the link which was selected.
+	$(elm).parent("li").addClass("active");
+}
+
+// Disable the input for the finish date if it is not available.
+function enableDisableFinishDate() {
+	if ($("#id_nofinish").is(":checked")) $("#id_finish_text").prop("disabled", true);
+	else $("#id_finish_text").prop("disabled", false);
+}
+
 // @license-end

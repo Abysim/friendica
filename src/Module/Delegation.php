@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,30 +24,29 @@ namespace Friendica\Module;
 use Friendica\BaseModule;
 use Friendica\Core\Hook;
 use Friendica\Core\Renderer;
-use Friendica\Core\Session;
 use Friendica\Database\DBA;
 use Friendica\DI;
-use Friendica\Model\Contact;
 use Friendica\Model\Notification;
 use Friendica\Model\User;
 use Friendica\Network\HTTPException\ForbiddenException;
+use Friendica\Util\Proxy;
 
 /**
  * Switches current user between delegates/parent user
  */
 class Delegation extends BaseModule
 {
-	public static function post(array $parameters = [])
+	protected function post(array $request = [])
 	{
-		if (!local_user()) {
+		if (!DI::userSession()->getLocalUserId()) {
 			return;
 		}
 
-		$uid = local_user();
-		$orig_record = DI::app()->user;
+		$uid = DI::userSession()->getLocalUserId();
+		$orig_record = User::getById(DI::app()->getLoggedInUserId());
 
-		if (Session::get('submanage')) {
-			$user = User::getById(Session::get('submanage'));
+		if (DI::userSession()->getSubManagedUserId()) {
+			$user = User::getById(DI::userSession()->getSubManagedUserId());
 			if (DBA::isResult($user)) {
 				$uid = intval($user['uid']);
 				$orig_record = $user;
@@ -97,48 +96,44 @@ class Delegation extends BaseModule
 			return;
 		}
 
-		Session::clear();
+		DI::session()->clear();
 
 		DI::auth()->setForUser(DI::app(), $user, true, true);
 
 		if ($limited_id) {
-			Session::set('submanage', $original_id);
+			DI::userSession()->setSubManagedUserId($original_id);
 		}
 
 		$ret = [];
 		Hook::callAll('home_init', $ret);
 
-		DI::baseUrl()->redirect('profile/' . DI::app()->user['nickname']);
-		// NOTREACHED
+		DI::sysmsg()->addNotice($this->t('You are now logged in as %s', $user['username']));
+
+		DI::baseUrl()->redirect('network');
 	}
 
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		if (!local_user()) {
+		if (!DI::userSession()->getLocalUserId()) {
 			throw new ForbiddenException(DI::l10n()->t('Permission denied.'));
 		}
 
-		$identities = DI::app()->identities;
+		$identities = User::identities(DI::userSession()->getSubManagedUserId() ?: DI::userSession()->getLocalUserId());
 
-		//getting additinal information for each identity
+		//getting additional information for each identity
 		foreach ($identities as $key => $identity) {
-			$thumb = Contact::selectFirst(['thumb'], ['uid' => $identity['uid'], 'self' => true]);
-			if (!DBA::isResult($thumb)) {
-				continue;
-			}
+			$identities[$key]['thumb'] = User::getAvatarUrl($identity, Proxy::SIZE_THUMB);
 
-			$identities[$key]['thumb'] = $thumb['thumb'];
+			$identities[$key]['selected'] = ($identity['nickname'] === DI::app()->getLoggedInUserNickname());
 
-			$identities[$key]['selected'] = ($identity['nickname'] === DI::app()->user['nickname']);
-
-			$condition = ["`uid` = ? AND `msg` != '' AND NOT (`type` IN (?, ?)) AND NOT `seen`", $identity['uid'], Notification\Type::INTRO, Notification\Type::MAIL];
+			$condition = ["`msg` != '' AND NOT (`type` IN (?, ?)) AND NOT `seen`", Notification\Type::INTRO, Notification\Type::MAIL];
 			$params = ['distinct' => true, 'expression' => 'parent'];
-			$notifications = DBA::count('notify', $condition, $params);
+			$notifications = DI::notify()->countForUser($identity['uid'], $condition, $params);
 
 			$params = ['distinct' => true, 'expression' => 'convid'];
 			$notifications += DBA::count('mail', ['uid' => $identity['uid'], 'seen' => false], $params);
 
-			$notifications += DBA::count('intro', ['blocked' => false, 'ignore' => false, 'uid' => $identity['uid']]);
+			$notifications += DI::intro()->countActiveForUser($identity['uid']);
 
 			$identities[$key]['notifications'] = $notifications;
 		}

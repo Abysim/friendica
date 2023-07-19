@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,40 +22,33 @@
 namespace Friendica\Module;
 
 use Friendica\BaseModule;
-use Friendica\DI;
+use Friendica\Core\System;
 use Friendica\Model\User;
 use Friendica\Network\HTTPException\BadRequestException;
-use Friendica\Util\Crypto;
-use Friendica\Util\Strings;
-use phpseclib\File\ASN1;
+use Friendica\Protocol\Salmon;
 
 /**
  * prints the public RSA key of a user
  */
 class PublicRSAKey extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-		$app = DI::app();
-
-		// @TODO: Replace with parameter from router
-		if ($app->argc !== 2) {
+		if (empty($this->parameters['nick'])) {
 			throw new BadRequestException();
 		}
 
-		// @TODO: Replace with parameter from router
-		$nick = $app->argv[1];
+		$nick = $this->parameters['nick'];
 
 		$user = User::getByNickname($nick, ['spubkey']);
 		if (empty($user) || empty($user['spubkey'])) {
 			throw new BadRequestException();
 		}
 
-		Crypto::pemToMe($user['spubkey'], $modulus, $exponent);
-
-		header('Content-type: application/magic-public-key');
-		echo 'RSA' . '.' . Strings::base64UrlEncode($modulus, true) . '.' . Strings::base64UrlEncode($exponent, true);
-
-		exit();
+		System::httpExit(
+			Salmon::salmonKey($user['spubkey']),
+			Response::TYPE_BLANK,
+			'application/magic-public-key'
+		);
 	}
 }

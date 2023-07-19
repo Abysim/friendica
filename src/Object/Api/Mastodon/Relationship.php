@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -28,7 +28,7 @@ use Friendica\Util\Network;
 /**
  * Class Relationship
  *
- * @see https://docs.joinmastodon.org/api/entities/#relationship
+ * @see https://docs.joinmastodon.org/entities/relationship/
  */
 class Relationship extends BaseDataTransferObject
 {
@@ -37,42 +37,71 @@ class Relationship extends BaseDataTransferObject
 	/** @var bool */
 	protected $following = false;
 	/** @var bool */
-	protected $followed_by = false;
+	protected $requested = false;
+	/**
+	 * Unsupported
+	 * @var bool
+	 */
+	protected $endorsed = false;
 	/** @var bool */
-	protected $blocking = false;
+	protected $followed_by = false;
 	/** @var bool */
 	protected $muting = false;
 	/** @var bool */
 	protected $muting_notifications = false;
+	/**
+	 * Unsupported
+	 * @var bool
+	 */
+	protected $showing_reblogs = true;
 	/** @var bool */
-	protected $requested = false;
+	protected $notifying = false;
+	/** @var bool */
+	protected $blocking = false;
 	/** @var bool */
 	protected $domain_blocking = false;
 	/**
 	 * Unsupported
 	 * @var bool
 	 */
-	protected $showing_reblogs = true;
+	protected $blocked_by = false;
 	/**
 	 * Unsupported
-	 * @var bool
+	 * @var string
 	 */
-	protected $endorsed = false;
+	protected $note = '';
 
 	/**
-	 * @param int   $userContactId Contact row Id with uid != 0
-	 * @param array $userContact   Full Contact table record with uid != 0
+	 * @param int   $contactId Contact row Id with uid != 0
+	 * @param array $contactRecord   Full Contact table record with uid != 0
+	 * @param bool  $blocked "true" if user is blocked
+	 * @param bool  $muted "true" if user is muted
 	 */
-	public function __construct(int $userContactId, array $userContact = [])
+	public function __construct(int $contactId, array $contactRecord, bool $blocked = false, bool $muted = false)
 	{
-		$this->id                   = $userContactId;
-		$this->following            = in_array($userContact['rel'] ?? 0, [Contact::SHARING, Contact::FRIEND]);
-		$this->followed_by          = in_array($userContact['rel'] ?? 0, [Contact::FOLLOWER, Contact::FRIEND]);
-		$this->blocking             = (bool)$userContact['blocked'] ?? false;
-		$this->muting               = (bool)$userContact['readonly'] ?? false;
-		$this->muting_notifications = (bool)$userContact['readonly'] ?? false;
-		$this->requested            = (bool)$userContact['pending'] ?? false;
-		$this->domain_blocking      = Network::isUrlBlocked($userContact['url'] ?? '');
+		$this->id                   = (string)$contactId;
+		$this->following            = false;
+		$this->requested            = false;
+		$this->endorsed             = false;
+		$this->followed_by          = false;
+		$this->muting               = $muted;
+		$this->muting_notifications = false;
+		$this->showing_reblogs      = true;
+		$this->notifying            = false;
+		$this->blocking             = $blocked;
+		$this->domain_blocking      = Network::isUrlBlocked($contactRecord['url'] ?? '');
+		$this->blocked_by           = false;
+		$this->note                 = '';
+
+		if ($contactRecord['uid'] != 0) {
+			$this->following   = !$contactRecord['pending'] && in_array($contactRecord['rel'] ?? 0, [Contact::SHARING, Contact::FRIEND]);
+			$this->requested   = (bool)($contactRecord['pending'] ?? false);
+			$this->followed_by = !$contactRecord['pending'] && in_array($contactRecord['rel'] ?? 0, [Contact::FOLLOWER, Contact::FRIEND]);
+			$this->muting      = (bool)($contactRecord['readonly'] ?? false) || $muted;
+			$this->notifying   = (bool)$contactRecord['notify_new_posts'] ?? false;
+			$this->blocking    = (bool)($contactRecord['blocked'] ?? false) || $blocked;
+			$this->note        = $contactRecord['info'];
+		}
 
 		return $this;
 	}

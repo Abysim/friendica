@@ -17,8 +17,9 @@ General
 * p - Profile
 * n - Network
 * c - Community
-* s -	Search
+* s - Search
 * a - Admin
+* m - Moderation
 * f - Notifications
 * u - User menu
 
@@ -32,9 +33,10 @@ General
 * m - Status Messages and Posts
 * r - Profile Details
 * h - Photo Albums
-* v - Videos
+* d - Media
 * e - Events and Calendar
 * t - Personal Notes
+* o - Scheduled Posts
 * k - View Contacts
 
 ../contacts (contact list)
@@ -48,12 +50,13 @@ General
 * h - Only show hidden contacts
 * e - Edit contact groups
 
-../contacts (single contact view)
+../contact (single contact view)
 -------------------------------
 * m - Status messages
+* p - Posts and Comments
+* d - Media
 * o - Profile
 * t - Contacts
-* d - Common friends
 * r - Advanced
 
 ../message
@@ -63,10 +66,10 @@ General
 ../network
 --------
 * e - Sort by Comment Date
-* t - Sort by Post Date
+* t - Sort by Receipt Date
+* q - Sort by Creation Date
 * r - Conversation (Posts that mention or involve you)
 * w - New posts
-* b - Bookmarks
 * m - Favourite Posts
 
 ../notifications
@@ -80,6 +83,7 @@ General
 ../settings
 ---------
 * o - Account
+* 2 - Two-factor authentication
 * p - Profiles
 * t - Additional features
 * w - Social Networks

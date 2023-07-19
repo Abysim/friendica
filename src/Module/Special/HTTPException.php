@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,9 +21,13 @@
 
 namespace Friendica\Module\Special;
 
+use Friendica\App\Arguments;
+use Friendica\App\Request;
+use Friendica\Core\L10n;
 use Friendica\Core\Renderer;
+use Friendica\Core\Session\Model\UserSession;
 use Friendica\Core\System;
-use Friendica\DI;
+use Psr\Log\LoggerInterface;
 
 /**
  * This special module displays HTTPException when they are thrown in modules.
@@ -32,53 +36,52 @@ use Friendica\DI;
  */
 class HTTPException
 {
+	/** @var L10n */
+	protected $l10n;
+	/** @var LoggerInterface */
+	protected $logger;
+	/** @var Arguments */
+	protected $args;
+	/** @var bool */
+	protected $isSiteAdmin;
+	/** @var array */
+	protected $server;
+	/** @var string */
+	protected $requestId;
+
+	public function __construct(L10n $l10n, LoggerInterface $logger, Arguments $args, UserSession $session, Request $request, array $server = [])
+	{
+		$this->logger      = $logger;
+		$this->l10n        = $l10n;
+		$this->args        = $args;
+		$this->isSiteAdmin = $session->isSiteAdmin();
+		$this->server      = $server;
+		$this->requestId   = $request->getRequestId();
+	}
+
 	/**
 	 * Generates the necessary template variables from the caught HTTPException.
 	 *
 	 * Fills in the blanks if title or descriptions aren't provided by the exception.
 	 *
 	 * @param \Friendica\Network\HTTPException $e
+	 *
 	 * @return array ['$title' => ..., '$description' => ...]
 	 */
-	private static function getVars(\Friendica\Network\HTTPException $e)
+	private function getVars(\Friendica\Network\HTTPException $e)
 	{
-		$message = $e->getMessage();
-
-		$titles = [
-			200 => 'OK',
-			400 => DI::l10n()->t('Bad Request'),
-			401 => DI::l10n()->t('Unauthorized'),
-			403 => DI::l10n()->t('Forbidden'),
-			404 => DI::l10n()->t('Not Found'),
-			500 => DI::l10n()->t('Internal Server Error'),
-			503 => DI::l10n()->t('Service Unavailable'),
-		];
-		$title = ($titles[$e->getCode()] ?? '') ?: 'Error ' . $e->getCode();
-
-		if (empty($message)) {
-			// Explanations are taken from https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
-			$explanation = [
-				400 => DI::l10n()->t('The server cannot or will not process the request due to an apparent client error.'),
-				401 => DI::l10n()->t('Authentication is required and has failed or has not yet been provided.'),
-				403 => DI::l10n()->t('The request was valid, but the server is refusing action. The user might not have the necessary permissions for a resource, or may need an account.'),
-				404 => DI::l10n()->t('The requested resource could not be found but may be available in the future.'),
-				500 => DI::l10n()->t('An unexpected condition was encountered and no more specific message is suitable.'),
-				503 => DI::l10n()->t('The server is currently unavailable (because it is overloaded or down for maintenance). Please try again later.'),
-			];
-
-			$message = $explanation[$e->getCode()] ?? '';
-		}
-
+		// Explanations are mostly taken from https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
 		$vars = [
-			'$title' => $title,
-			'$message' => $message,
-			'$back' => DI::l10n()->t('Go back'),
-			'$stack_trace' => DI::l10n()->t('Stack trace:'),
+			'$title'       => $e->getDescription() ?: 'Error ' . $e->getCode(),
+			'$message'     => $e->getMessage() ?: $e->getExplanation(),
+			'$back'        => $this->l10n->t('Go back'),
+			'$stack_trace' => $this->l10n->t('Stack trace:'),
+			'$request_id'  => $this->requestId,
 		];
 
-		if (is_site_admin()) {
-			$vars['$thrown'] = DI::l10n()->t('Exception thrown in %s:%d', $e->getFile(), $e->getLine());
-			$vars['$trace'] = $e->getTraceAsString();
+		if ($this->isSiteAdmin) {
+			$vars['$thrown'] = $this->l10n->t('Exception thrown in %s:%d', $e->getFile(), $e->getLine());
+			$vars['$trace']  = $e->getTraceAsString();
 		}
 
 		return $vars;
@@ -88,33 +91,57 @@ class HTTPException
 	 * Displays a bare message page with no theming at all.
 	 *
 	 * @param \Friendica\Network\HTTPException $e
+	 *
 	 * @throws \Exception
 	 */
-	public static function rawContent(\Friendica\Network\HTTPException $e)
+	public function rawContent(\Friendica\Network\HTTPException $e)
 	{
 		$content = '';
 
 		if ($e->getCode() >= 400) {
-			$tpl = Renderer::getMarkupTemplate('http_status.tpl');
-			$content = Renderer::replaceMacros($tpl, self::getVars($e));
+			$vars = $this->getVars($e);
+			try {
+				$tpl     = Renderer::getMarkupTemplate('http_status.tpl');
+				$content = Renderer::replaceMacros($tpl, $vars);
+			} catch (\Exception $e) {
+				$vars = array_map('htmlentities', $vars);
+				$content = "<h1>{$vars['$title']}</h1><p>{$vars['$message']}</p>";
+				if ($this->isSiteAdmin) {
+					$content .= "<p>{$vars['$thrown']}</p>";
+					$content .= "<pre>{$vars['$trace']}</pre>";
+				}
+			}
 		}
 
-		System::httpExit($e->getCode(), $e->httpdesc, $content);
+		System::httpError($e->getCode(), $e->getDescription(), $content);
 	}
 
 	/**
 	 * Returns a content string that can be integrated in the current theme.
 	 *
 	 * @param \Friendica\Network\HTTPException $e
+	 *
 	 * @return string
 	 * @throws \Exception
 	 */
-	public static function content(\Friendica\Network\HTTPException $e)
+	public function content(\Friendica\Network\HTTPException $e): string
 	{
-		header($_SERVER["SERVER_PROTOCOL"] . ' ' . $e->getCode() . ' ' . $e->httpdesc);
+		header($this->server['SERVER_PROTOCOL'] ?? 'HTTP/1.0' . ' ' . $e->getCode() . ' ' . $e->getDescription());
+
+		if ($e->getCode() >= 400) {
+			$this->logger->debug('Exit with error',
+				[
+					'code'        => $e->getCode(),
+					'description' => $e->getDescription(),
+					'query'       => $this->args->getQueryString(),
+					'callstack'   => System::callstack(20),
+					'method'      => $this->args->getMethod(),
+					'agent'       => $this->server['HTTP_USER_AGENT'] ?? ''
+				]);
+		}
 
 		$tpl = Renderer::getMarkupTemplate('exception.tpl');
 
-		return Renderer::replaceMacros($tpl, self::getVars($e));
+		return Renderer::replaceMacros($tpl, $this->getVars($e));
 	}
 }

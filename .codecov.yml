@@ -1,14 +1,18 @@
 codecov:
   branch: develop
   ci:
-    - drone.friendi.ca
+    - ci.friendi.ca
 
 coverage:
   precision: 2
   round: down
   range: "70...100"
   status:
-    project: off
-    patch: off
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
 
-comment: off
+comment: false

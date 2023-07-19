@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,6 @@ use Friendica\Network\HTTPException;
 
 class AcceptedException extends HTTPException
 {
-	protected $code = 202;
+	protected $code     = 202;
+	protected $httpdesc = 'Accepted';
 }

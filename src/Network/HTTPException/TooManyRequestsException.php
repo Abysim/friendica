@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,7 @@ use Friendica\Network\HTTPException;
 
 class TooManyRequestsException extends HTTPException
 {
-	protected $code = 429;
+	protected $code        = 429;
+	protected $httpdesc    = 'Too Many Requests';
+	protected $explanation = 'The user has sent too many requests in a given amount of time.';
 }

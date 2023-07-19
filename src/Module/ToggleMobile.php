@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -29,7 +29,7 @@ use Friendica\DI;
  */
 class ToggleMobile extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
 		$a = DI::app();
 
@@ -46,5 +46,7 @@ class ToggleMobile extends BaseModule
 		}
 
 		$a->redirect($address);
+
+		return '';
 	}
 }

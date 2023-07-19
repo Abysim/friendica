@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,48 +21,81 @@
 
 namespace Friendica\Module\Profile;
 
+use Friendica\App;
 use Friendica\Content\Feature;
 use Friendica\Content\ForumManager;
 use Friendica\Content\Nav;
 use Friendica\Content\Text\BBCode;
-use Friendica\Content\Text\HTML;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\Core\Hook;
+use Friendica\Core\L10n;
 use Friendica\Core\Protocol;
 use Friendica\Core\Renderer;
-use Friendica\Core\Session;
+use Friendica\Core\Session\Capability\IHandleUserSessions;
 use Friendica\Core\System;
+use Friendica\Database\Database;
 use Friendica\Database\DBA;
-use Friendica\DI;
 use Friendica\Model\Contact;
 use Friendica\Model\Profile as ProfileModel;
 use Friendica\Model\Tag;
 use Friendica\Model\User;
 use Friendica\Module\BaseProfile;
+use Friendica\Module\Response;
 use Friendica\Module\Security\Login;
 use Friendica\Network\HTTPException;
+use Friendica\Profile\ProfileField\Repository\ProfileField;
 use Friendica\Protocol\ActivityPub;
 use Friendica\Util\DateTimeFormat;
+use Friendica\Util\Profiler;
+use Friendica\Util\Strings;
 use Friendica\Util\Temporal;
+use Psr\Log\LoggerInterface;
 
 class Profile extends BaseProfile
 {
-	public static function rawContent(array $parameters = [])
+	/** @var Database */
+	private $database;
+	/** @var App */
+	private $app;
+	/** @var IHandleUserSessions */
+	private $session;
+	/** @var IManageConfigValues */
+	private $config;
+	/** @var App\Page */
+	private $page;
+	/** @var ProfileField */
+	private $profileField;
+
+	public function __construct(ProfileField $profileField, App\Page $page, IManageConfigValues $config, IHandleUserSessions $session, App $app, Database $database, L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, Response $response, array $server, array $parameters = [])
+	{
+		parent::__construct($l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
+
+		$this->database     = $database;
+		$this->app          = $app;
+		$this->session      = $session;
+		$this->config       = $config;
+		$this->page         = $page;
+		$this->profileField = $profileField;
+	}
+
+	protected function rawContent(array $request = [])
 	{
 		if (ActivityPub::isRequest()) {
-			$user = DBA::selectFirst('user', ['uid'], ['nickname' => $parameters['nickname']]);
-			if (DBA::isResult($user)) {
-				// The function returns an empty array when the account is removed, expired or blocked
-				$data = ActivityPub\Transmitter::getProfile($user['uid']);
-				if (!empty($data)) {
+			$user = $this->database->selectFirst('user', ['uid'], ['nickname' => $this->parameters['nickname'] ?? '', 'account_removed' => false]);
+			if ($user) {
+				try {
+					$data = ActivityPub\Transmitter::getProfile($user['uid']);
 					header('Access-Control-Allow-Origin: *');
 					header('Cache-Control: max-age=23200, stale-while-revalidate=23200');
 					System::jsonExit($data, 'application/activity+json');
+				} catch (HTTPException\NotFoundException $e) {
+					System::jsonError(404, ['error' => 'Record not found']);
 				}
 			}
 
-			if (DBA::exists('userd', ['username' => $parameters['nickname']])) {
+			if ($this->database->exists('userd', ['username' => $this->parameters['nickname']])) {
 				// Known deleted user
-				$data = ActivityPub\Transmitter::getDeletedUser($parameters['nickname']);
+				$data = ActivityPub\Transmitter::getDeletedUser($this->parameters['nickname']);
 
 				System::jsonError(410, $data);
 			} else {
@@ -72,53 +105,43 @@ class Profile extends BaseProfile
 		}
 	}
 
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		$a = DI::app();
-
-		ProfileModel::load($a, $parameters['nickname']);
-
-		if (!$a->profile) {
-			throw new HTTPException\NotFoundException(DI::l10n()->t('Profile not found.'));
+		$profile = ProfileModel::load($this->app, $this->parameters['nickname'] ?? '');
+		if (!$profile) {
+			throw new HTTPException\NotFoundException($this->t('Profile not found.'));
 		}
 
-		$remote_contact_id = Session::getRemoteContactID($a->profile_uid);
+		$remote_contact_id = $this->session->getRemoteContactID($profile['uid']);
 
-		if (DI::config()->get('system', 'block_public') && !local_user() && !$remote_contact_id) {
+		if ($this->config->get('system', 'block_public') && !$this->session->isAuthenticated()) {
 			return Login::form();
 		}
 
-		$is_owner = local_user() == $a->profile_uid;
-
-		if (!empty($a->profile['hidewall']) && !$is_owner && !$remote_contact_id) {
-			throw new HTTPException\ForbiddenException(DI::l10n()->t('Access to this profile has been restricted.'));
+		if (!empty($profile['hidewall']) && !$this->session->isAuthenticated()) {
+			$this->baseUrl->redirect('profile/' . $profile['nickname'] . '/restricted');
 		}
 
-		if (!empty($a->profile['page-flags']) && $a->profile['page-flags'] == User::PAGE_FLAGS_COMMUNITY) {
-			DI::page()['htmlhead'] .= '<meta name="friendica.community" content="true" />' . "\n";
+		if (!empty($profile['page-flags']) && $profile['page-flags'] == User::PAGE_FLAGS_COMMUNITY) {
+			$this->page['htmlhead'] .= '<meta name="friendica.community" content="true" />' . "\n";
 		}
 
-		DI::page()['htmlhead'] .= self::buildHtmlHead($a->profile, $parameters['nickname'], $remote_contact_id);
+		$this->page['htmlhead'] .= $this->buildHtmlHead($profile, $this->parameters['nickname']);
 
 		Nav::setSelected('home');
 
-		$is_owner = local_user() == $a->profile['uid'];
-		$o = self::getTabsHTML($a, 'profile', $is_owner, $a->profile['nickname']);
+		$is_owner = $this->session->getLocalUserId() == $profile['uid'];
+		$o        = self::getTabsHTML('profile', $is_owner, $profile['nickname'], $profile['hide-friends']);
 
-		if (!empty($a->profile['hidewall']) && !$is_owner && !$remote_contact_id) {
-			notice(DI::l10n()->t('Access to this profile has been restricted.'));
-			return '';
-		}
-
-		$view_as_contacts = [];
-		$view_as_contact_id = 0;
+		$view_as_contacts      = [];
+		$view_as_contact_id    = 0;
 		$view_as_contact_alert = '';
 		if ($is_owner) {
-			$view_as_contact_id = intval($_GET['viewas'] ?? 0);
+			$view_as_contact_id = intval($request['viewas'] ?? 0);
 
 			$view_as_contacts = Contact::selectToArray(['id', 'name'], [
-				'uid' => local_user(),
-				'rel' => [Contact::FOLLOWER, Contact::SHARING, Contact::FRIEND],
+				'uid'     => $this->session->getLocalUserId(),
+				'rel'     => [Contact::FOLLOWER, Contact::SHARING, Contact::FRIEND],
 				'network' => Protocol::DFRN,
 				'blocked' => false,
 			]);
@@ -131,76 +154,84 @@ class Profile extends BaseProfile
 			}
 
 			if (($key = array_search($view_as_contact_id, $view_as_contact_ids)) !== false) {
-				$view_as_contact_alert = DI::l10n()->t(
+				$view_as_contact_alert = $this->t(
 					'You\'re currently viewing your profile as <b>%s</b> <a href="%s" class="btn btn-sm pull-right">Cancel</a>',
 					htmlentities($view_as_contacts[$key]['name'], ENT_COMPAT, 'UTF-8'),
-					'profile/' . $parameters['nickname'] . '/profile'
+					'profile/' . $this->parameters['nickname'] . '/profile'
 				);
 			}
 		}
 
 		$basic_fields = [];
 
-		$basic_fields += self::buildField('fullname', DI::l10n()->t('Full Name:'), $a->profile['name']);
+		$basic_fields += self::buildField('fullname', $this->t('Full Name:'), $profile['name']);
 
-		if (Feature::isEnabled($a->profile_uid, 'profile_membersince')) {
+		if (Feature::isEnabled($profile['uid'], 'profile_membersince')) {
 			$basic_fields += self::buildField(
 				'membersince',
-				DI::l10n()->t('Member since:'),
-				DateTimeFormat::local($a->profile['register_date'])
+				$this->t('Member since:'),
+				DateTimeFormat::local($profile['register_date'])
 			);
 		}
 
-		if (!empty($a->profile['dob']) && $a->profile['dob'] > DBA::NULL_DATE) {
-			$year_bd_format = DI::l10n()->t('j F, Y');
-			$short_bd_format = DI::l10n()->t('j F');
+		if (!empty($profile['dob']) && $profile['dob'] > DBA::NULL_DATE) {
+			$year_bd_format  = $this->t('j F, Y');
+			$short_bd_format = $this->t('j F');
 
-			$dob = DI::l10n()->getDay(
-				intval($a->profile['dob']) ?
-					DateTimeFormat::utc($a->profile['dob'] . ' 00:00 +00:00', $year_bd_format)
-					: DateTimeFormat::utc('2001-' . substr($a->profile['dob'], 5) . ' 00:00 +00:00', $short_bd_format)
+			$dob = $this->l10n->getDay(
+				intval($profile['dob']) ?
+					DateTimeFormat::utc($profile['dob'] . ' 00:00 +00:00', $year_bd_format)
+					: DateTimeFormat::utc('2001-' . substr($profile['dob'], 5) . ' 00:00 +00:00', $short_bd_format)
 			);
 
-			$basic_fields += self::buildField('dob', DI::l10n()->t('Birthday:'), $dob);
+			$basic_fields += self::buildField('dob', $this->t('Birthday:'), $dob);
 
-			if ($age = Temporal::getAgeByTimezone($a->profile['dob'], $a->profile['timezone'])) {
-				$basic_fields += self::buildField('age', DI::l10n()->t('Age: '), DI::l10n()->tt('%d year old', '%d years old', $age));
+			if ($age = Temporal::getAgeByTimezone($profile['dob'], $profile['timezone'])) {
+				$basic_fields += self::buildField('age', $this->t('Age: '), $this->tt('%d year old', '%d years old', $age));
 			}
 		}
 
-		if ($a->profile['about']) {
-			$basic_fields += self::buildField('about', DI::l10n()->t('Description:'), BBCode::convert($a->profile['about']));
+		if ($profile['about']) {
+			$basic_fields += self::buildField('about', $this->t('Description:'), BBCode::convertForUriId($profile['uri-id'], $profile['about']));
 		}
 
-		if ($a->profile['xmpp']) {
-			$basic_fields += self::buildField('xmpp', DI::l10n()->t('XMPP:'), $a->profile['xmpp']);
+		if ($profile['xmpp']) {
+			$basic_fields += self::buildField('xmpp', $this->t('XMPP:'), $profile['xmpp']);
 		}
 
-		if ($a->profile['homepage']) {
-			$basic_fields += self::buildField('homepage', DI::l10n()->t('Homepage:'), HTML::toLink($a->profile['homepage']));
+		if ($profile['matrix']) {
+			$basic_fields += self::buildField('matrix', $this->t('Matrix:'), $profile['matrix']);
+		}
+
+		if ($profile['homepage']) {
+			$basic_fields += self::buildField(
+				'homepage',
+				$this->t('Homepage:'),
+				$this->tryRelMe($profile['homepage']) ?: $profile['homepage']
+			);
 		}
 
 		if (
-			$a->profile['address']
-			|| $a->profile['locality']
-			|| $a->profile['postal-code']
-			|| $a->profile['region']
-			|| $a->profile['country-name']
+			$profile['address']
+			|| $profile['locality']
+			|| $profile['postal-code']
+			|| $profile['region']
+			|| $profile['country-name']
 		) {
-			$basic_fields += self::buildField('location', DI::l10n()->t('Location:'), ProfileModel::formatLocation($a->profile));
+			$basic_fields += self::buildField('location', $this->t('Location:'), ProfileModel::formatLocation($profile));
 		}
 
-		if ($a->profile['pub_keywords']) {
+		if ($profile['pub_keywords']) {
 			$tags = [];
 			// Separator is defined in Module\Settings\Profile\Index::cleanKeywords
-			foreach (explode(', ', $a->profile['pub_keywords']) as $tag_label) {
+			foreach (explode(', ', $profile['pub_keywords']) as $tag_label) {
 				$tags[] = [
-					'url' => '/search?tag=' . $tag_label,
+					'url'   => '/search?tag=' . $tag_label,
 					'label' => Tag::TAG_CHARACTER[Tag::HASHTAG] . $tag_label,
 				];
 			}
 
-			$basic_fields += self::buildField('pub_keywords', DI::l10n()->t('Tags:'), $tags);
+			$basic_fields += self::buildField('pub_keywords', $this->t('Tags:'), $tags);
 		}
 
 		$custom_fields = [];
@@ -209,54 +240,54 @@ class Profile extends BaseProfile
 		$contact_id = $view_as_contact_id ?: $remote_contact_id ?: 0;
 
 		if ($is_owner && $contact_id === 0) {
-			$profile_fields = DI::profileField()->selectByUserId($a->profile_uid);
+			$profile_fields = $this->profileField->selectByUserId($profile['uid']);
 		} else {
-			$profile_fields = DI::profileField()->selectByContactId($contact_id, $a->profile_uid);
+			$profile_fields = $this->profileField->selectByContactId($contact_id, $profile['uid']);
 		}
 
 		foreach ($profile_fields as $profile_field) {
 			$custom_fields += self::buildField(
 				'custom_' . $profile_field->order,
 				$profile_field->label,
-				BBCode::convert($profile_field->value),
+				$this->tryRelMe($profile_field->value) ?: BBCode::convertForUriId($profile['uri-id'], $profile_field->value),
 				'aprofile custom'
 			);
-		};
+		}
 
-		//show subcribed forum if it is enabled in the usersettings
-		if (Feature::isEnabled($a->profile_uid, 'forumlist_profile')) {
+		//show subscribed forum if it is enabled in the usersettings
+		if (Feature::isEnabled($profile['uid'], 'forumlist_profile')) {
 			$custom_fields += self::buildField(
 				'forumlist',
-				DI::l10n()->t('Forums:'),
-				ForumManager::profileAdvanced($a->profile_uid)
+				$this->t('Forums:'),
+				ForumManager::profileAdvanced($profile['uid'])
 			);
 		}
 
 		$tpl = Renderer::getMarkupTemplate('profile/profile.tpl');
-		$o .= Renderer::replaceMacros($tpl, [
-			'$title' => DI::l10n()->t('Profile'),
-			'$yourself' => DI::l10n()->t('Yourself'),
-			'$view_as_contacts' => $view_as_contacts,
-			'$view_as_contact_id' => $view_as_contact_id,
+		$o   .= Renderer::replaceMacros($tpl, [
+			'$title'                 => $this->t('Profile'),
+			'$yourself'              => $this->t('Yourself'),
+			'$view_as_contacts'      => $view_as_contacts,
+			'$view_as_contact_id'    => $view_as_contact_id,
 			'$view_as_contact_alert' => $view_as_contact_alert,
-			'$view_as' => DI::l10n()->t('View profile as:'),
-			'$submit' => DI::l10n()->t('Submit'),
-			'$basic' => DI::l10n()->t('Basic'),
-			'$advanced' => DI::l10n()->t('Advanced'),
-			'$is_owner' => $a->profile_uid == local_user(),
-			'$query_string' => DI::args()->getQueryString(),
-			'$basic_fields' => $basic_fields,
-			'$custom_fields' => $custom_fields,
-			'$profile' => $a->profile,
-			'$edit_link' => [
-				'url' => DI::baseUrl() . '/settings/profile', DI::l10n()->t('Edit profile'),
+			'$view_as'               => $this->t('View profile as:'),
+			'$submit'                => $this->t('Submit'),
+			'$basic'                 => $this->t('Basic'),
+			'$advanced'              => $this->t('Advanced'),
+			'$is_owner'              => $profile['uid'] == $this->session->getLocalUserId(),
+			'$query_string'          => $this->args->getQueryString(),
+			'$basic_fields'          => $basic_fields,
+			'$custom_fields'         => $custom_fields,
+			'$profile'               => $profile,
+			'$edit_link'             => [
+				'url'   => 'settings/profile', $this->t('Edit profile'),
 				'title' => '',
-				'label' => DI::l10n()->t('Edit profile')
+				'label' => $this->t('Edit profile')
 			],
-			'$viewas_link' => [
-				'url' =>  DI::args()->getQueryString() . '#viewas',
+			'$viewas_link'           => [
+				'url'   => $this->args->getQueryString() . '#viewas',
 				'title' => '',
-				'label' => DI::l10n()->t('View as')
+				'label' => $this->t('View as')
 			],
 		]);
 
@@ -274,20 +305,18 @@ class Profile extends BaseProfile
 	 * @param string $class Optional CSS class to apply to the field
 	 * @return array
 	 */
-	private static function buildField(string $name, string $label, $value, string $class = 'aprofile')
+	private static function buildField(string $name, string $label, $value, string $class = 'aprofile'): array
 	{
 		return [$name => [
-			'id' => 'aprofile-' . $name,
+			'id'    => 'aprofile-' . $name,
 			'class' => $class,
 			'label' => $label,
 			'value' => $value,
 		]];
 	}
 
-	private static function buildHtmlHead(array $profile, string $nickname, int $remote_contact_id)
+	private function buildHtmlHead(array $profile, string $nickname): string
 	{
-		$baseUrl = DI::baseUrl();
-
 		$htmlhead = "\n";
 
 		if (!empty($profile['page-flags']) && $profile['page-flags'] == User::PAGE_FLAGS_COMMUNITY) {
@@ -304,8 +333,8 @@ class Profile extends BaseProfile
 		}
 
 		// site block
-		$blocked   = !local_user() && !$remote_contact_id && DI::config()->get('system', 'block_public');
-		$userblock = !local_user() && !$remote_contact_id && $profile['hidewall'];
+		$blocked   = !$this->session->isAuthenticated() && $this->config->get('system', 'block_public');
+		$userblock = !$this->session->isAuthenticated() && $profile['hidewall'];
 		if (!$blocked && !$userblock) {
 			$keywords = str_replace(['#', ',', ' ', ',,'], ['', ' ', ',', ','], $profile['pub_keywords'] ?? '');
 			if (strlen($keywords)) {
@@ -319,20 +348,34 @@ class Profile extends BaseProfile
 			$htmlhead .= '<meta content="noindex, noarchive" name="robots" />' . "\n";
 		}
 
-		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $baseUrl . '/dfrn_poll/' . $nickname . '" title="DFRN: ' . DI::l10n()->t('%s\'s timeline', $profile['name']) . '"/>' . "\n";
-		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $baseUrl . '/feed/' . $nickname . '/" title="' . DI::l10n()->t('%s\'s posts', $profile['name']) . '"/>' . "\n";
-		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $baseUrl . '/feed/' . $nickname . '/comments" title="' . DI::l10n()->t('%s\'s comments', $profile['name']) . '"/>' . "\n";
-		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $baseUrl . '/feed/' . $nickname . '/activity" title="' . DI::l10n()->t('%s\'s timeline', $profile['name']) . '"/>' . "\n";
-		$uri = urlencode('acct:' . $profile['nickname'] . '@' . $baseUrl->getHostname() . ($baseUrl->getUrlPath() ? '/' . $baseUrl->getUrlPath() : ''));
-		$htmlhead .= '<link rel="lrdd" type="application/xrd+xml" href="' . $baseUrl . '/xrd/?uri=' . $uri . '" />' . "\n";
-		header('Link: <' . $baseUrl . '/xrd/?uri=' . $uri . '>; rel="lrdd"; type="application/xrd+xml"', false);
+		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $this->baseUrl . '/dfrn_poll/' . $nickname . '" title="DFRN: ' . $this->t('%s\'s timeline', $profile['name']) . '"/>' . "\n";
+		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $this->baseUrl . '/feed/' . $nickname . '/" title="' . $this->t('%s\'s posts', $profile['name']) . '"/>' . "\n";
+		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $this->baseUrl . '/feed/' . $nickname . '/comments" title="' . $this->t('%s\'s comments', $profile['name']) . '"/>' . "\n";
+		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $this->baseUrl . '/feed/' . $nickname . '/activity" title="' . $this->t('%s\'s timeline', $profile['name']) . '"/>' . "\n";
+		$uri      = urlencode('acct:' . $profile['nickname'] . '@' . $this->baseUrl->getHost() . ($this->baseUrl->getPath() ? '/' . $this->baseUrl->getPath() : ''));
+		$htmlhead .= '<link rel="lrdd" type="application/xrd+xml" href="' . $this->baseUrl . '/xrd/?uri=' . $uri . '" />' . "\n";
+		header('Link: <' . $this->baseUrl . '/xrd/?uri=' . $uri . '>; rel="lrdd"; type="application/xrd+xml"', false);
 
 		$dfrn_pages = ['request', 'confirm', 'notify', 'poll'];
 		foreach ($dfrn_pages as $dfrn) {
-			$htmlhead .= '<link rel="dfrn-' . $dfrn . '" href="' . $baseUrl . '/dfrn_' . $dfrn . '/' . $nickname . '" />' . "\n";
+			$htmlhead .= '<link rel="dfrn-' . $dfrn . '" href="' . $this->baseUrl . '/dfrn_' . $dfrn . '/' . $nickname . '" />' . "\n";
 		}
-		$htmlhead .= '<link rel="dfrn-poco" href="' . $baseUrl . '/poco/' . $nickname . '" />' . "\n";
 
 		return $htmlhead;
+	}
+
+	/**
+	 * Check if the input is an HTTP(S) link and returns a rel="me" link if yes, empty string if not
+	 *
+	 * @param string $input
+	 * @return string
+	 */
+	private function tryRelMe(string $input): string
+	{
+		if (preg_match(Strings::onlyLinkRegEx(), trim($input))) {
+			return '<a href="' . trim($input) . '" target="_blank" rel="noopener noreferrer me">' . trim($input) . '</a>';
+		}
+
+		return '';
 	}
 }

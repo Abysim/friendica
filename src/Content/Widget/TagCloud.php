@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -46,7 +46,7 @@ class TagCloud
 	 * @return string       HTML formatted output.
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function getHTML($uid, $count = 0, $owner_id = 0, $flags = '', $type = Tag::HASHTAG)
+	public static function getHTML(int $uid, int $count = 0, int $owner_id = 0, string $flags = '', int $type = Tag::HASHTAG): string
 	{
 		$o = '';
 		$r = self::tagadelic($uid, $count, $owner_id, $flags, $type);
@@ -56,17 +56,17 @@ class TagCloud
 
 			$tags = [];
 			foreach ($r as $rr) {
-				$tag['level'] = $rr[2];
-				$tag['url'] = $url . '?tag=' . urlencode($rr[0]);
-				$tag['name'] = $rr[0];
-
-				$tags[] = $tag;
+				$tags[] = [
+					'level' => $rr[2],
+					'url'   => $url . '/conversations?tag=' . urlencode($rr[0]),
+					'name'  => $rr[0],
+				];
 			}
 
 			$tpl = Renderer::getMarkupTemplate('widget/tagcloud.tpl');
 			$o = Renderer::replaceMacros($tpl, [
 				'$title' => DI::l10n()->t('Tags'),
-				'$tags' => $tags
+				'$tags'  => $tags
 			]);
 		}
 		return $o;
@@ -127,8 +127,8 @@ class TagCloud
 	private static function tagCalc(array $arr)
 	{
 		$tags = [];
-		$min = 1e9;
-		$max = -1e9;
+		$min = 1000000000.0;
+		$max = -1000000000.0;
 		$x = 0;
 
 		if (!$arr) {
@@ -144,8 +144,8 @@ class TagCloud
 			$x ++;
 		}
 
-		usort($tags, 'self::tagsSort');
-		$range = max(.01, $max - $min) * 1.0001;
+		usort($tags, [self::class, 'tagsSort']);
+		$range = max(0.01, $max - $min) * 1.0001;
 
 		for ($x = 0; $x < count($tags); $x ++) {
 			$tags[$x][2] = 1 + floor(9 * ($tags[$x][1] - $min) / $range);

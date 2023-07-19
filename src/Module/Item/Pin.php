@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,7 +22,6 @@
 namespace Friendica\Module\Item;
 
 use Friendica\BaseModule;
-use Friendica\Core\Session;
 use Friendica\Core\System;
 use Friendica\Database\DBA;
 use Friendica\DI;
@@ -34,32 +33,36 @@ use Friendica\Network\HTTPException;
  */
 class Pin extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		$l10n = DI::l10n();
 
-		if (!Session::isAuthenticated()) {
+		if (!DI::userSession()->isAuthenticated()) {
 			throw new HttpException\ForbiddenException($l10n->t('Access denied.'));
 		}
 
-		if (empty($parameters['id'])) {
+		if (empty($this->parameters['id'])) {
 			throw new HTTPException\BadRequestException();
 		}
 
-		$itemId = intval($parameters['id']);
+		$itemId = intval($this->parameters['id']);
 
-		$item = Post::selectFirst(['uri-id', 'uid'], ['id' => $itemId]);
+		$item = Post::selectFirst(['uri-id', 'uid', 'featured', 'author-id'], ['id' => $itemId]);
 		if (!DBA::isResult($item)) {
 			throw new HTTPException\NotFoundException();
 		}
 
-		if (!in_array($item['uid'], [0, local_user()])) {
+		if (!in_array($item['uid'], [0, DI::userSession()->getLocalUserId()])) {
 			throw new HttpException\ForbiddenException($l10n->t('Access denied.'));
 		}
 
-		$pinned = !Post\ThreadUser::getPinned($item['uri-id'], local_user());
+		$pinned = !$item['featured'];
 
-		Post\ThreadUser::setPinned($item['uri-id'], local_user(), $pinned);
+		if ($pinned) {
+			Post\Collection::add($item['uri-id'], Post\Collection::FEATURED, $item['author-id'], DI::userSession()->getLocalUserId());
+		} else {
+			Post\Collection::remove($item['uri-id'], Post\Collection::FEATURED, DI::userSession()->getLocalUserId());
+		}
 
 		// See if we've been passed a return path to redirect to
 		$return_path = $_REQUEST['return'] ?? '';

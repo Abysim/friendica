@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,7 +21,7 @@
 
 namespace Friendica\Test\src\Core\Cache;
 
-use Friendica\Core\Cache\ArrayCache;
+use Friendica\Core\Cache\Type\ArrayCache;
 
 class ArrayCacheTest extends MemoryCacheTest
 {
@@ -37,6 +37,9 @@ class ArrayCacheTest extends MemoryCacheTest
 		parent::tearDown();
 	}
 
+	/**
+	 * @doesNotPerformAssertions
+	 */
 	public function testTTL()
 	{
 		// Array Cache doesn't support TTL

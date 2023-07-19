@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,81 +24,92 @@ namespace Friendica\Factory\Api\Mastodon;
 use Friendica\App\BaseURL;
 use Friendica\BaseFactory;
 use Friendica\Collection\Api\Mastodon\Fields;
-use Friendica\Model\APContact;
+use Friendica\Database\DBA;
 use Friendica\Model\Contact;
 use Friendica\Network\HTTPException;
-use Friendica\Repository\PermissionSet;
-use Friendica\Repository\ProfileField;
+use Friendica\Profile\ProfileField\Repository\ProfileField as ProfileFieldRepository;
+use ImagickException;
 use Psr\Log\LoggerInterface;
 
 class Account extends BaseFactory
 {
 	/** @var BaseURL */
-	protected $baseUrl;
-	/** @var ProfileField */
-	protected $profileField;
+	private $baseUrl;
+	/** @var ProfileFieldRepository */
+	private $profileFieldRepo;
 	/** @var Field */
-	protected $mstdnField;
+	private $mstdnFieldFactory;
 
-	public function __construct(LoggerInterface $logger, BaseURL $baseURL, ProfileField $profileField, Field $mstdnField)
+	public function __construct(LoggerInterface $logger, BaseURL $baseURL, ProfileFieldRepository $profileFieldRepo, Field $mstdnFieldFactory)
 	{
 		parent::__construct($logger);
 
-		$this->baseUrl = $baseURL;
-		$this->profileField = $profileField;
-		$this->mstdnField = $mstdnField;
+		$this->baseUrl           = $baseURL;
+		$this->profileFieldRepo  = $profileFieldRepo;
+		$this->mstdnFieldFactory = $mstdnFieldFactory;
 	}
 
 	/**
 	 * @param int $contactId
 	 * @param int $uid        Public contact (=0) or owner user id
+	 *
 	 * @return \Friendica\Object\Api\Mastodon\Account
 	 * @throws HTTPException\InternalServerErrorException
-	 * @throws \ImagickException
+	 * @throws ImagickException|HTTPException\NotFoundException
 	 */
-	public function createFromContactId(int $contactId, $uid = 0)
+	public function createFromContactId(int $contactId, int $uid = 0): \Friendica\Object\Api\Mastodon\Account
 	{
-		$cdata = Contact::getPublicAndUserContacID($contactId, $uid);
-		if (!empty($cdata)) {
-			$publicContact = Contact::getById($cdata['public']);
-			$userContact = Contact::getById($cdata['user']);
-		} else {
-			$publicContact = Contact::getById($contactId);
-			$userContact = [];
-		}
+		$contact = Contact::getById($contactId, ['uri-id']);
 
-		if (empty($publicContact)) {
+		if (empty($contact)) {
 			throw new HTTPException\NotFoundException('Contact ' . $contactId . ' not found');
 		}
-
-		$apcontact = APContact::getByURL($publicContact['url'], false);
-
-		$self_contact = Contact::selectFirst(['uid'], ['nurl' => $publicContact['nurl'], 'self' => true]);
-		if (!empty($self_contact['uid'])) {
-			$profileFields = $this->profileField->select(['uid' => $self_contact['uid'], 'psid' => PermissionSet::PUBLIC]);
-			$fields        = $this->mstdnField->createFromProfileFields($profileFields);
-		} else {
-			$fields = new Fields();
+		if (empty($contact['uri-id'])) {
+			throw new HTTPException\NotFoundException('Contact ' . $contactId . ' has no uri-id set');
 		}
 
-		return new \Friendica\Object\Api\Mastodon\Account($this->baseUrl, $publicContact, $fields, $apcontact, $userContact);
+		return self::createFromUriId($contact['uri-id'], $uid);
+	}
+
+	/**
+	 * @param int $contactUriId
+	 * @param int $uid          Public contact (=0) or owner user id
+	 *
+	 * @return \Friendica\Object\Api\Mastodon\Account
+	 * @throws HTTPException\InternalServerErrorException
+	 * @throws ImagickException|HTTPException\NotFoundException
+	 */
+	public function createFromUriId(int $contactUriId, int $uid = 0): \Friendica\Object\Api\Mastodon\Account
+	{
+		$account = DBA::selectFirst('account-user-view', [], ['uri-id' => $contactUriId, 'uid' => [0, $uid]], ['order' => ['id' => true]]);
+		if (empty($account)) {
+			throw new HTTPException\NotFoundException('Contact ' . $contactUriId . ' not found');
+		}
+
+		$fields = new Fields();
+
+		if (Contact::isLocal($account['url'])) {
+			$self_contact = Contact::selectFirst(['uid'], ['nurl' => $account['nurl'], 'self' => true]);
+			if (!empty($self_contact['uid'])) {
+				$profileFields = $this->profileFieldRepo->selectPublicFieldsByUserId($self_contact['uid']);
+				$fields        = $this->mstdnFieldFactory->createFromProfileFields($profileFields);
+			}
+		}
+
+		return new \Friendica\Object\Api\Mastodon\Account($this->baseUrl, $account, $fields);
 	}
 
 	/**
 	 * @param int $userId
 	 * @return \Friendica\Object\Api\Mastodon\Account
-	 * @throws HTTPException\InternalServerErrorException
-	 * @throws \ImagickException
+	 * @throws ImagickException|HTTPException\InternalServerErrorException
 	 */
-	public function createFromUserId(int $userId)
+	public function createFromUserId(int $userId): \Friendica\Object\Api\Mastodon\Account
 	{
-		$publicContact = Contact::selectFirst([], ['uid' => $userId, 'self' => true]);
+		$account       = DBA::selectFirst('account-user-view', [], ['uid' => $userId, 'self' => true]);
+		$profileFields = $this->profileFieldRepo->selectPublicFieldsByUserId($userId);
+		$fields        = $this->mstdnFieldFactory->createFromProfileFields($profileFields);
 
-		$profileFields = $this->profileField->select(['uid' => $userId, 'psid' => PermissionSet::PUBLIC]);
-		$fields        = $this->mstdnField->createFromProfileFields($profileFields);
-
-		$apcontact     = APContact::getByURL($publicContact['url'], false);
-
-		return new \Friendica\Object\Api\Mastodon\Account($this->baseUrl, $publicContact, $fields, $apcontact);
+		return new \Friendica\Object\Api\Mastodon\Account($this->baseUrl, $account, $fields);
 	}
 }

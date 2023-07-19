@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -31,16 +31,20 @@ use Friendica\Util\Strings;
  */
 class Hashtag extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		$result = [];
 
-		$t = Strings::escapeHtml($_REQUEST['t']);
-		if (empty($t)) {
+		if (empty($request['t'])) {
 			System::jsonExit($result);
 		}
 
-		$taglist = DBA::select('tag', ['name'], ["`name` LIKE ?", $t . "%"], ['order' => ['name'], 'limit' => 100]);
+		$taglist = DBA::select(
+			'tag',
+			['name'],
+			["`name` LIKE ?", Strings::escapeHtml($request['t']) . "%"],
+			['order' => ['name'], 'limit' => 100]
+		);
 		while ($tag = DBA::fetch($taglist)) {
 			$result[] = ['text' => $tag['name']];
 		}

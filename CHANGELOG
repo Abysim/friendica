@@ -1,3 +1,544 @@
+Version 2023.05 (2023-05-23)
+  Friendica Core
+    Updates to the translations HU, PL
+    Updates to the themes (frio, vier) [MrPetovan, xundeenergie]
+    Updates to the documentation [MrPetovan]
+    Improved the probing of remote accounts [Annando, ne20002]
+    Improved the OWA implementation [annando, abanink]
+    Improved the database handling [nupplaphil]
+    Improved the ATOM feed handling, added OPML [annando]
+    Improved the audience handling of forum posting [annando]
+    General code cleanup [annando, MrPetovan, nupplaphil, Raroun]
+    Fixed HTML escaping for notification messages [MrPetovan, nupplaphil]
+    Fixed the feed body import [annando]
+    Fixed meaning of the limit parameter in the Mastodon API [annando]
+    Fixed a bug in the tag cloud [MrPetovan]
+    Fixed the magic links in photo menu [MrPetovan]
+    Added new hook for addons (support_probe) [annando]
+    Added support for special characters in category links [MrPetovan]
+    Added possibility to collapse postings [annando]
+    Added the emojipicker to the core [annando]
+    Added a fancybox to view images in network stream [annando]
+
+  Friendica Addons
+    Updates to the translations DE, HU
+    bluesky
+      Added the bluesky connector [annando]
+    mailstream
+      General code cleanup [mexon]
+    tumblr
+      Added OAuth2 support [ænnando]
+      Added un/follow, un/block functionality [annando]
+      Added probe [annando]
+      Added the possibility for users to follow tags [annando]
+    emojipicker, fancybox
+      The functionality of this addon has been moved to the
+      core for the frio and vier themes. [annando]
+
+  Closed Issues
+    12439, 12760, 12788, 12824, 12979, 13016, 13026, 13027, 13036,
+    13052, 13073, 13082, 13089, 13102, 13104, 13108
+
+Version 2023.04-1 (2023-04-27)
+  Friendica Core
+    Updates to the translations AR, CA, CS, DE, ES, FR, GD, HU, IT, JA, NL, PL, RU
+    Fixed a bug that broke the private messages web interface [MrPetovan]
+
+  Friendica Addons
+    tumblr
+      Added follow, unfollow, cross posting [annando]
+      Added the possibility to import the remote timeline [annando]
+      **Breaking** Switch to OAuth2 [annando]
+         Node admins have to change the redirect URL in the settings to the
+         OAuth2 specific one.            social.example.com/tumblr/redirect
+    mailstream
+      Various modernization [mexon]
+      Include post media [mexon]
+
+  Closed Issues
+    13026
+
+Version 2023.04 (2023-04-23)
+  Friendica Core
+    Updates to the translations AR, BG, CA, CS, DA, DE, EO, ES, ET, FR, GD, HU, IS, IT, JA, NL, PL, RU, SV
+    Updates to the themes (frio, vier) [damianwajer, haheute, MrPetovan, xundeenergie]
+    Updates to the documentation [haheute, HankG, MarekBenjamin, MrPetovan]
+    General code cleanup [annando, MarekBenjamin, MrPetovan, nupplaphil]
+    Fixed display of blocked contacts [annando]
+    Fixed usage of environment variables [nupplaphil]
+    Fixed paging on the Mastodon compatible API endpoints for timelines and statuses [HankG]
+    Fixed updating of attached links via the API [HankG]
+    Fixed federation issues with Diaspora*, gup.pe, Hubzilla and Peertube servers [annando]
+    Fixed a bug with PubSubHubBub subscription [annando]
+    Fixed a XSS vulnerability in Justified-Gallery JavaScript dependency (frio theme) [MrPetovan]
+    Improved the translate ability of activities (singular/plural forms) [nupplaphil]
+    Improved activity update handling [xundeenergie]
+    Improved BBCode + Markdown parsing [annando]
+    Improved known Fediverse statistics [annando]
+    Improved automatic table optimization [HankG]
+    Improved the performance of local JsonLD requests [MrPetovan]
+    Improved the performance of local requests [annando]
+    Improved the performance of the delivery of postings [annando]
+    Improved the performance of homepage rel-me checks [annando]
+    Improved supported characters for passwords [MrPetovan]
+    Improved the ARIA support [MrPetovan]
+    Improved PHP 8.2 compatibility [MrPetovan]
+    Added emoticon reaction handling [annando]
+    Added drag and drop image upload in frio themes [xundeenergie]
+    Added scope change for comments to the API [annando]
+    Added posting visibility to the API [HankG]
+    Added delivery information to the Mastodon compatible API [HankG]
+    Added notification summary option to the Mastodon compatible API [HankG]
+    Added option to display activities as emoticons [annando]
+    Added trending API updates [HankG]
+    Added blocked/ignored filters to the Mastodon compatible API [HankG]
+    Added ActivityPub C2S postings to the API [annando]
+    Added dislike information for postings to the Mastodon compatible API [HankG, mkljczk]
+    Added the possibility to deletion blocked servers [annando]
+    Removed the GNUsocial import [annando]
+
+  Friendica Addons
+    Updates to the translations AR, CS, DE, ES, HU, IS, IT, NL, PL, RU, SV
+    securemail
+      Updated the phpseclib dependency [MrPetovan]
+    twitter
+      Improve remote-self handling [annando]
+    impressum
+      Avoide obfuscation on un-set email addresses [MrPestovan]
+    notifyall
+      Fixed a bug selecting the email addresses [nupplaphil]
+    tumblr
+      Fixed a bug addressing the tumblr blog via UUID [annando]
+      Added support for NPF [annando]
+      Improved the tumblr blog URI detection [annando]
+      Improved the handling of multible images [annando]
+    marked as UNSUPPORTED addons
+      blockem, tictactoe, twitter
+
+  Closed Issues
+     7037, 10974, 11513, 11535, 11825, 11986, 12489, 12490, 12507, 12515,
+    12522, 12537, 12545, 12550, 12552, 12559, 12582, 12601, 12602, 12603,
+    12607, 12608, 12616, 12617, 12620, 12624, 12625, 12629, 12654, 12658,
+    12661, 12665, 12672, 12677, 12682, 12705, 12713, 12721, 12753, 12764,
+    12779, 12792, 12793, 12803, 12809, 12828, 12835, 12842, 12846, 12847,
+    12858, 12859, 12871, 12888, 12924, 12944, 12970, 12974, 12983, 12993,
+    12995, 13002, 19996
+
+Version 2023.01 (2023-01-15)
+  Friendica Core
+    Improved the global server updating if domains are blocked [MrPetovan]
+    Improved the forum distribution for comments [annando]
+    Improved the handling of forum mentions [annando]
+    Fixed the forum post distribution [annando]
+    Fixed a security bug in the 404 page [nupplaphil]
+
+  Closed Issues
+    12539, 12540, 12655, 12615, 12663
+
+Version 2022.12 (2022-12-20)
+  Friendica Core
+    Updates to the translations DE, FR, HU, PL, RU
+    Updated to the documentation [foss-, MarekBenjamin, MrPetovan, tobiasd]
+    Updates to the themes (frio, vier) [loma-one, MarekBenjamin, MrPetovan, tobiasd]
+    Improved the display of the system settings in the admin panel [MarekBenjamin]
+    Improved the API [annando, HankG, Schnoop]
+    Improved getting system information [VVelox]
+    Improved the PHP 8.1 compatibility [MrPetovan]
+    Improved the bulk delivery of postings [annando]
+    Improved the display of attached images to postings [MarekBenjamin]
+    General code cleanup [annando, MrPetovan, nupplaphil, Quix0r]
+    Added a blur hash for images else not displayable [annando]
+    Added a /about route for the /friendica page [nupplaphil]
+    Added reporting endpoints to the API [annando]
+    Added support for the "fedifinder" [annando]
+    Added rel-me verification for the profile homepage [tobiasd]
+    Added admin notification for new registrations [annando]
+    Added a moderation section to the admin panel [annando]
+    Added an option to make the calendar public [matthiasmoritz]
+    Fixed a bug in the federation with Diaspora* [annando]
+    Fixed a problem in the federation with GoTo Social and Owncast [annando]
+    Deprecated old themes (duepuntozero, quattro, smoothy)
+
+    NOTE: The Apache2 rewrite rule in the .htaccess-dist has been changed.
+          The change has to be applied manually to the existing .htaccess.
+
+  Friendica Addons
+    Updates to the translations DE, FR, HU, SV
+    fancybox:
+      Added an addon to display images in postings with a fancybox [brockhaus]
+    impressum:
+      Fixed a bug when saving informations [tobiasd]
+    js_upload:
+      Improved wording [MarekBenjamin]
+    monolog:
+      Moved the functionality into an addon [nupplaphil]
+    nitter:
+      Updated the wording [AndyHee]
+    nsfw:
+      Enhanced regex handling [MrPetovan]
+    pumpio:
+      Fixed logger message [MrPetovan]
+    rendertime:
+      Fixed empty minimal time [nupplaphil]
+      Adapt ignored_modules [nupplaphil]
+    twitter:
+      Fixed a problem when the image array was missing [MrPetovan]
+      Added an option to automatically follow contacts in the Fediverse [annando]
+
+    Deprecated unmaintained addons: namethingy, superblock, windowsphonepush
+
+    BREAKING: The functions from the boot.php file have been moved into better
+              fitting classes this may break your custom addons. See the pull
+              requests #1293 and #1294 in the addon repository about the needed
+              changes to your addons.
+
+  Closed Issues
+     5095,  7574,  9286,  9920, 10100, 10188, 10518, 10875, 11011, 11284,
+    11553, 11774, 11804, 11875, 11911, 11941, 11998, 12009, 12013, 12023,
+    12035, 12054, 12059, 12073, 12084, 12085, 12090, 12096, 12112, 12149,
+    12163, 12182, 12191, 12192, 12193, 12197, 12199, 12201, 12219, 12220,
+    12229, 12237, 12245, 12262, 12266, 12273, 12275, 12285, 12312, 12327,
+    12338, 12339, 12342, 12344, 12345, 12355, 12373, 12376, 12382, 12386,
+    12399, 12401, 12405, 12406, 12408, 12411, 12413, 12421, 12431, 12437,
+    12441, 12448, 12450, 12456, 12466, 12468, 12476
+
+Version 2022.10 (2022-10-14)
+  Friendica Core
+    Added GD translation, updates to the translations AR, DE, FR, HU, PL, SV, ZH CN
+    Added a check for too long passwords (due Blowfish hashing algorithm) [MrPetovan]
+    Added an API endpoint to create events [MrPetovan, pankraz]
+    Added the possibility to store profile avatars in a separate directory [annando]
+    Added an option to not fetch parent postings [annando]
+    Added an option to reject postings by language received by the relay [annando]
+    Added a notification mail to all users when the server block list is updated [MrPetovan]
+    Added a download link to the CSV file of the server block list on the about page [MrPetovan]
+    Added support for youtube short URLs [annando]
+    Updates to the themes (frio, smoothly) [AlessandroLorenzi, HankG, MrPetovan, tobiasd]
+    General code cleanup [annando, fabrixxm, Quix0r, tobiasd]
+    Enhanced the performance (cache, database, rendering) [annando, Quix0r]
+    Enhanced the language detection [annando]
+    Enhanced the display of the reason why a posting is shown to a user [annando]
+    Enhanced the fetching of missing postings [annando]
+    Enhanced the server detection [annando]
+    Enhanced the UI for 2FA logins [nupplaphil]
+    Enhanced the Woodpecker integration [nupplaphil]
+    Enhanced integration with ejabberd [nupplaphil]
+    Fixed a federation problem with Diaspora* during the author signature check [annando]
+    Fixed a problem with Forwarded-For headers [nupplaphil]
+    Fixed a problem with the encoding of mails send [MrPetovan]
+    Fixed a problem with weird formatted date notations [annando, MrPetovan]
+    Fixed a problem following some RSS feeds [mexon]
+    Fixed a problem with quoted reshares from Twitter [annando]
+    Updated dependencies [MrPetovan]
+    Replace SFTP-publish with docker-publish [nupplaphil]
+    Removed the poke functionality [MrPetovan]
+
+  Friendica Addons
+    Added GD translation, updates to the translation AR, FR
+    Removed the addons: morechoice, morepokes
+    Marked the addon whindowsphonepush as unsupported
+    twitter:
+      Valid post body can be empty [MrPetovan]
+      Support of Twitter threads was added [annando]
+
+  Closed Issues
+    11177, 11317, 11458, 11471, 11566, 11614, 11625, 11635, 11636, 11638,
+    11651, 11661, 11666, 11695, 11700, 11704, 11706, 11708, 11712, 11716,
+    11722, 11723, 11724, 11726, 11731, 11732, 11751, 11765, 11775, 11778,
+    11779, 11794, 11798, 11799, 11800, 11824, 11826, 11851, 11861, 11870,
+    11909, 11920, 11931, 11938, 11943, 11952, 11953, 11969, 11975
+
+Version 2022.06 (2022-06-11)
+  Friendica Core
+    Added DA DK translation, updates to the translations DE, FR, HU, PL, RU, ZH CN [translation teams]
+    Updates to the documentation [foss-]
+    General code cleanup [annando, MrPetovan, nupplaphil, tobiasd]
+    Added caching for several AP endpoints [annando]
+    Added the display of pinned/featured postings of contacts [annando]
+    Added the display of polls and current votes [annando]
+    Added node relocation to the console tool [MrPetovan]
+    Added tool to move avatars to the avatar cache [annando]
+    Added storage of edit history of postings [annando]
+    Added the possibility to set custom posting dates [annando]
+    Added the possibility that pending events in a forum are send to new members [annando]
+    Removed node relocation functionality from the Admin Panel [MrPetovan]
+    Enhanced performance (database related, global directory) [annando]
+    Enhanced the logging [annando]
+    Enhanced the federation statistics page in the admin panel [annando]
+    Enhanced the Mastodon compatible API [annando]
+    Enhanced the .htaccess-dist file to prevent accessing some common backup files [tobiasd]
+    Enhanced the priority values of some worker queue jobs [annando]
+    Enhanced the possibility for the user selecting which notifications should be shown [MrPetovan]
+    Enhanced the relay server handling [annando]
+    Enhanced the users control what they are notified about [annando]
+    Changed the default icons to the flat icons [atjn]
+    Changed the order of starred posts and posts with mention by the last comment date [annando]
+    Fixed a problem with the local cache of contact avatars [annando]
+    Fixed a problem in the federation with Lemmy nodes [annando]
+    Fixed a problem importing some RSS feeds [annando]
+    Fixed a problem fetching attached media files [annando]
+    Fixed a problem with the abstract being formatted [annando]
+    Fixed a problem preventing the import of contacts [tobiasd]
+    Fixed a problem with IDN URLs [annando]
+    Fixed a problem parsing abstract BBCode tags [MrPetovan]
+    Fixed a problem that could cause unintentionally changing the password by password managers [MrPetovan]
+    Fixed a problem with the language detection of postings [annando]
+    Fixed a problem with the selection of JSON/XML webfinger results [annando]
+    Fixed a problem with re-shared postings that were pinned [annando]
+    Fixed a problem that caused the display of a wrong information about a new follower for some account types [annando]
+    Fixed a problem that caused interaction abilities on postings not to be possible [annando]
+    Fixed a problem causing links to larger photos lead to smaller ones [annando]
+    Fixed a regression that caused pinned private notes to be shown publically [annando]
+    Fixed a problem during the language detection for notifications [annando]
+
+  Friendica Addons
+    Breaking: The obsolete hooks settings_form and settings_post have been removed,
+         custom addons developers should use the addon_settings hook instead.
+    Updates to the translations DA DK, FR, HU, PL [translation teams]
+    advancedcontentfilter
+      Use a random item to validate fields on rule save [MrPetovan]
+    twitter
+      Fix usage of unfollow / block hooks [MrPetovan]
+    S3 storage back-end
+      Added the addon [nupplaphil]
+
+  Closed Issues
+     4639,  9650, 10926, 11040, 11146, 11212, 11223, 11226, 11291, 11299,
+    11309, 11310, 11315, 11319, 11338, 11339, 11340, 11343, 11350, 11353,
+    11371, 11393, 11407, 11425, 11427, 11431, 11440, 11445, 11450, 11461,
+    11469, 11470, 11487, 11488, 11491, 11492, 11504, 11507, 11508, 11510,
+    11511, 11512, 11557, 11560, 11561, 11594, 11602, 11625
+
+Version 2022.03 (2022-03-07)
+  Friendica Core
+    Updates to the translations AR, DE, HU [translation teams]
+    Updates to the documentation [bkil, tobiasd]
+    General code cleanup [annando, MrPetovan]
+    Enhanced the federation statistics page in the admin panel [annando]
+    Enhanced handling of database errors [annando]
+    Enhanced the thread completion [annando, MrPetovan]
+    Enhanced the handling of unfollow/revoke actions [MrPetovan]
+    Enhanced the API [annando]
+    Fixed a bug that caused wrong categories were displayed in a users profile [MrPetovan]
+    Fixed a bug that lead to private messages being send to the wrong recipient [MrPetovan]
+    Added display of post receivers [annando]
+    Added pleroma like version to the API results [MrPetovan]
+    Added advanced configuration option to automatically re-use the abstract field from AP conversations [annando]
+    Switched to SMARTY-4 templating engine [MrPetovan]
+    Breaking: The distribution of _private forums_ was moved to ActivityPub,
+         making them incompatible with older versions of Friendica [annando]
+    Breaking: The Twitter-/Friendica-/Statusnet-API now uses the same base
+         for the id as the Mastodon API (uri-id instead of id). To still
+         receive new posts with (for example) Friendiqa you have to remove
+         the account and add it again. [annando]
+
+  Friendica Addons
+    Added S3 Storage Backend addon [nupplaphil]
+
+  Closed Issues
+    11220, 11222, 11232, 11234, 11248, 11245, 11264, 11274
+
+Version 2022.02 (2022-02-06)
+  Friendica Core
+    Updates to the translations AR, DE, ET, FR, GB_EN, GB_US, HU, IT, RU, SV [translation teams]
+    Updates to the documentation [annando, foss-, softmetz, tobiasd]
+    Updates to the themes (duepuntozero, frio, quattro, vier) [MrPetovan, tobiasd]
+    General code cleanup [annando, nupplaphil, MrPetovan, tobiasd]
+    Enhanced the connector hooks [MrPetovan]
+    Enhanced the API [annando, MrPetovan, nupplaphil]
+    Enhanced the screen reader accessibility of the frio theme [MrPetovan]
+    Enhanced the federation with Pleroma (attached images) [annando]
+    Enhanced the performance of database handling of unused contacts [annando]
+    Enhanced the Vagrant development configuration [nupplaphil, tobiasd]
+    Enhanced the handling of emoticons [annando]
+    Enhanced the handling of blocked domains [annando, MrPetovan]
+    Enhanced the translation string extraction [fabrixxm]
+    Enhanced the detection of embedded content [annando]
+    Enhanced the detection of pump.io servers [annando]
+    Enhanced the handling of attached media files [annando]
+    Enhanced the logging with syslog [nupplaphil]
+    Enhanced the display of audio elements [annando]
+    Enhanced the PHP 8 compatibility [nupplaphil]
+    Enhanced the contact handling by forum accounts [annando]
+    Enhanced the display of the notification count [annando]
+    Enhanced the display of start and end times of events [annando]
+    Enhanced the federation statistics [annando]
+    Fixed a problem linking to an addons authors profile [annando]
+    Fixed a problem with the automatic installation [nupplaphil]
+    Fixed a problem in the order of database table modifications [annando]
+    Fixed a problem during the node detection process [annando]
+    Fixed a problem handling configuring trusted 2FA browsers [MrPetovan]
+    Fixed a problem with caching user avatars from the local node [annando]
+    Fixed a problem preventing the federation with Lemmy [annando]
+    Fixed a problem causing non-notifications for new postings [annando]
+    Fixed a problem with updating event contents [annando]
+    Added AR translations [FaridaK, Mohamed_Ahmed_AF, abidin24, alsabi.abdullah, ButterflyOfFire, ominds, hisoka512]
+    Added language detection for the /help files [annando]
+    Added current timezone information to the date time picker [MrPetovan]
+    Added an option to purge contacts from blocked servers [MrPetovan]
+    Added a media tab on profile pages [annando]
+    Removed video tab on profile pages [annando]
+    Bumped the minimal version of PHP to 7.3
+  
+  Friendica Addons
+    Updates to the translations AR, DE, FR, HU, IT, PL, SV [translation teams]
+    Deprecated addons: blogger, buffer, jappixmini, notimeline, xmpp
+    Added addons: bird avatar, webdav storage [fabrixxm, nupplaphil]
+    blockbot
+      Updated the allow and deny lists of bots [annando]
+    langfilter
+      Improved performance [MrPetovan]
+      Improved the language detection [MrPetovan]
+    markdown
+      Enhanced the HTML escaping [MrPetovan]
+    nitter
+      Enhanced link detection in attachments [tobiasd]
+    rendertime
+      Enhanced configuration [annando]
+    securemail
+      Updated dependencies to enhance the PHP8 support [MrPetovan]
+    twitter
+      Added block and unblock hook usage [MrPetovan]
+      Added support for unretweet and post/comment deletion [MrPetovan]
+      Added support for the unfollow hook [MrPetovan]
+      Fixed API calls [MrPetovan]
+      Fixed a problem leading to duplicated links [annando]
+      Updated twitteroauth dependency [nupplaphil]
+  
+  Closed Issues
+     9720, 10301, 10365, 10454, 10634, 10691, 10725, 10726, 10729, 10734,
+    10737, 10739, 10745, 10754, 10767, 10791, 10829, 10832, 10839, 10841,
+    10844, 10851, 10864, 10865, 10868, 10872, 10876, 10877, 10886, 10887,
+    10897, 10903, 10906, 10914, 10939, 10943, 10945, 10955, 10966, 10971,
+    10972, 10973, 10978, 10979, 10983, 10990, 10991, 10998, 11020, 11021,
+    11022, 11023, 11029, 11033, 11034, 11047, 11055, 11063, 11078, 11091,
+    11101, 11109, 11111, 11130, 11133, 11139, 11144, 11147, 11148, 11152,
+    11156, 11160, 11163, 11169, 11178, 11189, 11193
+
+Version 2021.09 (2021-09-25)
+  Friendica Core
+    Updates to the translation DE, FR, HU, RU [translation teams]
+    Updates to the documentation [foss-, nupplaphil]
+    General code cleanup [annando, MrPetovan, nupplaphil]
+    Unification of setting label wordings towards activating something [heluecht]
+    Enhanced the proxy mechanism [annando]
+    Enhanced the desktop notifications [annando]
+    Enhanced the Mastodon compatible API [annando]
+    Enhanced the UI to follow new contacts [MrPetovan]
+    Enhanced remote AP follow of new contacts [annando]
+    Enhanced the installer [tobiasd]
+    Enhanced the handling of attachments by the addon hooks [MrPetovan]
+    Enhanced the federation with PeerTube [MrPetovan]
+    Enhanced the federation with Diaspora* [annando]
+    Enhanced the federation with Mastodon [MrPetovan, realkinetix]
+    Enhanced the interaction with items in various places [annando]
+    Enhanced the storage back-end handling [nupplaphil]
+    Enhanced the handling of zmg BBCode elements [annando]
+    Enhanced the display of logs in the admin panel [fabrixxm]
+    Fixed a bug in the L10n functions not showing plural forms [annando]
+    Fixed a bug in following IMAP accounts [annando]
+    Fixed a bug preventing photos to be deleted [annando]
+    Fixed a bug preventing the display of the accounts avatar [annando]
+    Fixed a bug preventing following accounts from profiles visited [annando]
+    Removed the legacy DFRN transport layer, DFRN is now always using the Diaspora* transport layer [annando]
+    Removed the legacy OAuth server [annando]
+    Bumped the minimal PHP version to 7.2
+    Added user option to control how postings are shortened [annando]
+    Added Persian to the possible detected languages of a postings [MrPetovan]
+    Added Matrix account profile field [annando]
+    Added scheduled postings [annando]
+    Added transmission of push subscriptions [annando]
+    Added the possibility to put the config files in a different directory [nupplaphil]
+
+  Friendica Addons
+    Updates to the translation JA, ZH CN [translation teams]
+    advancedcontentfilter
+      allow filtering by attachments [MrPetovan]
+    blockbot
+      some good guys and bad guys added [annando]
+    irc
+      switch from freenode to libera.chat [tobiasd]
+    langfilter
+      improved performance [annando]
+    nitter
+      handle mobile links as well [tobiasd]
+      improve settings [tobiasd]
+    rendertime
+      rename "Parser" to "session" [annando]
+
+  Closed Issues
+    6101, 8038, 9378, 9723, 9871, 10262, 10491, 10502, 10514, 10558,
+    10568, 10587, 10603, 10617, 10640, 10651, 10672, 10692, 10698,
+    10699, 10705
+
+Version 2021.07 (2021-07-04)
+  Friendica Core
+    Updates to the translation DE, EN-GB, HU, IT, JA [translation teams]
+    Updates to the themes (frio, vier) [annando, MrPetovan]
+    Updates to the documentation [annando, nupplaphil]
+    Updated composer and dependencies [nupplaphil, MrPetovan]
+    General code cleanup [annando, nupplaphil, mexon, MrPetovan, very-apen]
+    Enhanced the Mastodon compatible API [annando]
+    Enhanced the possibilities to download the calendar [annando]
+    Enhanced the Vagrant development box setup [fabrixxm]
+    Enhanced the console commands [fabrixxm, mexon]
+    Enhanced the support of PHP8 [nupplaphil, MrPetovan]
+    Enhanced the link detection [annando]
+    Enhanced the worker task display in the admin panel [tobiasd]
+    Enhanced the installation wizard [tobiasd]
+    Enhanced the federation statistics page [annando]
+    Enhanced the profile picture handling [annando]
+    Fixed information contained in the nodeinfo [MrPetovan]
+    Fixed an avatar setting problem during the account creation [nupplaphil]
+    Fixed a display problem with picture only postings from Diaspora* [annando]
+    Fixed a problem receiving BCC postings from accounts that are not followed [annando]
+    Fixed a problem with local delivery of postings [annando]
+    Fixed a problem with block/ignore via API [nupplaphil]
+    Fixed a problem with directory search results [MrPetovan]
+    Fixed problems with the console autoinstall command [annando, tobiasd]
+    Fixed problems with forum delivery [annando]
+    Fixed a problem fetching photos in private postings [annando]
+    Fixed a problem with author names containing hash tags [annando]
+    Fixed a problem when following local contacts [annando]
+    Fixed problems with the addon settings [MrPetovan]
+    Removed the Diaspora* relay support [annando]
+    Removed the system user from the user counting [annando]
+    Make birthday time comparison 32-bit safe in Protocol/DFRN [MrPetovan]
+    CI process was switched to drone [nupplaphil]
+    The "authenticate" hook was moved deeper into the process [very-ape]
+    Added support for RTL languages [MrPetovan]
+    Added download link for the calendar entries [annando]
+  
+  Friendica Addons
+      Updates to the translations DE, HU, IT, JA [translation teams]
+    nitter
+      added addon to replace links to twitter in postings [tobiasd]
+    keycloakpassword
+      added addon for password-based authentication against Keycloak [very-ape]
+    SAML
+      added addon to support SAML services [very-ape]
+    twitter
+      improved the image upload [annando]
+      improved the exception handling [nupplaphil]
+      incoming posts are unlisted [annando]
+    openstreetmap
+      Ensure location key is available in hook data [MrPetovan]
+    catavatar
+      make the addon work again [nupplaphil]
+    securemail
+      fixed a problem in connection with the phpmailer addon [nupplaphil]
+    Blockbot
+      Move Zabbix to the "good" agents [annando]
+    mailstream
+      adaptation of new addon functionalities and code improvements [mexon]
+    phpmailer
+      updated dependencies [nupplaphil]
+  
+  Closed Issues
+    7967, 8262, 9715, 9064, 9993, 10055, 10147, 10184, 10198, 10205, 10210,
+    10219, 10232, 10254, 10287, 10293, 10306, 10312, 10314, 10342, 10364,
+    10375, 10378, 10392, 10424, 10433, 10439, 10443
+
 Version 2021.04 (2021-04-26)
   Friendica Core
     Updates to the translations BG, DE, EN-US, ES, HU, IT, RU [translation teams]
@@ -303,13 +844,13 @@ Version 2020.07 (2020-07-12)
     blockbot:
       The list of accepted user agents was enhanced [annando]
     Diaspora*:
-      Enhanced conntector settings [MrPetovan]
+      Enhanced connector settings [MrPetovan]
     PHP Mailer SMTP:
       Updated phpmailer version [dependabot]
     showmore_dyn:
       New addon to collapse long post depending on their actual height [wiwie]
     twitter:
-      Enhaceed the handling of mobile twitter URLs [annando]
+      Enhanced the handling of mobile twitter URLs [annando]
       Enhanced the handling of quoted tweets [MrPetovan]
       added HTML error code handling [MrPetovan]
     various:
@@ -547,7 +1088,7 @@ Version 2019.09 (2019-09-29)
 
 Version 2019.06 (2019-06-23)
   Friendica Core:
-    Update to the tranlation (CS, DE, EN-GB, EN-US, ET, FR, IT, PL, PT-BR, SV) [translation teams]
+    Update to the translation (CS, DE, EN-GB, EN-US, ET, FR, IT, PL, PT-BR, SV) [translation teams]
     Update to the documentation [nupplaphil, realkinetix, MrPetovan]
     Update to the themes (frio, vier) [BinkaDroid, MrPetovan, tobiasd]
     Enhancements to the API [annando, MrPetovan]
@@ -567,7 +1108,7 @@ Version 2019.06 (2019-06-23)
     Fixed an issue with the File to Folder feature [MrPetovan]
     Fixed an issue with the legacy storage engine [fabrixxm]
     Fixed an issue with the theme and addon path items [MrPetovan]
-    Fixed an issue occuring when the BasePath was not set [tobiasd]
+    Fixed an issue occurring when the BasePath was not set [tobiasd]
     Fixed an issue with additionally opened Sessions [MrPetovan]
     Fixed an issue with legacy loglevel mapping [nupplaphil]
     Fixed contact suggestions [annando]
@@ -593,7 +1134,7 @@ Version 2019.06 (2019-06-23)
     Remove support for defunct F-Droid Friendica app [MrPetovan]
 
   Friendica Addons:
-    Update to the tranlation (ET, SV, ZH_CN) [translation teams]
+    Update to the translation (ET, SV, ZH_CN) [translation teams]
     botdetection:
       Added a new addon for preventing access by bots [nupplaphil, annando]
     buffer:
@@ -631,7 +1172,7 @@ Version 2019.03 (2019-03-22)
     Update to the themes (duepuntozero, frio, smoothy, quattro, vier) [lxiter, MrPetovan, nupplaphil, rabuzarus,  tobiasd]
     Enhancements to the API [jasonscheng]
     Enhancements to the Vagrant development VM [JeroenED]
-    Enhancements to the storage of gender, sexual preferences and maritial status [JeroenED]
+    Enhancements to the storage of gender, sexual preferences and marital status [JeroenED]
     Enhancements to the wording of notifications [MrPetovan]
     Enhancements to the display of contacts in the profile [MrPetovan]
     Enhancements to the handling of local links [lxiter]
@@ -660,7 +1201,7 @@ Version 2019.03 (2019-03-22)
     Fixed an issue with sending out notification mails to the admin [nupplaphil]
     Fixed an the issue, that the API was ignoring the globalsilence setting  [nupplaphil]
     Fixed issues with the autolinker of URLs in postings [MrPetovan]
-    Fixed an issue resulting in multible emails after successful updates of the database [nupplaphil]
+    Fixed an issue resulting in multiple emails after successful updates of the database [nupplaphil]
     Fixed a timeout issue during detection process of the remote profile [annando]
     Fixed an issue with postings from blocked servers [annando, MrPetovan]
     Fixed an issue with the paging of stored folders [MrPetovan]
@@ -692,7 +1233,7 @@ Version 2019.03 (2019-03-22)
     forumdirectory:
       Fixed a theming issue with frio [rabuzarus]
     js_upload:
-      Fixed a missing extionsion index [nupplaphil]
+      Fixed a missing extension index [nupplaphil]
     mailstream:
       Fixed a curl issue [MrPetovan]
     piwik:
@@ -912,7 +1453,7 @@ Version 2018.09 (2018-09-23)
     added addons:
       mastodoncustomemojis [MrPetovan]
     deprecated addons:
-      notimeline, retriver, remote_permissions, widgets
+      notimeline, retriever, remote_permissions, widgets
 
   Directory:
     Enhancements of the health summary [andyhee]
@@ -938,7 +1479,7 @@ Version 2018.05 (2018-06-01)
     Enhancements to the relay system [annando]
     Enhancements to the handling of URL that contain unicode characters [annando]
     Enhancements to the Vagrant VM configuration [fabrixxm, tobiasd]
-    Enhancementa to the Babel module [MrPetovan]
+    Enhancements to the Babel module [MrPetovan]
     Enhancements to the display of the [code] elements [MrPetovan]
     Enhancements to the federation (OStatus, diaspora) [annando]
     Enhancements to the PHP7.2 compatibility [Alkarex, MrPetovan, Quix0r]
@@ -967,7 +1508,7 @@ Version 2018.05 (2018-06-01)
     Fixed a bug that made edited mentions and hashtags plaintext [annando]
     Fixed a bug that caused the /display page to receive constandly new updates [annando]
     Fixed wrong version of a dependency preventing the usage of PHP 5.6 [MrPetovan]
-    Fixed a bug in OpenID authentification [Quix0r]
+    Fixed a bug in OpenID authentication [Quix0r]
     Fixed a bug in the item deletion [annando]
     Fixed a bug that prevented public comments from being distributed [annando]
     Fixed a bug that caused empty profile pictures for public contacts [annando]
@@ -1066,7 +1607,7 @@ Version 3.6 (2018-03-23)
     Enhancements to the probing of pump.io profiles [annando]
     Enhancements to the handling of BBCode tags [MrPetovan]
     Enhancements to the OEmbed handling [MrPetovan]
-    Fixed a bug that triggered the display of activities on the cummunity page [annando]
+    Fixed a bug that triggered the display of activities on the community page [annando]
     Fixed a bug with personal notes [annando]
     Fixed a display issue of long postings when using the showmore option [annando]
     Fixed a bug that caused Twidere to crash on reload [annando]
@@ -1074,7 +1615,7 @@ Version 3.6 (2018-03-23)
     Fixed a bug in URL completion for feed fragments [annando]
     Fixed a bug in the notification system about new registrations [annando]
     Fixed the display of dislikes [annando]
-    Fixed the display of orphans childs in threads [MrPetovan]
+    Fixed the display of orphan children in threads [MrPetovan]
     Fixed some SQL problems [annando]
     Fixed the CLI config script [tobiasd]
     Fixed the forum selection on the network display [annando]
@@ -1128,7 +1669,7 @@ Version 3.6 (2018-03-23)
     all bridges don't relay postings anymore that are posted to a public forum [annando]
     DAV addon marked unsupported [tobiasd]
     communityhome addon marked unsupported [MrPetovan]
-    yourls addon makrked unsupported [MrPetovan]
+    yourls addon marked unsupported [MrPetovan]
     Current Weather: fixing a problem with the weathermap link [zeroadam]
     NSFW added config examples, reworked the description, now ignores the CW from Mastodon [andyhee, annando, rebeka-catalina]
     Twitter support 280 chars limit [annando]
@@ -1323,7 +1864,7 @@ Version 3.5.1 (2017-03-12)
     Improvements to the documentation [Hypolite, tobiasd, rabuzarus, beardyunixer, eelcomaljaars]
     Improvements to the BBCode / Markdown conversation [Hypolite]
     Improvements to the OStatus protocol implementation [annando]
-    Improvements to the installation wizzard [tobiasd]
+    Improvements to the installation wizard [tobiasd]
     Improvements to the Diaspora connectivity [annando, Hypolite]
     Work on PHP7 compatibility [ddorian1]
     Code cleanup [Hypolite, Quix0r]
@@ -1385,11 +1926,11 @@ Version 3.5 (2016-09-13)
     Improvements on the themes (quattro, vier, frost) [rabuzarus, fabrixxm, stieben, annando, Quix0r, tobiasd]
     Improvements to the ACL dialog [fabrixxm, rabuzarus]
     Improvements to the database structure and optimization of queries [annando]
-    Improvements to the UI (contacts, hotkeys, remember me, ARIA, code hightlighting) [rabuzarus, annando, tobiasd]
+    Improvements to the UI (contacts, hotkeys, remember me, ARIA, code highlighting) [rabuzarus, annando, tobiasd]
     Improvements to the background process (poller, worker) [annando]
     Improvements to the admin panel [tobiasd, annando, fabrixxm]
     Improvements to the performance [annando]
-    Improvements to the installation wizzard (language selection, RINO version, check required PHP modules, default theme is now vier) [tobiasd]
+    Improvements to the installation wizard (language selection, RINO version, check required PHP modules, default theme is now vier) [tobiasd]
     Improvements to the relocation of nodes and accounts [annando]
     Improvements to the DDoS detection [annando]
     Improvements to the calendar/events module [annando, rabuzarus]
@@ -1414,7 +1955,7 @@ Version 3.5 (2016-09-13)
     GNU Social Connector [annando]
     LDAP [Olivier Mehani]
     smileybutton [rabuzarus]
-    retriver [mexon]
+    retriever [mexon]
     mailstream [mexon]
     forumdirectory [tobiasd]
     NEW notifyall (port from Hubzilla) [rabuzarus, tobiasd]
@@ -1469,7 +2010,7 @@ Version 3.4.3 (2015-12-22)
 	'Reload active themes' in theme admin page (fabrixxm)
 	Install routine checks for ImageMagick and GIF support (fabrixxm)
 	Install routine checks for availability of "mcrypt_create_iv()" function, needed for RINO2 (fabrixxm)
-	Only suported themes are shown in admin page (annando)
+	Only supported themes are shown in admin page (annando)
 	Optimized SQL queries (annando)
 	System perform an optimize pass on tables in cron, with maximum table size and minimum fragmentation level settings (annando)
 	New access keys in profile and contact pages (rabuzarus, annando)
@@ -1484,9 +2025,9 @@ Version 3.4.3 (2015-12-22)
 	New hook 'template_vars' (fabrixxm)
 	$baseurl variable is passed to all templates by default (fabrixxm)
 	OStatus delivery code is moved in new function (annando)
-	Doxygen config file and initial documetation of code (rabuzarus)
+	Doxygen config file and initial documentation of code (rabuzarus)
 	Full rewrite of util/php2po.php (fabrixxm)
-  Bugfixs:
+  Bugfixes:
 	Remote self works again (annando)
 	Fix feeds mistakenly recognized as OStatus (issue #1914) (annando)
 	Report invalid feeds to user (issue #1913) (annando)
@@ -1501,8 +2042,8 @@ Version 3.4.3 (2015-12-22)
 	Fix rapid repeated requests to GNUSocial instance (issue #2038) (annando)
 	Fix install routine css when mod_rewrite doesn't works (issue #2071) (fabrixxm)
 	Fix code to be compliant with minimum required PHP version (issue #2066) (fabrixxm, rabuzarus)
-	Fix feedback after succesfull registration (issue #2060) (annando)
-	Fix mention completition popup with TinyMCE (issue #1920) (fabrixxm)
+	Fix feedback after successful registration (issue #2060) (annando)
+	Fix mention completion popup with TinyMCE (issue #1920) (fabrixxm)
 	Fix photo cache and proxy when installed in subfolder (ddorian1)
 	Fix bbcode conversion of the about text for the profile (issue #1607) (annando)
 
@@ -1512,7 +2053,7 @@ Version 3.4.2 (2015-09-29)
 	Updates to the documentation (tobiasd, silke, annando)
 	Updates to the translations (tobiasd & translation teams)
 	Updates to themes frost-mobile, vier, duepuntozero, quattro (annando, tobiasd)
-	Enancements of the communications via OStatus and Diaspora protocols (annando)
+	Enhancements of the communications via OStatus and Diaspora protocols (annando)
 	Option to automatically follow OStatus contacts was moved from addon to the core (annando)
 	Add tool to import OStatus contacts from an old account (annando)
 	SALMON slaps with OStatus were reworked (annando)
@@ -1529,7 +2070,7 @@ Version 3.4.2 (2015-09-29)
 	The global directory is queried in the background to update local DB and improve similar searches in the future. (annando)
 	By communication over the Diaspora protocol, red#matrix sources are now correctly identified, hubzilla is detected (annando)
 	Adopt limitation of usage of "-" in username to avoid conflicts with GNU Social and Diaspora (annando)
-	The [url] tag now also suppots ftp, mailto, gopher links (annando)
+	The [url] tag now also supports ftp, mailto, gopher links (annando)
 	An "inspect queue" module was added to the admin panel (tobiasd)
 	Fix some missing SQL data escapes (fabrixxm)
 	Improved the accessibility of the web UI for better screen reader compatibility (annando)
@@ -1557,7 +2098,7 @@ Version 3.4.1 (2015-07-06)
 	Implement server-to-server encryption (RINO) using php-encryption library as "RINO 2", deprecate "RINO 1" (issue #1655) (fabrixxm)
 	Fix connection with Diaspora "freelove" account (issue #1572) (annando)
 	Various SQL speedups (annando)
-	Port of Javascript DatePicker input from RedMatrix (rabuzarus)
+	Port of JavaScript DatePicker input from RedMatrix (rabuzarus)
 	Port of RedMatrix archive widget (rabuzarus)
 	Load profile owner settings for theme on profile page (rabuzarus)
 	Move HTML code from php into templates (rabuzarus)
@@ -1570,7 +2111,7 @@ Version 3.4.1 (2015-07-06)
 		use correct contact when automatically add @-replies
 		add attachment links as enclosures
 		send salmon notifications to every mentioned person
-		better thread completition
+		better thread completion
 		support for bookmarks
 		support for events and questions
 		link to items using GUID
@@ -1581,7 +2122,7 @@ Version 3.4.1 (2015-07-06)
 	Add fake fields to API response for better Twitter API compatibility (annando)
 	Fix search in local directory (issue #1657) (annando)
 	Improve OEmbed (issue #1640) (annando)
-	Fix double html encodig in site administration page for sitename and register text (issue #1628) (annando)
+	Fix double html encoding in site administration page for sitename and register text (issue #1628) (annando)
 	Fix remote subscription from GNU Social (annando)
 	Fix "{0}" in notifications (issue #1642) (annando)
 	Fix desktop notification (fabrixxm)
@@ -1590,7 +2131,7 @@ Version 3.4.1 (2015-07-06)
 	Fix emoticons alt text (tobias)
 	Improve threaded display in Vier theme (annando)
 	Use field templates in photo edit form (fabrixxm)
-	Alllow deletion of any user but yourself (issue #1625) (fabrixxm)
+	Allow deletion of any user but yourself (issue #1625) (fabrixxm)
 	Install wizard load htconfig template from template/ folder, remove localized htconfig templates (fabrixxm)
 	Add contact detail to non-js contact drop confirm dialog (issue #1629) (fabrixxm)
 	Return geo coord in API (annando)
@@ -1609,7 +2150,7 @@ Version 3.4 (2015-04-05)
 	Optionally, "like" and "dislike" activities don't update thread timestamp (annando)
 	Updated markdown libraries (annando)
 	Updated jQuery (StefOfficiel)
-	Cache zrl verification requests to prevent DSoS (issue #1453) (annando)
+	Cache zrl verification requests to prevent DDoS (issue #1453) (annando)
 	"Verify SSL" options affects also VERIFYHOST (annando)
 	Better handling of hashtags (annando)
 	Updated translations (translation teams, tobias)
@@ -1647,7 +2188,7 @@ Version 3.3.3 (2015-02-24)
 	Share-it button support (annando)
 	More reliable reshare from Diaspora (annando)
 	Load more images via proxy (annando)
-	util/typo.php uses "php -l" insead of "eval()" to validate code (fabrixxm)
+	util/typo.php uses "php -l" instead of "eval()" to validate code (fabrixxm)
 	Use $_SERVER array in cli script instead of $argv/$argc (issue #1218) (annando)
 	Updated vagrant setup script (silke)
 	API: support to star/unstar items (fabrixxm)
@@ -1668,7 +2209,7 @@ Version 3.3.3 (2015-02-24)
 
 Version 3.3.2 (2014-12-26)
 
-	Set default value for all not-null fields (fixes SQL warinigs) (annando)
+	Set default value for all not-null fields (fixes SQL warnings) (annando)
 	Fix item filters in network page (issue #1222) (fabrixxm)
 	Remove reference to an ex Friendica hub from documentation (beardyunixer, tobiasd)
 	API throttling (annando)
@@ -1714,7 +2255,7 @@ Version 3.3 (2014-10-06)
 
 	Interaction
 	ignoring of threads
-	for selected contects one can now get notifications when they post something, useful e.g. for forums
+	for selected contacts one can now get notifications when they post something, useful e.g. for forums
 	After a new friendica contact is added, the user is directed to the contact page of the new contact. (Instead of the remote profile)
 	many improvement on all connectors, new app.net connector
 	the algorithm for shortening postings when posting to limited platforms was improved
@@ -1726,7 +2267,7 @@ Version 3.3 (2014-10-06)
 	updated the following libraries: smarty 3.1.19, fullcalendar 1.6.4, jquery 1.11, jgrowl 1.3.0
 	added modernizer 2.8.3, better browser support
 	updates to the DB structure for better performance
-	preperations to use PDO in a later release
+	preparations to use PDO in a later release
 	new notification system
 	web interface translations updated, addon translations now also possible separately from the main UI and done for CS, IT, RO, DE
 	vagrant support added for developers
@@ -1764,7 +2305,7 @@ Version 3.2
 	small fixed
 		edit profile photo link
 		better caching of pictures
-		threadening for outgoing emails
+		threading for outgoing emails
 		mail import
 		oembed thumbnails
 		SN subscriptions & more SN like behaviour if snautofollow addon is used
@@ -1784,7 +2325,7 @@ Version 3.2
 	improving the install.php script
 	addons now can be members only
 	item object now contains the "edited" information left for the theme designers to show this info in a pretty way
-	improvments to the user-import from exported account files
+	improvements to the user-import from exported account files
 	It's now possible to authenticate an ejabberd server against friendica.
 	bugtracker moved to github
 	improvements to MySQL queries

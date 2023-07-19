@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,8 +25,7 @@ use Friendica\Core\Hook;
 use Friendica\Core\Logger;
 use Friendica\Core\System;
 use Friendica\DI;
-use phpseclib\Crypt\RSA;
-use phpseclib\Math\BigInteger;
+use phpseclib3\Crypt\PublicKeyLoader;
 
 /**
  * Crypto class
@@ -65,22 +64,6 @@ class Crypto
 	}
 
 	/**
-	/**
-	 * @param string $m modulo
-	 * @param string $e exponent
-	 * @return string
-	 */
-	public static function meToPem($m, $e)
-	{
-		$rsa = new RSA();
-		$rsa->loadKey([
-			'e' => new BigInteger($e, 256),
-			'n' => new BigInteger($m, 256)
-		]);
-		return $rsa->getPublicKey();
-	}
-
-	/**
 	 * Transform RSA public keys to standard PEM output
 	 *
 	 * @param string $key A RSA public key
@@ -89,29 +72,7 @@ class Crypto
 	 */
 	public static function rsaToPem(string $key)
 	{
-		$rsa = new RSA();
-		$rsa->setPublicKey($key);
-
-		return $rsa->getPublicKey(RSA::PUBLIC_FORMAT_PKCS8);
-	}
-
-	/**
-	 * Extracts the modulo and exponent reference from a public PEM key
-	 *
-	 * @param string $key      public PEM key
-	 * @param string $modulus  (ref) modulo reference
-	 * @param string $exponent (ref) exponent reference
-	 *
-	 * @return void
-	 */
-	public static function pemToMe(string $key, &$modulus, &$exponent)
-	{
-		$rsa = new RSA();
-		$rsa->loadKey($key);
-		$rsa->setPublicKey();
-
-		$modulus  = $rsa->modulus->toBytes();
-		$exponent = $rsa->exponent->toBytes();
+		return (string)PublicKeyLoader::load($key);
 	}
 
 	/**
@@ -134,7 +95,7 @@ class Crypto
 		$result = openssl_pkey_new($openssl_options);
 
 		if (empty($result)) {
-			Logger::log('new_keypair: failed');
+			Logger::notice('new_keypair: failed');
 			return false;
 		}
 
@@ -215,7 +176,7 @@ class Crypto
 	private static function encapsulateOther($data, $pubkey, $alg)
 	{
 		if (!$pubkey) {
-			Logger::log('no key. data: '.$data);
+			Logger::notice('no key. data: '.$data);
 		}
 		$fn = 'encrypt' . strtoupper($alg);
 		if (method_exists(__CLASS__, $fn)) {
@@ -257,7 +218,7 @@ class Crypto
 	private static function encapsulateAes($data, $pubkey)
 	{
 		if (!$pubkey) {
-			Logger::log('aes_encapsulate: no key. data: ' . $data);
+			Logger::notice('aes_encapsulate: no key. data: ' . $data);
 		}
 
 		$key = random_bytes(32);
@@ -268,7 +229,7 @@ class Crypto
 		// log the offending call so we can track it down
 		if (!openssl_public_encrypt($key, $k, $pubkey)) {
 			$x = debug_backtrace();
-			Logger::log('aes_encapsulate: RSA failed. ' . print_r($x[0], true));
+			Logger::notice('aes_encapsulate: RSA failed.', ['data' => $x[0]]);
 		}
 
 		$result['alg'] = 'aes256cbc';

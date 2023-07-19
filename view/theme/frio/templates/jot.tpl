@@ -1,5 +1,5 @@
 {{* The button to open the jot - in This theme we move the button with js to the second nav bar *}}
-<a class="btn btn-sm btn-primary pull-right" id="jotOpen" href="compose/{{$posttype}}{{if $content}}?body={{$content}}{{/if}}" aria-label="{{$new_post}}" title="{{$new_post}}"><i class="fa fa-pencil-square-o fa-2x"></i></a>
+<a class="btn btn-sm btn-primary pull-right{{if !$always_open_compose}} modal-open{{/if}}" id="jotOpen" href="compose/{{$posttype}}{{if $content}}?body={{$content}}{{/if}}" aria-label="{{$new_post}}" title="{{$new_post}}"><i class="fa fa-pencil-square-o fa-2x"></i></a>
 
 <div id="jot-content">
 	<div id="jot-sections">
@@ -93,14 +93,14 @@
 					{{if $notes_cid}}
 					<input type="hidden" name="contact_allow[]" value="<{{$notes_cid}}>" />
 					{{/if}}
-					<div id="jot-title-wrap"><input name="title" id="jot-title" class="jothidden jotforms form-control" type="text" placeholder="{{$placeholdertitle}}" title="{{$placeholdertitle}}" value="{{$title}}" style="display:block;" /></div>
+					<div id="jot-title-wrap"><input name="title" id="jot-title" class="jothidden jotforms form-control" type="text" placeholder="{{$placeholdertitle}}" title="{{$placeholdertitle}}" value="{{$title}}" style="display:block;" dir="auto" /></div>
 					{{if $placeholdercategory}}
-					<div id="jot-category-wrap"><input name="category" id="jot-category" class="jothidden jotforms form-control" type="text" placeholder="{{$placeholdercategory}}" title="{{$placeholdercategory}}" value="{{$category}}" /></div>
+					<div id="jot-category-wrap"><input name="category" id="jot-category" class="jothidden jotforms form-control" type="text" placeholder="{{$placeholdercategory}}" title="{{$placeholdercategory}}" value="{{$category}}" dir="auto" /></div>
 					{{/if}}
 
 					{{* The jot text field in which the post text is inserted *}}
-					<div id="jot-text-wrap">
-						<textarea rows="2" cols="64" class="profile-jot-text form-control text-autosize" id="profile-jot-text" name="body" placeholder="{{$share}}" onFocus="jotTextOpenUI(this);" onBlur="jotTextCloseUI(this);" style="min-width:100%; max-width:100%;">{{if $content}}{{$content nofilter}}{{/if}}</textarea>
+					<div id="jot-text-wrap" class="dropzone">
+						<textarea rows="2" cols="64" class="profile-jot-text form-control text-autosize" id="profile-jot-text" name="body" placeholder="{{$share}}" onFocus="jotTextOpenUI(this);" onBlur="jotTextCloseUI(this);" style="min-width:100%; max-width:100%;" dir="auto">{{if $content}}{{$content nofilter}}{{/if}}</textarea>
 					</div>
 
 					<ul id="profile-jot-submit-wrapper" class="jothidden nav nav-pills">
@@ -108,6 +108,7 @@
 						<li role="presentation"><button type="button" class="hidden-xs btn-link icon italic" style="cursor: pointer;" aria-label="{{$editalic}}" title="{{$editalic}}" onclick="insertFormattingToPost('i');"><i class="fa fa-italic"></i></button></li>
 						<li role="presentation"><button type="button" class="hidden-xs btn-link icon bold" style="cursor: pointer;" aria-label="{{$edbold}}" title="{{$edbold}}" onclick="insertFormattingToPost('b');"><i class="fa fa-bold"></i></button></li>
 						<li role="presentation"><button type="button" class="hidden-xs btn-link icon quote" style="cursor: pointer;" aria-label="{{$edquote}}" title="{{$edquote}}" onclick="insertFormattingToPost('quote');"><i class="fa fa-quote-left"></i></button></li>
+						<li role="presentation"><button type="button" class="hidden-xs btn-link icon emojis" style="cursor: pointer;" aria-label="{{$edemojis}}" title="{{$edemojis}}"><i class="fa fa-smile-o"></i></button></li>
 						<li role="presentation"><button type="button" class="btn-link icon" style="cursor: pointer;" aria-label="{{$edurl}}" title="{{$edurl}}" onclick="insertFormattingToPost('url');"><i class="fa fa-link"></i></button></li>
 						<li role="presentation"><button type="button" class="btn-link" id="profile-attach"  ondragenter="return linkDropper(event);" ondragover="return linkDropper(event);" ondrop="linkDrop(event);" onclick="jotGetLink();" title="{{$edattach}}"><i class="fa fa-paperclip"></i></button></li>
 						<li role="presentation"><button type="button" class="btn-link" id="profile-location" onclick="jotGetLocation();" title="{{$setloc}}"><i class="fa fa-map-marker" aria-hidden="true"></i></button></li>
@@ -120,8 +121,8 @@
 								<i class="fa fa-paper-plane fa-fw" aria-hidden="true"></i> {{$share}}
 							</button>
 						</li>
-						<li role="presentation" id="character-counter" class="grey jothidden text-info pull-right"></li>
-						<li role="presentation" id="profile-rotator-wrapper" class="pull-right" style="display: {{$visitor}};" >
+						<li id="character-counter" class="grey jothidden text-info pull-right"></li>
+						<li role="presentation" id="profile-rotator-wrapper" class="pull-right" style="display: {{$visitor}};">
 							<img role="presentation" id="profile-rotator" src="images/rotator.gif" alt="{{$wait}}" title="{{$wait}}" style="display: none;" />
 						</li>
 						<li role="presentation" id="profile-jot-plugin-wrapper">
@@ -133,6 +134,8 @@
 
 				<div id="profile-jot-acl-wrapper" class="minimize" aria-labelledby="jot-perms-lnk" role="tabpanel" aria-hidden="true">
 					{{$acl nofilter}}
+					{{if $scheduled_at}}{{$scheduled_at nofilter}}{{/if}}
+					{{if $created_at}}{{$created_at nofilter}}{{/if}}
 				</div>
 
 				<div id="jot-preview-content" class="minimize" aria-labelledby="jot-preview-lnk" role="tabpanel" aria-hidden="true"></div>
@@ -150,6 +153,7 @@
 				<div id="jot-fbrowser-wrapper" class="minimize" aria-labelledby="jot-browser-link" role="tabpanel" aria-hidden="true"></div>
 
 			</form>
+			<div id="dz-preview-jot" class="dropzone-preview"></div>
 
 			{{if $content}}<script type="text/javascript">initEditor();</script>{{/if}}
 		</div>
@@ -159,10 +163,10 @@
 
 {{* The jot modal - We use a own modal for the jot and not the standard modal
 from the page template. This is because the special structure of the jot
-(e.g.jot navigation tabs in the modal titel area).
-The in the frio theme the jot will loaded regulary and is hidden by default.)
+(e.g.jot navigation tabs in the modal title area).
+Then in the frio theme the jot will loaded regularly and is hidden by default.)
 The js function jotShow() loads the jot into the modal. With this structure we
-can load different content into the jot moadl (e.g. the item edit jot)
+can load different content into the jot modal (e.g. the item edit jot)
 *}}
 <div id="jot-modal" class="modal fade" role="dialog">
 	<div class="modal-dialog">
@@ -170,9 +174,12 @@ can load different content into the jot moadl (e.g. the item edit jot)
 	</div>
 </div>
 
-
 <script type="text/javascript">
 	$('iframe').load(function() {
 		this.style.height = this.contentWindow.document.body.offsetHeight + 'px';
 	});
+</script>
+
+<script>
+	dzFactory.setupDropzone('#jot-text-wrap', 'profile-jot-text'); 
 </script>

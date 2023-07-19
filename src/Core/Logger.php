@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,7 +22,7 @@
 namespace Friendica\Core;
 
 use Friendica\DI;
-use Friendica\Util\Logger\WorkerLogger;
+use Friendica\Core\Logger\Type\WorkerLogger;
 use Psr\Log\LoggerInterface;
 use Psr\Log\LogLevel;
 
@@ -32,42 +32,11 @@ use Psr\Log\LogLevel;
 class Logger
 {
 	/**
-	 * @see Logger::error()
-	 * @deprecated since 2019.01
-	 */
-	const WARNING = LogLevel::ERROR;
-	/**
-	 * @see Logger::warning()
-	 * @deprecated since 2019.01
-	 */
-	const INFO = LogLevel::WARNING;
-	/**
-	 * @see Logger::notice()
-	 * @deprecated since 2019.01
-	 */
-	const TRACE = LogLevel::NOTICE;
-	/**
-	 * @see Logger::info()
-	 * @deprecated since 2019.01
-	 */
-	const DEBUG = LogLevel::INFO;
-	/**
-	 * @see Logger::debug()
-	 * @deprecated since 2019.01
-	 */
-	const DATA = LogLevel::DEBUG;
-	/**
-	 * @see Logger::debug()
-	 * @deprecated since 2019.01
-	 */
-	const ALL = LogLevel::DEBUG;
-
-	/**
 	 * @var LoggerInterface The default Logger type
 	 */
 	const TYPE_LOGGER = LoggerInterface::class;
 	/**
-	 * @var WorkerLogger A specific worker logger type, which can be anabled
+	 * @var WorkerLogger A specific worker logger type, which can be enabled
 	 */
 	const TYPE_WORKER = WorkerLogger::class;
 	/**
@@ -76,23 +45,9 @@ class Logger
 	private static $type = self::TYPE_LOGGER;
 
 	/**
-	 * @var array the legacy loglevels
-	 * @deprecated 2019.03 use PSR-3 loglevels
-	 * @see https://github.com/php-fig/fig-standards/blob/master/accepted/PSR-3-logger-interface.md#5-psrlogloglevel
-	 *
-	 */
-	public static $levels = [
-		self::WARNING => 'Warning',
-		self::INFO => 'Info',
-		self::TRACE => 'Trace',
-		self::DEBUG => 'Debug',
-		self::DATA => 'Data',
-	];
-
-	/**
 	 * @return LoggerInterface
 	 */
-	private static function getWorker()
+	private static function getInstance()
 	{
 		if (self::$type === self::TYPE_LOGGER) {
 			return DI::logger();
@@ -111,7 +66,7 @@ class Logger
 	public static function enableWorker(string $functionName)
 	{
 		self::$type = self::TYPE_WORKER;
-		self::getWorker()->setFunctionName($functionName);
+		self::getInstance()->setFunctionName($functionName);
 	}
 
 	/**
@@ -127,15 +82,14 @@ class Logger
 	 *
 	 * @see LoggerInterface::emergency()
 	 *
-	 * @param string $message
-	 * @param array  $context
-	 *
+	 * @param string $message Message to log
+	 * @param array  $context Optional variables
 	 * @return void
 	 * @throws \Exception
 	 */
-	public static function emergency($message, $context = [])
+	public static function emergency(string $message, array $context = [])
 	{
-		self::getWorker()->emergency($message, $context);
+		self::getInstance()->emergency($message, $context);
 	}
 
 	/**
@@ -145,15 +99,14 @@ class Logger
 	 * Example: Entire website down, database unavailable, etc. This should
 	 * trigger the SMS alerts and wake you up.
 	 *
-	 * @param string $message
-	 * @param array  $context
-	 *
+	 * @param string $message Message to log
+	 * @param array  $context Optional variables
 	 * @return void
 	 * @throws \Exception
 	 */
-	public static function alert($message, $context = [])
+	public static function alert(string $message, array $context = [])
 	{
-		self::getWorker()->alert($message, $context);
+		self::getInstance()->alert($message, $context);
 	}
 
 	/**
@@ -162,15 +115,14 @@ class Logger
 	 *
 	 * Example: Application component unavailable, unexpected exception.
 	 *
-	 * @param string $message
-	 * @param array  $context
-	 *
+	 * @param string $message Message to log
+	 * @param array  $context Optional variables
 	 * @return void
 	 * @throws \Exception
 	 */
-	public static function critical($message, $context = [])
+	public static function critical(string $message, array $context = [])
 	{
-		self::getWorker()->critical($message, $context);
+		self::getInstance()->critical($message, $context);
 	}
 
 	/**
@@ -178,15 +130,14 @@ class Logger
 	 * be logged and monitored.
 	 * @see LoggerInterface::error()
 	 *
-	 * @param string $message
-	 * @param array  $context
-	 *
+	 * @param string $message Message to log
+	 * @param array  $context Optional variables
 	 * @return void
 	 * @throws \Exception
 	 */
-	public static function error($message, $context = [])
+	public static function error(string $message, array $context = [])
 	{
-		self::getWorker()->error($message, $context);
+		self::getInstance()->error($message, $context);
 	}
 
 	/**
@@ -196,30 +147,28 @@ class Logger
 	 * Example: Use of deprecated APIs, poor use of an API, undesirable things
 	 * that are not necessarily wrong.
 	 *
-	 * @param string $message
-	 * @param array  $context
-	 *
+	 * @param string $message Message to log
+	 * @param array  $context Optional variables
 	 * @return void
 	 * @throws \Exception
 	 */
-	public static function warning($message, $context = [])
+	public static function warning(string $message, array $context = [])
 	{
-		self::getWorker()->warning($message, $context);
+		self::getInstance()->warning($message, $context);
 	}
 
 	/**
 	 * Normal but significant events.
 	 * @see LoggerInterface::notice()
 	 *
-	 * @param string $message
-	 * @param array  $context
-	 *
+	 * @param string $message Message to log
+	 * @param array  $context Optional variables
 	 * @return void
 	 * @throws \Exception
 	 */
-	public static function notice($message, $context = [])
+	public static function notice(string $message, array $context = [])
 	{
-		self::getWorker()->notice($message, $context);
+		self::getInstance()->notice($message, $context);
 	}
 
 	/**
@@ -234,53 +183,39 @@ class Logger
 	 * @return void
 	 * @throws \Exception
 	 */
-	public static function info($message, $context = [])
+	public static function info(string $message, array $context = [])
 	{
-		self::getWorker()->info($message, $context);
+		self::getInstance()->info($message, $context);
 	}
 
 	/**
 	 * Detailed debug information.
 	 * @see LoggerInterface::debug()
 	 *
-	 * @param string $message
-	 * @param array  $context
-	 *
+	 * @param string $message Message to log
+	 * @param array  $context Optional variables
 	 * @return void
 	 * @throws \Exception
 	 */
-	public static function debug($message, $context = [])
+	public static function debug(string $message, array $context = [])
 	{
-		self::getWorker()->debug($message, $context);
-	}
-
-	/**
-	 * Logs the given message at the given log level
-	 *
-	 * @param string $msg
-	 * @param string $level
-	 *
-	 * @throws \Exception
-	 * @deprecated since 2019.03 Use Logger::debug() Logger::info() , ... instead
-	 */
-	public static function log($msg, $level = LogLevel::INFO)
-	{
-		self::getWorker()->log($level, $msg);
+		self::getInstance()->debug($message, $context);
 	}
 
 	/**
 	 * An alternative logger for development.
 	 *
 	 * Works largely as log() but allows developers
-	 * to isolate particular elements they are targetting
+	 * to isolate particular elements they are targeting
 	 * personally without background noise
 	 *
-	 * @param string $msg
-	 * @param string $level
+	 * @param string $message Message to log
+	 * @param string $level Logging level
+	 * @return void
 	 * @throws \Exception
 	 */
-	public static function devLog($msg, $level = LogLevel::DEBUG)
+	public static function devLog(string $message, string $level = LogLevel::DEBUG)
 	{
-		DI::devLogger()->log($level, $msg);
+		DI::devLogger()->log($level, $message);
 	}
 }

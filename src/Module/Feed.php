@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,7 +22,9 @@
 namespace Friendica\Module;
 
 use Friendica\BaseModule;
-use Friendica\DI;
+use Friendica\Core\System;
+use Friendica\Model\User;
+use Friendica\Network\HTTPException;
 use Friendica\Protocol\Feed as ProtocolFeed;
 
 /**
@@ -35,30 +37,14 @@ use Friendica\Protocol\Feed as ProtocolFeed;
  * - /feed/[nickname]/replies => comments
  * - /feed/[nickname]/activity => activity
  *
- * The nocache GET parameter is provided mainly for debug purposes, requires auth
- *
  * @author Hypolite Petovan <hypolite@mrpetovan.com>
  */
 class Feed extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-		$a = DI::app();
-
-		$last_update = $_GET['last_update'] ?? '';
-		$nocache     = !empty($_GET['nocache']) && local_user();
-
-		// @TODO: Replace with parameter from router
-		if ($a->argc < 2) {
-			throw new \Friendica\Network\HTTPException\BadRequestException();
-		}
-
-		$type = null;
-		// @TODO: Replace with parameter from router
-		if ($a->argc > 2) {
-			$type = $a->argv[2];
-		}
-
+		$nick = $this->parameters['nickname'] ?? '';
+		$type = $this->parameters['type'] ?? null;
 		switch ($type) {
 			case 'posts':
 			case 'comments':
@@ -72,10 +58,19 @@ class Feed extends BaseModule
 				$type = 'posts';
 		}
 
-		// @TODO: Replace with parameter from router
-		$nickname = $a->argv[1];
-		header("Content-type: application/atom+xml; charset=utf-8");
-		echo ProtocolFeed::atom($nickname, $last_update, 10, $type, $nocache, true);
-		exit();
+		$last_update = $this->getRequestValue($request, 'last_update', '');
+
+		$owner = User::getOwnerDataByNick($nick);
+		if (!$owner || $owner['account_expired'] || $owner['account_removed']) {
+			throw new HTTPException\NotFoundException($this->t('User not found.'));
+		}
+
+		if ($owner['blocked']) {
+			throw new HTTPException\UnauthorizedException($this->t('Access to this profile has been restricted.'));
+		}
+
+		$feed = ProtocolFeed::atom($owner, $last_update, 10, $type);
+
+		System::httpExit($feed, Response::TYPE_ATOM);
 	}
 }

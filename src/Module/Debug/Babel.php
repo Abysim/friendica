@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -35,7 +35,7 @@ use Friendica\Util\XML;
  */
 class Babel extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
 		function visible_whitespace($s)
 		{
@@ -290,7 +290,7 @@ class Babel extends BaseModule
 						];
 					} else {
 						$results[] = [
-							'title'   => DI::l10n()->t('Error'),
+							'title'   => DI::l10n()->tt('Error', 'Errors', 1),
 							'content' => DI::l10n()->t('Twitter addon is absent from the addon/ folder.'),
 						];
 					}

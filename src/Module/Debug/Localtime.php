@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -29,21 +29,21 @@ use Friendica\Util\Temporal;
 
 class Localtime extends BaseModule
 {
-	public static function post(array $parameters = [])
+	static $mod_localtime = '';
+
+	protected function post(array $request = [])
 	{
 		$time = ($_REQUEST['time'] ?? '') ?: 'now';
 
 		$bd_format = DI::l10n()->t('l F d, Y \@ g:i A');
 
 		if (!empty($_POST['timezone'])) {
-			DI::app()->data['mod-localtime'] = DateTimeFormat::convert($time, $_POST['timezone'], 'UTC', $bd_format);
+			self::$mod_localtime = DateTimeFormat::convert($time, $_POST['timezone'], 'UTC', $bd_format);
 		}
 	}
 
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		$app = DI::app();
-
 		$time = ($_REQUEST['time'] ?? '') ?: 'now';
 
 		$output  = '<h3>' . DI::l10n()->t('Time Conversion') . '</h3>';
@@ -54,11 +54,11 @@ class Localtime extends BaseModule
 			$output .= '<p>' . DI::l10n()->t('Current timezone: %s', $_REQUEST['timezone']) . '</p>';
 		}
 
-		if (!empty($app->data['mod-localtime'])) {
-			$output .= '<p>' . DI::l10n()->t('Converted localtime: %s', $app->data['mod-localtime']) . '</p>';
+		if (!empty(self::$mod_localtime)) {
+			$output .= '<p>' . DI::l10n()->t('Converted localtime: %s', self::$mod_localtime) . '</p>';
 		}
 
-		$output .= '<form action ="' . DI::baseUrl()->get() . '/localtime?time=' . $time . '" method="post" >';
+		$output .= '<form action ="localtime?time=' . $time . '" method="post">';
 		$output .= '<p>' . DI::l10n()->t('Please select your timezone:') . '</p>';
 		$output .= Temporal::getTimezoneSelect(($_REQUEST['timezone'] ?? '') ?: Installer::DEFAULT_TZ);
 		$output .= '<input type="submit" name="submit" value="' . DI::l10n()->t('Submit') . '" /></form>';

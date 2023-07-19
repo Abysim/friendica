@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,69 +21,64 @@
 
 namespace Friendica\Module\Api\Friendica\Profile;
 
-use Friendica\Collection\ProfileFields;
+use Friendica\Profile\ProfileField\Collection\ProfileFields;
 use Friendica\Content\Text\BBCode;
+use Friendica\Core\Search;
 use Friendica\DI;
-use Friendica\Model\Contact;
 use Friendica\Model\Profile;
 use Friendica\Module\BaseApi;
 use Friendica\Network\HTTPException;
-use Friendica\Repository\PermissionSet;
 
 /**
  * API endpoint: /api/friendica/profile/show
  */
 class Show extends BaseApi
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-		if (self::login() === false) {
-			throw new HTTPException\ForbiddenException();
-		}
+		self::checkAllowedScope(self::SCOPE_READ);
+		$uid = self::getCurrentUserID();
 
 		// retrieve general information about profiles for user
-		$directory = DI::config()->get('system', 'directory');
+		$directory = Search::getGlobalDirectory();
 
-		$profile = Profile::getByUID(self::$current_user_id);
-		
-		$profileFields = DI::profileField()->select(['uid' => self::$current_user_id, 'psid' => PermissionSet::PUBLIC]);
+		$profile = Profile::getByUID($uid);
+
+		$profileFields = DI::profileField()->selectPublicFieldsByUserId($uid);
 
 		$profile = self::formatProfile($profile, $profileFields);
 
 		$profiles = [];
-		if (self::$format == 'xml') {
+		if (($this->parameters['extension'] ?? '') == 'xml') {
 			$profiles['0:profile'] = $profile;
 		} else {
 			$profiles[] = $profile;
 		}
 
-		// return settings, authenticated user and profiles data
-		$self = Contact::selectFirst(['nurl'], ['uid' => self::$current_user_id, 'self' => true]);
-
 		$result = [
 			'multi_profiles' => false,
 			'global_dir' => $directory,
-			'friendica_owner' => self::getUser($self['nurl']),
+			'friendica_owner' => DI::twitterUser()->createFromUserId($uid),
 			'profiles' => $profiles
 		];
 
-		echo self::format('friendica_profiles', ['$result' => $result]);
-		exit;
+		$this->response->exit('friendica_profiles', ['$result' => $result], $this->parameters['extension'] ?? null);
 	}
 
 	/**
 	 * @param array         $profile_row array containing data from db table 'profile'
 	 * @param ProfileFields $profileFields
+	 *
 	 * @return array
 	 * @throws HTTPException\InternalServerErrorException
 	 */
-	private static function formatProfile($profile_row, ProfileFields $profileFields)
+	private static function formatProfile($profile_row, ProfileFields $profileFields): array
 	{
 		$custom_fields = [];
 		foreach ($profileFields as $profileField) {
 			$custom_fields[] = [
 				'label' => $profileField->label,
-				'value' => BBCode::convert($profileField->value, false, BBCode::API),
+				'value' => BBCode::convert($profileField->value, false, BBCode::TWITTER_API),
 			];
 		}
 

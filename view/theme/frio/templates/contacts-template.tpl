@@ -1,8 +1,4 @@
 
-<script type="text/javascript">
-	var dropContact = "{{$contact_drop_confirm}}";
-</script>
-
 {{$tabs nofilter}}
 
 <div id="contacts" class="generic-page-wrapper">
@@ -14,7 +10,7 @@
 
 	{{* The search input field to search for contacts *}}
 	<div id="contacts-search-wrapper">
-		<form id="contacts-search-form" class="navbar-form" role="search" action="{{$cmd}}" method="get" >
+		<form id="contacts-search-form" class="navbar-form" role="search" action="{{$cmd}}" method="get">
 			<div class="row">
 				<div class="form-group form-group-search">
 					<input type="text" name="search" id="contacts-search" class="search-input form-control form-search" onfocus="this.select();" value="{{$search}}" placeholder="{{$desc nofilter}}"/>
@@ -29,6 +25,8 @@
 
 	{{* we need the form container to make batch actions work *}}
 	<form name="batch_actions_submit" action="{{$baseurl}}/contact/batch/" method="POST">
+		<input type="hidden" name="redirect_url" value="{{$cmd}}" />
+		<input type="hidden" name="form_security_token" value="{{$form_security_token}}" />
 
 		{{* we put here a hidden input element. This is needed to transmit the batch actions with javascript*}}
 		<input type="hidden" class="batch-action no-input fakelist" name="batch_submit" value="{{$l}}">
@@ -36,7 +34,7 @@
 		{{* We put the contact batch actions in a dropdown menu *}}
 		<ul class="nav nav-pills preferences">
 			<li class="dropdown pull-right">
-				<button type="button" class="btn btn-link btn-sm dropdown-toggle" id="BatchActionDropdownMenuTools" data-toggle="dropdown" aria-expanded="false">
+				<button type="button" class="btn btn-link dropdown-toggle" id="BatchActionDropdownMenuTools" data-toggle="dropdown" aria-expanded="false">
 					<i class="fa fa-angle-down"></i>&nbsp;{{$h_batch_actions}}
 				</button>
 				<ul class="dropdown-menu pull-right" role="menu" aria-labelledby="BatchActionDropdownMenuTools">
@@ -51,10 +49,10 @@
 		</ul>
 		<div class="clear"></div>
 		<div id="contact-list">
-			{{* format each contact with the contact_template.tpl *}}
+			{{* format each contact with the contact/entry.tpl *}}
 			<ul id="viewcontact_wrapper" class="viewcontact_wrapper media-list">
 			{{foreach $contacts as $contact}}
-				<li>{{include file="contact_template.tpl"}}</li>
+				<li>{{include file="contact/entry.tpl"}}</li>
 			{{/foreach}}
 			</ul>
 		</div>

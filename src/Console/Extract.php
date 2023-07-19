@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -20,6 +20,9 @@
  */
 
 namespace Friendica\Console;
+
+use \RecursiveDirectoryIterator;
+use \RecursiveIteratorIterator;
 
 /**
  * Extracts translation strings from the Friendica project's files to be exported
@@ -49,7 +52,7 @@ HELP;
 		return $help;
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		if ($this->getOption('v')) {
 			$this->out('Class: ' . __CLASS__);
@@ -72,9 +75,8 @@ HELP;
 		$arr = [];
 
 		$files = array_merge(
-			['index.php', 'boot.php'],
+			['index.php'],
 			glob('mod/*'),
-			glob('include/*'),
 			glob('addon/*/*'),
 			$this->globRecursive('src')
 		);
@@ -120,10 +122,10 @@ HELP;
 
 						$arr[] = $matchtkns[0];
 
-						$s .= '$a->strings[' . $matchtkns[0] . "] = array(\n";
+						$s .= '$a->strings[' . $matchtkns[0] . "] = [\n";
 						$s .= "\t0 => " . $matchtkns[0] . ",\n";
 						$s .= "\t1 => " . $matchtkns[1] . ",\n";
-						$s .= ");\n";
+						$s .= "];\n";
 					}
 				}
 			}
@@ -141,9 +143,17 @@ HELP;
 		return 0;
 	}
 
-	private function globRecursive($path) {
-		$dir_iterator = new \RecursiveDirectoryIterator($path);
-		$iterator = new \RecursiveIteratorIterator($dir_iterator, \RecursiveIteratorIterator::SELF_FIRST);
+	/**
+	 * Returns an array with found files and directories including their paths.
+	 *
+	 * @param string $path Base path to scan
+	 *
+	 * @return array A flat array with found files and directories
+	 */
+	private function globRecursive(string $path): array
+	{
+		$dir_iterator = new RecursiveDirectoryIterator($path);
+		$iterator = new RecursiveIteratorIterator($dir_iterator, RecursiveIteratorIterator::SELF_FIRST);
 
 		$return = [];
 		foreach ($iterator as $file) {

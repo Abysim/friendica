@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,9 +21,7 @@
 
 namespace Friendica\Module\Api\Mastodon;
 
-use Friendica\Core\Logger;
-use Friendica\Core\System;
-use Friendica\DI;
+use Friendica\App\Router;
 use Friendica\Module\BaseApi;
 
 /**
@@ -32,16 +30,42 @@ use Friendica\Module\BaseApi;
 class Unimplemented extends BaseApi
 {
 	/**
-	 * @param array $parameters
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function rawContent(array $parameters = [])
+	protected function delete(array $request = [])
 	{
-		$path = DI::args()->getQueryString();
-		Logger::info('Unimplemented API call', ['path' => $path]);
-		$error = DI::l10n()->t('API endpoint "%s" is not implemented', $path);
-		$error_description = DI::l10n()->t('The API endpoint is currently not implemented but might be in the future.');;
-		$errorobj = new \Friendica\Object\Api\Mastodon\Error($error, $error_description);
-		System::jsonError(501, $errorobj->toArray());
+		$this->response->unsupported(Router::DELETE, $request);
+	}
+
+	/**
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 */
+	protected function patch(array $request = [])
+	{
+		$this->response->unsupported(Router::PATCH, $request);
+	}
+
+	/**
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 */
+	protected function post(array $request = [])
+	{
+		$this->response->unsupported(Router::POST, $request);
+	}
+
+	/**
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 */
+	public function put(array $request = [])
+	{
+		$this->response->unsupported(Router::PUT, $request);
+	}
+
+	/**
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 */
+	protected function rawContent(array $request = [])
+	{
+		$this->response->unsupported(Router::GET, $request);
 	}
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,38 +21,27 @@
 
 namespace Friendica\Test\functional;
 
-use Dice\Dice;
 use Friendica\App;
-use Friendica\Core\Cache\ICache;
-use Friendica\Core\Cache\IMemoryCache;
-use Friendica\Core\Config\Cache;
-use Friendica\Core\Config\IConfig;
-use Friendica\Core\Lock\ILock;
+use Friendica\Core\Cache\Capability\ICanCache;
+use Friendica\Core\Cache\Capability\ICanCacheInMemory;
+use Friendica\Core\Config\ValueObject\Cache;
+use Friendica\Core\Config\Capability\IManageConfigValues;
+use Friendica\Core\Lock\Capability\ICanLock;
 use Friendica\Database\Database;
-use Friendica\Test\Util\VFSTrait;
+use Friendica\Test\FixtureTest;
 use Friendica\Util\BasePath;
-use Friendica\Util\ConfigFileLoader;
-use Friendica\Util\Profiler;
-use PHPUnit\Framework\TestCase;
+use Friendica\Core\Config\Util\ConfigFileManager;
 use Psr\Log\LoggerInterface;
 
-class DependencyCheckTest extends TestCase
+class DependencyCheckTest extends FixtureTest
 {
-	use VFSTrait;
-
-	/**
-	 * @var Dice
-	 */
-	private $dice;
-
 	protected function setUp() : void
 	{
 		parent::setUp();
 
-		$this->setUpVfsDir();
-
-		$this->dice = (new Dice())
-			->addRules(include __DIR__ . '/../../static/dependencies.config.php');
+		/** @var IManageConfigValues $config */
+		$config = $this->dice->create(IManageConfigValues::class);
+		$config->set('system', 'logfile', $this->root->url() . '/logs/friendica.log');
 	}
 
 	/**
@@ -65,6 +54,9 @@ class DependencyCheckTest extends TestCase
 
 		self::assertInstanceOf(BasePath::class, $basePath);
 		self::assertEquals($this->root->url(), $basePath->getPath());
+
+		/** @var Database $dba */
+		$dba = $this->dice->create(Database::class);
 	}
 
 	/**
@@ -73,44 +65,17 @@ class DependencyCheckTest extends TestCase
 	 */
 	public function testConfigFileLoader()
 	{
-		/** @var ConfigFileLoader $configFileLoader */
-		$configFileLoader = $this->dice->create(ConfigFileLoader::class);
+		/** @var ConfigFileManager $configFileManager */
+		$configFileManager = $this->dice->create(ConfigFileManager::class);
 
-		self::assertInstanceOf(ConfigFileLoader::class, $configFileLoader);
+		self::assertInstanceOf(ConfigFileManager::class, $configFileManager);
 
 		$configCache = new Cache();
-		$configFileLoader->setupCache($configCache);
+		$configFileManager->setupCache($configCache);
 
 		self::assertNotEmpty($configCache->getAll());
 		self::assertArrayHasKey('database', $configCache->getAll());
 		self::assertArrayHasKey('system', $configCache->getAll());
-	}
-
-	/**
-	 * Test the construction of a profiler class with DI
-	 */
-	public function testProfiler()
-	{
-		/** @var Profiler $profiler */
-		$profiler = $this->dice->create(Profiler::class);
-
-		self::assertInstanceOf(Profiler::class, $profiler);
-
-		$configCache = new Cache([
-			'system' => [
-				'profiler' => true,
-			],
-			'rendertime' => [
-				'callstack' => true,
-			]
-		]);
-
-		// create new DI-library because of shared instance rule (so the Profiler wouldn't get created twice)
-		$this->dice = new Dice();
-		$profiler = $this->dice->create(Profiler::class, [$configCache]);
-
-		self::assertInstanceOf(Profiler::class, $profiler);
-		self::assertTrue($profiler->isRendertime());
 	}
 
 	public function testDatabase()
@@ -150,7 +115,6 @@ class DependencyCheckTest extends TestCase
 
 		self::assertTrue($mode->has(App\Mode::LOCALCONFIGPRESENT), 'No local config present');
 		self::assertTrue($mode->has(App\Mode::DBAVAILABLE), 'Database is not available');
-		self::assertTrue($mode->has(App\Mode::DBCONFIGAVAILABLE), 'Database config is not available');
 		self::assertTrue($mode->has(App\Mode::MAINTENANCEDISABLED), 'In maintenance mode');
 
 		self::assertTrue($mode->isNormal(), 'Not in normal mode');
@@ -158,10 +122,10 @@ class DependencyCheckTest extends TestCase
 
 	public function testConfiguration()
 	{
-		/** @var IConfig $config */
-		$config = $this->dice->create(IConfig::class);
+		/** @var IManageConfigValues $config */
+		$config = $this->dice->create(IManageConfigValues::class);
 
-		self::assertInstanceOf(IConfig::class, $config);
+		self::assertInstanceOf(IManageConfigValues::class, $config);
 
 		self::assertNotEmpty($config->get('database', 'username'));
 	}
@@ -169,45 +133,46 @@ class DependencyCheckTest extends TestCase
 	public function testLogger()
 	{
 		/** @var LoggerInterface $logger */
-		$logger = $this->dice->create(LoggerInterface::class, ['test']);
+		$logger = $this->dice->create(LoggerInterface::class, [['$channel' => 'test']]);
 
 		self::assertInstanceOf(LoggerInterface::class, $logger);
 	}
 
 	public function testDevLogger()
 	{
-		/** @var IConfig $config */
-		$config = $this->dice->create(IConfig::class);
+		/** @var IManageConfigValues $config */
+		$config = $this->dice->create(IManageConfigValues::class);
 		$config->set('system', 'dlogfile', $this->root->url() . '/friendica.log');
 
 		/** @var LoggerInterface $logger */
-		$logger = $this->dice->create('$devLogger', ['dev']);
+		$logger = $this->dice->create('$devLogger', [['$channel' => 'dev']]);
 
 		self::assertInstanceOf(LoggerInterface::class, $logger);
 	}
 
 	public function testCache()
 	{
-		/** @var ICache $cache */
-		$cache = $this->dice->create(ICache::class);
+		/** @var ICanCache $cache */
+		$cache = $this->dice->create(ICanCache::class);
 
-		self::assertInstanceOf(ICache::class, $cache);
+
+		self::assertInstanceOf(ICanCache::class, $cache);
 	}
 
 	public function testMemoryCache()
 	{
-		/** @var IMemoryCache $cache */
-		$cache = $this->dice->create(IMemoryCache::class);
+		/** @var ICanCacheInMemory $cache */
+		$cache = $this->dice->create(ICanCacheInMemory::class);
 
 		// We need to check "just" ICache, because the default Cache is DB-Cache, which isn't a memorycache
-		self::assertInstanceOf(ICache::class, $cache);
+		self::assertInstanceOf(ICanCache::class, $cache);
 	}
 
 	public function testLock()
 	{
-		/** @var ILock $cache */
-		$lock = $this->dice->create(ILock::class);
+		/** @var ICanLock $cache */
+		$lock = $this->dice->create(ICanLock::class);
 
-		self::assertInstanceOf(ILock::class, $lock);
+		self::assertInstanceOf(ICanLock::class, $lock);
 	}
 }

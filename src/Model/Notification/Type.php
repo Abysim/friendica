@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -38,17 +38,9 @@ class Type
 	const MAIL = 16;
 	/** @var int Notification about a friend suggestion */
 	const SUGGEST = 32;
-	/** @var int Unknown Notification
-	 * @deprecated
-	 */
-	const PROFILE = 64;
 	/** @var int Notification about being tagged in a post */
 	const TAG_SELF = 128;
-	/** @var int Notification about being tagged
-	 * @deprecated
-	 */
-	const TAG_SHARE = 256;
-	/** @var int Notification about getting poked/prodded/etc. */
+	/** @var int Notification about getting poked/prodded/etc. (Obsolete) */
 	const POKE = 512;
 	/** @var int Notification about either a contact had posted something directly or the contact is a mentioned forum */
 	const SHARE = 1024;

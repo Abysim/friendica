@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,21 +25,36 @@ use Friendica\BaseFactory;
 use Friendica\Model\APContact;
 use Friendica\Model\Contact;
 use Friendica\Network\HTTPException;
+use Friendica\Factory\Api\Twitter\Status;
+use Friendica\Model\Item;
+use Friendica\Model\Post;
+use Psr\Log\LoggerInterface;
 
 class User extends BaseFactory
 {
+	/** @var Status entity */
+	private $status;
+
+	public function __construct(LoggerInterface $logger, Status $status)
+	{
+		parent::__construct($logger);
+		$this->status = $status;
+
+	}
+
 	/**
 	 * @param int  $contactId
 	 * @param int  $uid Public contact (=0) or owner user id
 	 * @param bool $skip_status
 	 * @param bool $include_user_entities
+	 *
 	 * @return \Friendica\Object\Api\Twitter\User
 	 * @throws HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	public function createFromContactId(int $contactId, $uid = 0, $skip_status = false, $include_user_entities = true)
+	public function createFromContactId(int $contactId, int $uid = 0, bool $skip_status = true, bool $include_user_entities = true): \Friendica\Object\Api\Twitter\User
 	{
-		$cdata = Contact::getPublicAndUserContacID($contactId, $uid);
+		$cdata = Contact::getPublicAndUserContactID($contactId, $uid);
 		if (!empty($cdata)) {
 			$publicContact = Contact::getById($cdata['public']);
 			$userContact = Contact::getById($cdata['user']);
@@ -50,6 +65,29 @@ class User extends BaseFactory
 
 		$apcontact = APContact::getByURL($publicContact['url'], false);
 
-		return new \Friendica\Object\Api\Twitter\User($publicContact, $apcontact, $userContact, $skip_status, $include_user_entities);
+		$status = null;
+
+		if (!$skip_status) {
+			$post = Post::selectFirstPost(['uri-id'],
+				['author-id' => $publicContact['id'], 'gravity' => [Item::GRAVITY_COMMENT, Item::GRAVITY_PARENT], 'private'  => [Item::PUBLIC, Item::UNLISTED]],
+				['order' => ['uri-id' => true]]);
+			if (!empty($post['uri-id'])) {
+				$status = $this->status->createFromUriId($post['uri-id'], $uid)->toArray();
+			}
+		}
+
+		return new \Friendica\Object\Api\Twitter\User($publicContact, $apcontact, $userContact, $status, $include_user_entities);
+	}
+
+	/**
+	 * @param int  $uid Public contact (=0) or owner user id
+	 * @param bool $skip_status
+	 * @param bool $include_user_entities
+	 *
+	 * @return \Friendica\Object\Api\Twitter\User
+	 */
+	public function createFromUserId(int $uid, bool $skip_status = true, bool $include_user_entities = true): \Friendica\Object\Api\Twitter\User
+	{
+		return $this->createFromContactId(Contact::getPublicIdByUserId($uid), $uid, $skip_status, $include_user_entities);
 	}
 }

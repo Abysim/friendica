@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,27 +24,23 @@ namespace Friendica\Test\src\Console;
 use Dice\Dice;
 use Friendica\App;
 use Friendica\Console\AutomaticInstallation;
-use Friendica\Core\Config\Cache;
+use Friendica\Core\Config\ValueObject\Cache;
 use Friendica\Core\Installer;
 use Friendica\Core\L10n;
 use Friendica\Core\Logger;
 use Friendica\Database\Database;
 use Friendica\DI;
-use Friendica\Test\Util\DBAMockTrait;
-use Friendica\Test\Util\DBStructureMockTrait;
 use Friendica\Test\Util\RendererMockTrait;
 use Friendica\Test\Util\VFSTrait;
-use Friendica\Util\Logger\VoidLogger;
 use Mockery;
 use Mockery\MockInterface;
 use org\bovigo\vfs\vfsStream;
 use org\bovigo\vfs\vfsStreamFile;
+use Psr\Log\NullLogger;
 
 class AutomaticInstallationConsoleTest extends ConsoleTest
 {
 	use VFSTrait;
-	use DBAMockTrait;
-	use DBStructureMockTrait;
 	use RendererMockTrait;
 
 	/**
@@ -57,7 +53,7 @@ class AutomaticInstallationConsoleTest extends ConsoleTest
 	private $assertFileDb;
 
 	/**
-	 * @var Cache The configuration cache to check after each test
+	 * @var \Friendica\Core\Config\ValueObject\Cache The configuration cache to check after each test
 	 */
 	private $configCache;
 
@@ -121,7 +117,7 @@ class AutomaticInstallationConsoleTest extends ConsoleTest
 		});
 
 		$this->mode->shouldReceive('isInstall')->andReturn(true);
-		Logger::init(new VoidLogger());
+		Logger::init(new NullLogger());
 	}
 
 	/**
@@ -677,7 +673,7 @@ Examples
 	bin/console autoinstall --savedb
 		Installs Friendica with environment variables and saves them to the 'config/local.config.php' file
 
-	bin/console autoinstall -h localhost -p 3365 -U user -P passwort1234 -d friendica
+	bin/console autoinstall -h localhost -p 3365 -U user -P password1234 -d friendica
 		Installs Friendica with a local mysql database with credentials
 
 HELP;

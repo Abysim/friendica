@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,14 +25,17 @@ use Exception;
 use Friendica\DI;
 use Friendica\Util\Images;
 use Imagick;
+use ImagickDraw;
 use ImagickPixel;
+use GDImage;
+use kornrunner\Blurhash\Blurhash;
 
 /**
  * Class to handle images
  */
 class Image
 {
-	/** @var Imagick|resource */
+	/** @var GDImage|Imagick|resource */
 	private $image;
 
 	/*
@@ -47,12 +50,13 @@ class Image
 
 	/**
 	 * Constructor
-	 * @param string  $data
-	 * @param boolean $type optional, default null
+	 *
+	 * @param string $data Image data
+	 * @param string $type optional, default null
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	public function __construct($data, $type = null)
+	public function __construct(string $data, string $type = null)
 	{
 		$this->imagick = class_exists('Imagick');
 		$this->types = Images::supportedTypes();
@@ -61,13 +65,14 @@ class Image
 		}
 		$this->type = $type;
 
-		if ($this->isImagick() && $this->loadData($data)) {
-			return true;
+		if ($this->isImagick() && (empty($data) || $this->loadData($data))) {
+			$this->valid = !empty($data);
+			return;
 		} else {
 			// Failed to load with Imagick, fallback
 			$this->imagick = false;
 		}
-		return $this->loadData($data);
+		$this->loadData($data);
 	}
 
 	/**
@@ -98,12 +103,14 @@ class Image
 	}
 
 	/**
-	 * @param string $data data
-	 * @return boolean
+	 * Loads image data into handler class
+	 *
+	 * @param string $data Image data
+	 * @return boolean Success
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	private function loadData($data)
+	private function loadData(string $data): bool
 	{
 		if ($this->isImagick()) {
 			$this->image = new Imagick();
@@ -132,11 +139,8 @@ class Image
 			 * setup the compression here, so we'll do it only once
 			 */
 			switch ($this->getType()) {
-				case "image/png":
+				case 'image/png':
 					$quality = DI::config()->get('system', 'png_quality');
-					if ((! $quality) || ($quality > 9)) {
-						$quality = PNG_QUALITY;
-					}
 					/*
 					 * From http://www.imagemagick.org/script/command-line-options.php#quality:
 					 *
@@ -148,32 +152,39 @@ class Image
 					$quality = $quality * 10;
 					$this->image->setCompressionQuality($quality);
 					break;
-				case "image/jpeg":
+
+				case 'image/jpg':
+				case 'image/jpeg':
 					$quality = DI::config()->get('system', 'jpeg_quality');
-					if ((! $quality) || ($quality > 100)) {
-						$quality = JPEG_QUALITY;
-					}
 					$this->image->setCompressionQuality($quality);
 			}
 
-			// The 'width' and 'height' properties are only used by non-Imagick routines.
 			$this->width  = $this->image->getImageWidth();
 			$this->height = $this->image->getImageHeight();
-			$this->valid  = true;
+			$this->valid  = !empty($this->image);
 
-			return true;
+			return $this->valid;
 		}
 
 		$this->valid = false;
-		$this->image = @imagecreatefromstring($data);
-		if ($this->image !== false) {
-			$this->width  = imagesx($this->image);
-			$this->height = imagesy($this->image);
-			$this->valid  = true;
-			imagealphablending($this->image, false);
-			imagesavealpha($this->image, true);
+		try {
+			$this->image = @imagecreatefromstring($data);
+			if ($this->image !== false) {
+				$this->width  = imagesx($this->image);
+				$this->height = imagesy($this->image);
+				$this->valid  = true;
+				imagealphablending($this->image, false);
+				imagesavealpha($this->image, true);
 
-			return true;
+				return true;
+			}
+		} catch (\Throwable $error) {
+			/** @see https://github.com/php/doc-en/commit/d09a881a8e9059d11e756ee59d75bf404d6941ed */
+			if (strstr($error->getMessage(), "gd-webp cannot allocate temporary buffer")) {
+				DI::logger()->notice('Image is probably animated and therefore unsupported', ['error' => $error]);
+			} else {
+				DI::logger()->warning('Unexpected throwable.', ['error' => $error]);
+			}
 		}
 
 		return false;
@@ -182,10 +193,10 @@ class Image
 	/**
 	 * @return boolean
 	 */
-	public function isValid()
+	public function isValid(): bool
 	{
 		if ($this->isImagick()) {
-			return ($this->image !== false);
+			return !empty($this->image);
 		}
 		return $this->valid;
 	}
@@ -199,9 +210,6 @@ class Image
 			return false;
 		}
 
-		if ($this->isImagick()) {
-			return $this->image->getImageWidth();
-		}
 		return $this->width;
 	}
 
@@ -214,9 +222,6 @@ class Image
 			return false;
 		}
 
-		if ($this->isImagick()) {
-			return $this->image->getImageHeight();
-		}
 		return $this->height;
 	}
 
@@ -266,10 +271,12 @@ class Image
 	}
 
 	/**
+	 * Scales image down
+	 *
 	 * @param integer $max max dimension
 	 * @return mixed
 	 */
-	public function scaleDown($max)
+	public function scaleDown(int $max)
 	{
 		if (!$this->isValid()) {
 			return false;
@@ -278,56 +285,22 @@ class Image
 		$width = $this->getWidth();
 		$height = $this->getHeight();
 
-		if ((! $width)|| (! $height)) {
+		$scale = Images::getScalingDimensions($width, $height, $max);
+		if ($scale) {
+			return $this->scale($scale['width'], $scale['height']);
+		} else {
 			return false;
 		}
 
-		if ($width > $max && $height > $max) {
-			// very tall image (greater than 16:9)
-			// constrain the width - let the height float.
-
-			if ((($height * 9) / 16) > $width) {
-				$dest_width = $max;
-				$dest_height = intval(($height * $max) / $width);
-			} elseif ($width > $height) {
-				// else constrain both dimensions
-				$dest_width = $max;
-				$dest_height = intval(($height * $max) / $width);
-			} else {
-				$dest_width = intval(($width * $max) / $height);
-				$dest_height = $max;
-			}
-		} else {
-			if ($width > $max) {
-				$dest_width = $max;
-				$dest_height = intval(($height * $max) / $width);
-			} else {
-				if ($height > $max) {
-					// very tall image (greater than 16:9)
-					// but width is OK - don't do anything
-
-					if ((($height * 9) / 16) > $width) {
-						$dest_width = $width;
-						$dest_height = $height;
-					} else {
-						$dest_width = intval(($width * $max) / $height);
-						$dest_height = $max;
-					}
-				} else {
-					$dest_width = $width;
-					$dest_height = $height;
-				}
-			}
-		}
-
-		return $this->scale($dest_width, $dest_height);
 	}
 
 	/**
+	 * Rotates image
+	 *
 	 * @param integer $degrees degrees to rotate image
 	 * @return mixed
 	 */
-	public function rotate($degrees)
+	public function rotate(int $degrees)
 	{
 		if (!$this->isValid()) {
 			return false;
@@ -338,6 +311,9 @@ class Image
 			do {
 				$this->image->rotateImage(new ImagickPixel(), -$degrees); // ImageMagick rotates in the opposite direction of imagerotate()
 			} while ($this->image->nextImage());
+
+			$this->width  = $this->image->getImageWidth();
+			$this->height = $this->image->getImageHeight();
 			return;
 		}
 
@@ -348,11 +324,13 @@ class Image
 	}
 
 	/**
+	 * Flips image
+	 *
 	 * @param boolean $horiz optional, default true
 	 * @param boolean $vert  optional, default false
 	 * @return mixed
 	 */
-	public function flip($horiz = true, $vert = false)
+	public function flip(bool $horiz = true, bool $vert = false)
 	{
 		if (!$this->isValid()) {
 			return false;
@@ -388,23 +366,25 @@ class Image
 	}
 
 	/**
-	 * @param string $filename filename
+	 * Fixes orientation and maybe returns EXIF data (?)
+	 *
+	 * @param string $filename Filename
 	 * @return mixed
 	 */
-	public function orient($filename)
+	public function orient(string $filename)
 	{
 		if ($this->isImagick()) {
 			// based off comment on http://php.net/manual/en/imagick.getimageorientation.php
 			$orientation = $this->image->getImageOrientation();
 			switch ($orientation) {
 				case Imagick::ORIENTATION_BOTTOMRIGHT:
-					$this->image->rotateimage("#000", 180);
+					$this->rotate(180);
 					break;
 				case Imagick::ORIENTATION_RIGHTTOP:
-					$this->image->rotateimage("#000", 90);
+					$this->rotate(-90);
 					break;
 				case Imagick::ORIENTATION_LEFTBOTTOM:
-					$this->image->rotateimage("#000", -90);
+					$this->rotate(90);
 					break;
 			}
 
@@ -467,10 +447,12 @@ class Image
 	}
 
 	/**
-	 * @param integer $min minimum dimension
+	 * Rescales image to minimum size
+	 *
+	 * @param integer $min Minimum dimension
 	 * @return mixed
 	 */
-	public function scaleUp($min)
+	public function scaleUp(int $min)
 	{
 		if (!$this->isValid()) {
 			return false;
@@ -510,10 +492,12 @@ class Image
 	}
 
 	/**
-	 * @param integer $dim dimension
+	 * Scales image to square
+	 *
+	 * @param integer $dim Dimension
 	 * @return mixed
 	 */
-	public function scaleToSquare($dim)
+	public function scaleToSquare(int $dim)
 	{
 		if (!$this->isValid()) {
 			return false;
@@ -525,11 +509,11 @@ class Image
 	/**
 	 * Scale image to target dimensions
 	 *
-	 * @param int $dest_width
-	 * @param int $dest_height
-	 * @return boolean
+	 * @param int $dest_width Destination width
+	 * @param int $dest_height Destination height
+	 * @return boolean Success
 	 */
-	private function scale($dest_width, $dest_height)
+	private function scale(int $dest_width, int $dest_height): bool
 	{
 		if (!$this->isValid()) {
 			return false;
@@ -553,7 +537,6 @@ class Image
 				}
 			} while ($this->image->nextImage());
 
-			// These may not be necessary anymore
 			$this->width  = $this->image->getImageWidth();
 			$this->height = $this->image->getImageHeight();
 		} else {
@@ -581,6 +564,8 @@ class Image
 
 	/**
 	 * Convert a GIF to a PNG to make it static
+	 *
+	 * @return void
 	 */
 	public function toStatic()
 	{
@@ -595,6 +580,8 @@ class Image
 	}
 
 	/**
+	 * Crops image
+	 *
 	 * @param integer $max maximum
 	 * @param integer $x   x coordinate
 	 * @param integer $y   y coordinate
@@ -602,7 +589,7 @@ class Image
 	 * @param integer $h   height
 	 * @return mixed
 	 */
-	public function crop($max, $x, $y, $w, $h)
+	public function crop(int $max, int $x, int $y, int $w, int $h)
 	{
 		if (!$this->isValid()) {
 			return false;
@@ -613,7 +600,7 @@ class Image
 			do {
 				$this->image->cropImage($w, $h, $x, $y);
 				/*
-				 * We need to remove the canva,
+				 * We need to remove the canvas,
 				 * or the image is not resized to the crop:
 				 * http://php.net/manual/en/imagick.cropimage.php#97232
 				 */
@@ -632,27 +619,12 @@ class Image
 		if ($this->image) {
 			imagedestroy($this->image);
 		}
-		$this->image = $dest;
+		$this->image  = $dest;
 		$this->width  = imagesx($this->image);
 		$this->height = imagesy($this->image);
-	}
 
-	/**
-	 * @param string $path file path
-	 * @return mixed
-	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
-	 */
-	public function saveToFilePath($path)
-	{
-		if (!$this->isValid()) {
-			return false;
-		}
-
-		$string = $this->asString();
-
-		$stamp1 = microtime(true);
-		file_put_contents($path, $string);
-		DI::profiler()->saveTimestamp($stamp1, "file");
+		// All successful
+		return true;
 	}
 
 	/**
@@ -665,11 +637,14 @@ class Image
 	 * @return string
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public function __toString() {
-		return $this->asString();
+	public function __toString(): string
+	{
+		return (string) $this->asString();
 	}
 
 	/**
+	 * Returns image as string or false on failure
+	 *
 	 * @return mixed
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
@@ -683,81 +658,130 @@ class Image
 			try {
 				/* Clean it */
 				$this->image = $this->image->deconstructImages();
-				$string = $this->image->getImagesBlob();
-				return $string;
+				return $this->image->getImagesBlob();
 			} catch (Exception $e) {
 				return false;
 			}
 		}
 
-		ob_start();
+		$stream = fopen('php://memory','r+');
 
 		// Enable interlacing
 		imageinterlace($this->image, true);
 
 		switch ($this->getType()) {
-			case "image/png":
+			case 'image/png':
 				$quality = DI::config()->get('system', 'png_quality');
-				if ((!$quality) || ($quality > 9)) {
-					$quality = PNG_QUALITY;
-				}
-				imagepng($this->image, null, $quality);
+				imagepng($this->image, $stream, $quality);
 				break;
-			case "image/jpeg":
+
+			case 'image/jpeg':
+			case 'image/jpg':
 				$quality = DI::config()->get('system', 'jpeg_quality');
-				if ((!$quality) || ($quality > 100)) {
-					$quality = JPEG_QUALITY;
-				}
-				imagejpeg($this->image, null, $quality);
+				imagejpeg($this->image, $stream, $quality);
+				break;
 		}
-		$string = ob_get_contents();
-		ob_end_clean();
-
-		return $string;
+		rewind($stream);
+		return stream_get_contents($stream);
 	}
 
 	/**
-	 * supported mimetypes and corresponding file extensions
+	 * Create a blurhash out of a given image string
 	 *
-	 * @return array
-	 * @deprecated in version 2019.12 please use Util\Images::supportedTypes() instead.
+	 * @param string $img_str
+	 * @return string
 	 */
-	public static function supportedTypes()
+	public function getBlurHash(): string
 	{
-		return Images::supportedTypes();
+		$image = New Image($this->asString());
+		if (empty($image) || !$this->isValid()) {
+			return '';
+		}
+
+		$width  = $image->getWidth();
+		$height = $image->getHeight();
+
+		if (max($width, $height) > 90) {
+			$image->scaleDown(90);
+			$width  = $image->getWidth();
+			$height = $image->getHeight();
+		}
+
+		if (empty($width) || empty($height)) {
+			return '';
+		}
+
+		$pixels = [];
+		for ($y = 0; $y < $height; ++$y) {
+			$row = [];
+			for ($x = 0; $x < $width; ++$x) {
+				if ($image->isImagick()) {
+					try {
+						$colors = $image->image->getImagePixelColor($x, $y)->getColor();
+					} catch (\Exception $exception) {
+						return '';
+					}
+					$row[] = [$colors['r'], $colors['g'], $colors['b']];
+				} else {
+					$index = imagecolorat($image->image, $x, $y);
+					$colors = @imagecolorsforindex($image->image, $index);
+					$row[] = [$colors['red'], $colors['green'], $colors['blue']];
+				}
+			}
+			$pixels[] = $row;
+		}
+
+		// The components define the amount of details (1 to 9).
+		$components_x = 9;
+		$components_y = 9;
+
+		return Blurhash::encode($pixels, $components_x, $components_y);
 	}
 
 	/**
-	 * Maps Mime types to Imagick formats
+	 * Create an image out of a blurhash
 	 *
-	 * @return array With with image formats (mime type as key)
-	 * @deprecated in version 2019.12 please use Util\Images::getFormatsMap() instead.
+	 * @param string $blurhash
+	 * @param integer $width
+	 * @param integer $height
+	 * @return void
 	 */
-	public static function getFormatsMap()
+	public function getFromBlurHash(string $blurhash, int $width, int $height)
 	{
-		return Images::getFormatsMap();
-	}
+		$scaled = Images::getScalingDimensions($width, $height, 90);
+		$pixels = Blurhash::decode($blurhash, $scaled['width'], $scaled['height']);
 
-	/**
-	 * @param string $url url
-	 * @return array
-	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
-	 * @deprecated in version 2019.12 please use Util\Images::getInfoFromURLCached() instead.
-	 */
-	public static function getInfoFromURL($url)
-	{
-		return Images::getInfoFromURLCached($url);
-	}
+		if ($this->isImagick()) {
+			$this->image = new Imagick();
+			$draw  = new ImagickDraw();
+			$this->image->newImage($scaled['width'], $scaled['height'], '', 'png');
+		} else {
+			$this->image = imagecreatetruecolor($scaled['width'], $scaled['height']);
+		}
 
-	/**
-	 * @param integer $width  width
-	 * @param integer $height height
-	 * @param integer $max    max
-	 * @return array
-	 * @deprecated in version 2019.12 please use Util\Images::getScalingDimensions() instead.
-	 */
-	public static function getScalingDimensions($width, $height, $max)
-	{
-		return Images::getScalingDimensions($width, $height, $max);
+		for ($y = 0; $y < $scaled['height']; ++$y) {
+			for ($x = 0; $x < $scaled['width']; ++$x) {
+				[$r, $g, $b] = $pixels[$y][$x];
+				if ($this->isImagick()) {
+					$draw->setFillColor("rgb($r, $g, $b)");
+					$draw->point($x, $y);
+				} else {
+					imagesetpixel($this->image, $x, $y, imagecolorallocate($this->image, $r, $g, $b));
+				}
+			}
+		}
+
+		if ($this->isImagick()) {
+			$this->image->drawImage($draw);
+			$this->width  = $this->image->getImageWidth();
+			$this->height = $this->image->getImageHeight();
+		} else {
+			$this->width  = imagesx($this->image);
+			$this->height = imagesy($this->image);
+		}
+
+		$this->valid = !empty($this->image);
+
+		$this->scaleUp(min($width, $height));
 	}
 }

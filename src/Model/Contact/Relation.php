@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -69,6 +69,26 @@ class Relation
 	}
 
 	/**
+	 * Fetch the followers of a given user
+	 *
+	 * @param integer $uid User ID
+	 * @return void
+	 */
+	public static function discoverByUser(int $uid)
+	{
+		$contact = Contact::selectFirst(['id', 'url', 'network'], ['uid' => $uid, 'self' => true]);
+		if (empty($contact)) {
+			Logger::warning('Self contact for user not found', ['uid' => $uid]);
+			return;
+		}
+
+		$followers = self::getContacts($uid, [Contact::FOLLOWER, Contact::FRIEND]);
+		$followings = self::getContacts($uid, [Contact::SHARING, Contact::FRIEND]);
+
+		self::updateFollowersFollowings($contact, $followers, $followings);
+	}
+
+	/**
 	 * Fetches the followers of a given profile and adds them
 	 *
 	 * @param string $url URL of a profile
@@ -78,19 +98,22 @@ class Relation
 	{
 		$contact = Contact::getByURL($url);
 		if (empty($contact)) {
+			Logger::info('Contact not found', ['url' => $url]);
 			return;
 		}
 
 		if (!self::isDiscoverable($url, $contact)) {
+			Logger::info('Contact is not discoverable', ['url' => $url]);
 			return;
 		}
 
 		$uid = User::getIdForURL($url);
 		if (!empty($uid)) {
-			// Fetch the followers/followings locally
+			Logger::info('Fetch the followers/followings locally', ['url' => $url]);
 			$followers = self::getContacts($uid, [Contact::FOLLOWER, Contact::FRIEND]);
 			$followings = self::getContacts($uid, [Contact::SHARING, Contact::FRIEND]);
-		} else {
+		} elseif (!Contact::isLocal($url)) {
+			Logger::info('Fetch the followers/followings by polling the endpoints', ['url' => $url]);
 			$apcontact = APContact::getByURL($url, false);
 
 			if (!empty($apcontact['followers']) && is_string($apcontact['followers'])) {
@@ -104,15 +127,33 @@ class Relation
 			} else {
 				$followings = [];
 			}
+		} else {
+			Logger::warning('Contact seems to be local but could not be found here', ['url' => $url]);
+			$followers = [];
+			$followings = [];
 		}
 
+		self::updateFollowersFollowings($contact, $followers, $followings);
+	}
+
+	/**
+	 * Update followers and followings for the given contact
+	 *
+	 * @param array $contact
+	 * @param array $followers
+	 * @param array $followings
+	 * @return void
+	 */
+	private static function updateFollowersFollowings(array $contact, array $followers, array $followings)
+	{
 		if (empty($followers) && empty($followings)) {
-			DBA::update('contact', ['last-discovery' => DateTimeFormat::utcNow()], ['id' => $contact['id']]);
-			Logger::info('The contact does not offer discoverable data', ['id' => $contact['id'], 'url' => $url, 'network' => $contact['network']]);
+			Contact::update(['last-discovery' => DateTimeFormat::utcNow()], ['id' => $contact['id']]);
+			Logger::info('The contact does not offer discoverable data', ['id' => $contact['id'], 'url' => $contact['url'], 'network' => $contact['network']]);
 			return;
 		}
 
 		$target = $contact['id'];
+		$url    = $contact['url'];
 
 		if (!empty($followers)) {
 			// Clear the follower list, since it will be recreated in the next step
@@ -155,7 +196,7 @@ class Relation
 			DBA::delete('contact-relation', ['cid' => $target, 'follows' => false, 'last-interaction' => DBA::NULL_DATETIME]);
 		}
 
-		DBA::update('contact', ['last-discovery' => DateTimeFormat::utcNow()], ['id' => $target]);
+		Contact::update(['last-discovery' => DateTimeFormat::utcNow()], ['id' => $target]);
 		Logger::info('Contacts discovery finished', ['id' => $target, 'url' => $url, 'follower' => $follower_counter, 'following' => $following_counter]);
 		return;
 	}
@@ -167,7 +208,7 @@ class Relation
 	 * @param array $rel
 	 * @return array contact list
 	 */
-	private static function getContacts(int $uid, array $rel)
+	private static function getContacts(int $uid, array $rel): array
 	{
 		$list = [];
 		$profile = Profile::getByUID($uid);
@@ -175,8 +216,15 @@ class Relation
 			return $list;
 		}
 
-		$condition = ['rel' => $rel, 'uid' => $uid, 'self' => false, 'deleted' => false,
-			'hidden' => false, 'archive' => false, 'pending' => false];
+		$condition = [
+			'rel' => $rel,
+			'uid' => $uid,
+			'self' => false,
+			'deleted' => false,
+			'hidden' => false,
+			'archive' => false,
+			'pending' => false,
+		];
 		$condition = DBA::mergeConditions($condition, ["`url` IN (SELECT `url` FROM `apcontact`)"]);
 		$contacts = DBA::select('contact', ['url'], $condition);
 		while ($contact = DBA::fetch($contacts)) {
@@ -194,7 +242,7 @@ class Relation
 	 * @param array  $contact Contact array
 	 * @return boolean True if contact is discoverable
 	 */
-	public static function isDiscoverable(string $url, array $contact = [])
+	public static function isDiscoverable(string $url, array $contact = []): bool
 	{
 		$contact_discovery = DI::config()->get('system', 'contact_discovery');
 
@@ -247,13 +295,72 @@ class Relation
 	}
 
 	/**
-	 * @param int $uid   user
+	 * Check if the cached suggestion is outdated
+	 *
+	 * @param integer $uid
+	 * @return boolean
+	 */
+	static public function areSuggestionsOutdated(int $uid): bool
+	{
+		return DI::pConfig()->get($uid, 'suggestion', 'last_update') + 3600 < time();
+	}
+
+	/**
+	 * Update contact suggestions for a given user
+	 *
+	 * @param integer $uid
+	 * @return void
+	 */
+	static public function updateCachedSuggestions(int $uid)
+	{
+		if (!self::areSuggestionsOutdated($uid)) {
+			return;
+		}
+
+		DBA::delete('account-suggestion', ['uid' => $uid, 'ignore' => false]);
+
+		foreach (self::getSuggestions($uid) as $contact) {
+			DBA::insert('account-suggestion', ['uri-id' => $contact['uri-id'], 'uid' => $uid, 'level' => 1], Database::INSERT_IGNORE);
+		}
+
+		DI::pConfig()->set($uid, 'suggestion', 'last_update', time());
+	}
+
+	/**
+	 * Returns a cached array of suggested contacts for given user id
+	 *
+	 * @param int $uid   User id
 	 * @param int $start optional, default 0
 	 * @param int $limit optional, default 80
 	 * @return array
 	 */
-	static public function getSuggestions(int $uid, int $start = 0, int $limit = 80)
+	static public function getCachedSuggestions(int $uid, int $start = 0, int $limit = 80): array
 	{
+		$condition = ["`uid` = ? AND `uri-id` IN (SELECT `uri-id` FROM `account-suggestion` WHERE NOT `ignore` AND `uid` = ?)", 0, $uid];
+		$params = ['limit' => [$start, $limit]];
+		$cached = DBA::selectToArray('contact', [], $condition, $params);
+
+		if (!empty($cached)) {
+			return $cached;
+		} else {
+			return self::getSuggestions($uid, $start, $limit);
+		}
+	}
+
+	/**
+	 * Returns an array of suggested contacts for given user id
+	 *
+	 * @param int $uid   User id
+	 * @param int $start optional, default 0
+	 * @param int $limit optional, default 80
+	 * @return array
+	 */
+	static public function getSuggestions(int $uid, int $start = 0, int $limit = 80): array
+	{
+		if ($uid == 0) {
+			return [];
+		}
+
 		$cid = Contact::getPublicIdByUserId($uid);
 		$totallimit = $start + $limit;
 		$contacts = [];
@@ -265,20 +372,26 @@ class Relation
 
 		// The query returns contacts where contacts interacted with whom the given user follows.
 		// Contacts who already are in the user's contact table are ignored.
-		$results = DBA::select('contact', [],
-			["`id` IN (SELECT `cid` FROM `contact-relation` WHERE `relation-cid` IN
+		$results = DBA::select('contact', [], ["`id` IN (SELECT `cid` FROM `contact-relation` WHERE `relation-cid` IN
 				(SELECT `cid` FROM `contact-relation` WHERE `relation-cid` = ?)
 					AND NOT `cid` IN (SELECT `id` FROM `contact` WHERE `uid` = ? AND `nurl` IN
-						(SELECT `nurl` FROM `contact` WHERE `uid` = ? AND `rel` IN (?, ?))))
-			AND NOT `hidden` AND `network` IN (?, ?, ?, ?)",
-			$cid, 0, $uid, Contact::FRIEND, Contact::SHARING,
-			Protocol::ACTIVITYPUB, Protocol::DFRN, $diaspora, $ostatus],
-			['order' => ['last-item' => true], 'limit' => $totallimit]
+						(SELECT `nurl` FROM `contact` WHERE `uid` = ? AND `rel` IN (?, ?))) AND `id` = `cid`)
+			AND NOT `hidden` AND `network` IN (?, ?, ?, ?)
+			AND NOT `uri-id` IN (SELECT `uri-id` FROM `account-suggestion` WHERE `uri-id` = `contact`.`uri-id` AND `uid` = ?)",
+			$cid,
+			0,
+			$uid, Contact::FRIEND, Contact::SHARING,
+			Protocol::ACTIVITYPUB, Protocol::DFRN, $diaspora, $ostatus, $uid
+			], [
+				'order' => ['last-item' => true],
+				'limit' => $totallimit,
+			]
 		);
 
 		while ($contact = DBA::fetch($results)) {
 			$contacts[$contact['id']] = $contact;
 		}
+
 		DBA::close($results);
 
 		Logger::info('Contacts of contacts who are followed by the given user', ['uid' => $uid, 'cid' => $cid, 'count' => count($contacts)]);
@@ -293,10 +406,11 @@ class Relation
 			["`id` IN (SELECT `cid` FROM `contact-relation` WHERE `relation-cid` IN
 				(SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ?)
 					AND NOT `cid` IN (SELECT `id` FROM `contact` WHERE `uid` = ? AND `nurl` IN
-						(SELECT `nurl` FROM `contact` WHERE `uid` = ? AND `rel` IN (?, ?))))
-			AND NOT `hidden` AND `network` IN (?, ?, ?, ?)",
+						(SELECT `nurl` FROM `contact` WHERE `uid` = ? AND `rel` IN (?, ?))) AND `id` = `cid`)
+			AND NOT `hidden` AND `network` IN (?, ?, ?, ?)
+			AND NOT `uri-id` IN (SELECT `uri-id` FROM `account-suggestion` WHERE `uri-id` = `contact`.`uri-id` AND `uid` = ?)",
 			$cid, 0, $uid, Contact::FRIEND, Contact::SHARING,
-			Protocol::ACTIVITYPUB, Protocol::DFRN, $diaspora, $ostatus],
+			Protocol::ACTIVITYPUB, Protocol::DFRN, $diaspora, $ostatus, $uid],
 			['order' => ['last-item' => true], 'limit' => $totallimit]
 		);
 
@@ -314,9 +428,10 @@ class Relation
 		// The query returns contacts that follow the given user but aren't followed by that user.
 		$results = DBA::select('contact', [],
 			["`nurl` IN (SELECT `nurl` FROM `contact` WHERE `uid` = ? AND `rel` = ?)
-			AND NOT `hidden` AND `uid` = ? AND `network` IN (?, ?, ?, ?)",
-			$uid, Contact::FOLLOWER, 0, 
-			Protocol::ACTIVITYPUB, Protocol::DFRN, $diaspora, $ostatus],
+			AND NOT `hidden` AND `uid` = ? AND `network` IN (?, ?, ?, ?)
+			AND NOT `uri-id` IN (SELECT `uri-id` FROM `account-suggestion` WHERE `uri-id` = `contact`.`uri-id` AND `uid` = ?)",
+			$uid, Contact::FOLLOWER, 0,
+			Protocol::ACTIVITYPUB, Protocol::DFRN, $diaspora, $ostatus, $uid],
 			['order' => ['last-item' => true], 'limit' => $totallimit]
 		);
 
@@ -333,10 +448,11 @@ class Relation
 
 		// The query returns any contact that isn't followed by that user.
 		$results = DBA::select('contact', [],
-			["NOT `nurl` IN (SELECT `nurl` FROM `contact` WHERE `uid` = ? AND `rel` IN (?, ?))
-			AND NOT `hidden` AND `uid` = ? AND `network` IN (?, ?, ?, ?)",
-			$uid, Contact::FRIEND, Contact::SHARING, 0, 
-			Protocol::ACTIVITYPUB, Protocol::DFRN, $diaspora, $ostatus],
+			["NOT `nurl` IN (SELECT `nurl` FROM `contact` WHERE `uid` = ? AND `rel` IN (?, ?) AND `nurl` = `nurl`)
+			AND NOT `hidden` AND `uid` = ? AND `network` IN (?, ?, ?, ?)
+			AND NOT `uri-id` IN (SELECT `uri-id` FROM `account-suggestion` WHERE `uri-id` = `contact`.`uri-id` AND `uid` = ?)",
+			$uid, Contact::FRIEND, Contact::SHARING, 0,
+			Protocol::ACTIVITYPUB, Protocol::DFRN, $diaspora, $ostatus, $uid],
 			['order' => ['last-item' => true], 'limit' => $totallimit]
 		);
 
@@ -358,12 +474,12 @@ class Relation
 	 * @return int
 	 * @throws Exception
 	 */
-	public static function countFollows(int $cid, array $condition = [])
+	public static function countFollows(int $cid, array $condition = []): int
 	{
-		$condition = DBA::mergeConditions($condition,
-			['`id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ? AND `follows`)', 
-			$cid]
-		);
+		$condition = DBA::mergeConditions($condition, [
+			'`id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ? AND `follows`)',
+			$cid,
+		]);
 
 		return DI::dba()->count('contact', $condition);
 	}
@@ -382,7 +498,7 @@ class Relation
 	public static function listFollows(int $cid, array $condition = [], int $count = 30, int $offset = 0, bool $shuffle = false)
 	{
 		$condition = DBA::mergeConditions($condition,
-			['`id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ? AND `follows`)', 
+			['`id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ? AND `follows`)',
 			$cid]
 		);
 
@@ -549,7 +665,7 @@ class Relation
 	 * @param int   $count
 	 * @param int   $offset
 	 * @param bool  $shuffle
-	 * @return array
+	 * @return array|bool Array on success, false on failure
 	 * @throws Exception
 	 */
 	public static function listCommon(int $sourceId, int $targetId, array $condition = [], int $count = 30, int $offset = 0, bool $shuffle = false)
@@ -574,7 +690,7 @@ class Relation
 	 * @return int
 	 * @throws Exception
 	 */
-	public static function countCommonFollows(int $sourceId, int $targetId, array $condition = [])
+	public static function countCommonFollows(int $sourceId, int $targetId, array $condition = []): int
 	{
 		$condition = DBA::mergeConditions($condition,
 			['`id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ? AND `follows`) 
@@ -594,7 +710,7 @@ class Relation
 	 * @param int   $count
 	 * @param int   $offset
 	 * @param bool  $shuffle
-	 * @return array
+	 * @return array|bool Array on success, false on failure
 	 * @throws Exception
 	 */
 	public static function listCommonFollows(int $sourceId, int $targetId, array $condition = [], int $count = 30, int $offset = 0, bool $shuffle = false)
@@ -619,7 +735,7 @@ class Relation
 	 * @return int
 	 * @throws Exception
 	 */
-	public static function countCommonFollowers(int $sourceId, int $targetId, array $condition = [])
+	public static function countCommonFollowers(int $sourceId, int $targetId, array $condition = []): int
 	{
 		$condition = DBA::mergeConditions($condition,
 			["`id` IN (SELECT `cid` FROM `contact-relation` WHERE `relation-cid` = ? AND `follows`) 
@@ -639,7 +755,7 @@ class Relation
 	 * @param int   $count
 	 * @param int   $offset
 	 * @param bool  $shuffle
-	 * @return array
+	 * @return array|bool Array on success, false on failure
 	 * @throws Exception
 	 */
 	public static function listCommonFollowers(int $sourceId, int $targetId, array $condition = [], int $count = 30, int $offset = 0, bool $shuffle = false)

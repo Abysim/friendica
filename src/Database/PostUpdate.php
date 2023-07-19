@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,6 +25,7 @@ use Friendica\Core\Logger;
 use Friendica\Core\Protocol;
 use Friendica\DI;
 use Friendica\Model\Contact;
+use Friendica\Model\Conversation;
 use Friendica\Model\GServer;
 use Friendica\Model\Item;
 use Friendica\Model\ItemURI;
@@ -33,7 +34,11 @@ use Friendica\Model\Post;
 use Friendica\Model\Post\Category;
 use Friendica\Model\Tag;
 use Friendica\Model\Verb;
+use Friendica\Protocol\ActivityPub\Processor;
+use Friendica\Protocol\ActivityPub\Receiver;
+use Friendica\Util\JsonLD;
 use Friendica\Util\Strings;
+use GuzzleHttp\Psr7\Uri;
 
 /**
  * These database-intensive post update routines are meant to be executed in the background by the cronjob.
@@ -45,7 +50,8 @@ class PostUpdate
 {
 	// Needed for the helper function to read from the legacy term table
 	const OBJECT_TYPE_POST  = 1;
-	const VERSION = 1400;
+
+	const VERSION = 1507;
 
 	/**
 	 * Calls the post update functions
@@ -91,6 +97,33 @@ class PostUpdate
 		if (!self::update1400()) {
 			return false;
 		}
+		if (!self::update1424()) {
+			return false;
+		}
+		if (!self::update1425()) {
+			return false;
+		}
+		if (!self::update1426()) {
+			return false;
+		}
+		if (!self::update1427()) {
+			return false;
+		}
+		if (!self::update1452()) {
+			return false;
+		}
+		if (!self::update1483()) {
+			return false;
+		}
+		if (!self::update1484()) {
+			return false;
+		}
+		if (!self::update1506()) {
+			return false;
+		}
+		if (!self::update1507()) {
+			return false;
+		}
 		return true;
 	}
 
@@ -103,17 +136,17 @@ class PostUpdate
 	private static function update1297()
 	{
 		// Was the script completed?
-		if (DI::config()->get('system', 'post_update_version') >= 1297) {
+		if (DI::keyValue()->get('post_update_version') >= 1297) {
 			return true;
 		}
 
 		if (!DBStructure::existsTable('item-delivery-data')) {
-			DI::config()->set('system', 'post_update_version', 1297);
+			DI::keyValue()->set('post_update_version', 1297);
 			return true;
 		}
 
 		$max_item_delivery_data = DBA::selectFirst('item-delivery-data', ['iid'], ['queue_count > 0 OR queue_done > 0'], ['order' => ['iid']]);
-		$max_iid = $max_item_delivery_data['iid'];
+		$max_iid = $max_item_delivery_data['iid'] ?? 0;
 
 		Logger::info('Start update1297 with max iid: ' . $max_iid);
 
@@ -128,7 +161,7 @@ class PostUpdate
 
 		Logger::info('Processed rows: ' . DBA::affectedRows());
 
-		DI::config()->set('system', 'post_update_version', 1297);
+		DI::keyValue()->set('post_update_version', 1297);
 
 		Logger::info('Done');
 
@@ -143,7 +176,7 @@ class PostUpdate
 	private static function update1322()
 	{
 		// Was the script completed?
-		if (DI::config()->get('system', 'post_update_version') >= 1322) {
+		if (DI::keyValue()->get('post_update_version') >= 1322) {
 			return true;
 		}
 
@@ -162,7 +195,7 @@ class PostUpdate
 		}
 
 		DBA::close($contact);
-		DI::config()->set('system', 'post_update_version', 1322);
+		DI::keyValue()->set('post_update_version', 1322);
 
 		Logger::info('Done');
 
@@ -178,16 +211,16 @@ class PostUpdate
 	private static function update1329()
 	{
 		// Was the script completed?
-		if (DI::config()->get('system', 'post_update_version') >= 1329) {
+		if (DI::keyValue()->get('post_update_version') >= 1329) {
 			return true;
 		}
 
 		if (!DBStructure::existsTable('item')) {
-			DI::config()->set('system', 'post_update_version', 1329);
+			DI::keyValue()->set('post_update_version', 1329);
 			return true;
 		}
 
-		$id = DI::config()->get('system', 'post_update_version_1329_id', 0);
+		$id = DI::keyValue()->get('post_update_version_1329_id') ?? 0;
 
 		Logger::info('Start', ['item' => $id]);
 
@@ -211,12 +244,12 @@ class PostUpdate
 		}
 		DBA::close($items);
 
-		DI::config()->set('system', 'post_update_version_1329_id', $id);
+		DI::keyValue()->set('post_update_version_1329_id', $id);
 
 		Logger::info('Processed', ['rows' => $rows, 'last' => $id]);
 
 		if ($start_id == $id) {
-			DI::config()->set('system', 'post_update_version', 1329);
+			DI::keyValue()->set('post_update_version', 1329);
 			Logger::info('Done');
 			return true;
 		}
@@ -233,16 +266,16 @@ class PostUpdate
 	private static function update1341()
 	{
 		// Was the script completed?
-		if (DI::config()->get('system', 'post_update_version') >= 1341) {
+		if (DI::keyValue()->get('post_update_version') >= 1341) {
 			return true;
 		}
 
 		if (!DBStructure::existsTable('item-content')) {
-			DI::config()->set('system', 'post_update_version', 1342);
+			DI::keyValue()->set('post_update_version', 1342);
 			return true;
 		}
 
-		$id = DI::config()->get('system', 'post_update_version_1341_id', 0);
+		$id = DI::keyValue()->get('post_update_version_1341_id') ?? 0;
 
 		Logger::info('Start', ['item' => $id]);
 
@@ -262,19 +295,19 @@ class PostUpdate
 			$id = $item['uri-id'];
 			++$rows;
 			if ($rows % 1000 == 0) {
-				DI::config()->set('system', 'post_update_version_1341_id', $id);
+				DI::keyValue()->set('post_update_version_1341_id', $id);
 			}
 		}
 		DBA::close($items);
 
-		DI::config()->set('system', 'post_update_version_1341_id', $id);
+		DI::keyValue()->set('post_update_version_1341_id', $id);
 
 		Logger::info('Processed', ['rows' => $rows, 'last' => $id]);
 
 		// When there are less than 1,000 items processed this means that we reached the end
 		// The other entries will then be processed with the regular functionality
 		if ($rows < 1000) {
-			DI::config()->set('system', 'post_update_version', 1341);
+			DI::keyValue()->set('post_update_version', 1341);
 			Logger::info('Done');
 			return true;
 		}
@@ -291,16 +324,16 @@ class PostUpdate
 	private static function update1342()
 	{
 		// Was the script completed?
-		if (DI::config()->get('system', 'post_update_version') >= 1342) {
+		if (DI::keyValue()->get('post_update_version') >= 1342) {
 			return true;
 		}
 
 		if (!DBStructure::existsTable('term') || !DBStructure::existsTable('item-content')) {
-			DI::config()->set('system', 'post_update_version', 1342);
+			DI::keyValue()->set('post_update_version', 1342);
 			return true;
 		}
 
-		$id = DI::config()->get('system', 'post_update_version_1342_id', 0);
+		$id = DI::keyValue()->get('post_update_version_1342_id') ?? 0;
 
 		Logger::info('Start', ['item' => $id]);
 
@@ -333,24 +366,24 @@ class PostUpdate
                 }
 			}
 
-			Tag::store($term['uri-id'], $term['type'], $term['term'], $term['url'], false);
+			Tag::store($term['uri-id'], $term['type'], $term['term'], $term['url']);
 
 			$id = $term['tid'];
 			++$rows;
 			if ($rows % 1000 == 0) {
-				DI::config()->set('system', 'post_update_version_1342_id', $id);
+				DI::keyValue()->set('post_update_version_1342_id', $id);
 			}
 		}
 		DBA::close($terms);
 
-		DI::config()->set('system', 'post_update_version_1342_id', $id);
+		DI::keyValue()->set('post_update_version_1342_id', $id);
 
 		Logger::info('Processed', ['rows' => $rows, 'last' => $id]);
 
 		// When there are less than 1,000 items processed this means that we reached the end
 		// The other entries will then be processed with the regular functionality
 		if ($rows < 1000) {
-			DI::config()->set('system', 'post_update_version', 1342);
+			DI::keyValue()->set('post_update_version', 1342);
 			Logger::info('Done');
 			return true;
 		}
@@ -367,16 +400,16 @@ class PostUpdate
 	private static function update1345()
 	{
 		// Was the script completed?
-		if (DI::config()->get('system', 'post_update_version') >= 1345) {
+		if (DI::keyValue()->get('post_update_version') >= 1345) {
 			return true;
 		}
 
 		if (!DBStructure::existsTable('item-delivery-data')) {
-			DI::config()->set('system', 'post_update_version', 1345);
+			DI::keyValue()->set('post_update_version', 1345);
 			return true;
 		}
 
-		$id = DI::config()->get('system', 'post_update_version_1345_id', 0);
+		$id = DI::keyValue()->get('post_update_version_1345_id') ?? 0;
 
 		Logger::info('Start', ['item' => $id]);
 
@@ -401,14 +434,14 @@ class PostUpdate
 		}
 		DBA::close($deliveries);
 
-		DI::config()->set('system', 'post_update_version_1345_id', $id);
+		DI::keyValue()->set('post_update_version_1345_id', $id);
 
 		Logger::info('Processed', ['rows' => $rows, 'last' => $id]);
 
 		// When there are less than 100 items processed this means that we reached the end
 		// The other entries will then be processed with the regular functionality
 		if ($rows < 100) {
-			DI::config()->set('system', 'post_update_version', 1345);
+			DI::keyValue()->set('post_update_version', 1345);
 			Logger::info('Done');
 			return true;
 		}
@@ -450,16 +483,16 @@ class PostUpdate
 	private static function update1346()
 	{
 		// Was the script completed?
-		if (DI::config()->get('system', 'post_update_version') >= 1346) {
+		if (DI::keyValue()->get('post_update_version') >= 1346) {
 			return true;
 		}
 
 		if (!DBStructure::existsTable('term')) {
-			DI::config()->set('system', 'post_update_version', 1346);
+			DI::keyValue()->set('post_update_version', 1346);
 			return true;
 		}
 
-		$id = DI::config()->get('system', 'post_update_version_1346_id', 0);
+		$id = DI::keyValue()->get('post_update_version_1346_id') ?? 0;
 
 		Logger::info('Start', ['item' => $id]);
 
@@ -488,19 +521,19 @@ class PostUpdate
 			$id = $term['oid'];
 			++$rows;
 			if ($rows % 100 == 0) {
-				DI::config()->set('system', 'post_update_version_1346_id', $id);
+				DI::keyValue()->set('post_update_version_1346_id', $id);
 			}
 		}
 		DBA::close($terms);
 
-		DI::config()->set('system', 'post_update_version_1346_id', $id);
+		DI::keyValue()->set('post_update_version_1346_id', $id);
 
 		Logger::info('Processed', ['rows' => $rows, 'last' => $id]);
 
 		// When there are less than 10 items processed this means that we reached the end
 		// The other entries will then be processed with the regular functionality
 		if ($rows < 10) {
-			DI::config()->set('system', 'post_update_version', 1346);
+			DI::keyValue()->set('post_update_version', 1346);
 			Logger::info('Done');
 			return true;
 		}
@@ -518,16 +551,16 @@ class PostUpdate
 	private static function update1347()
 	{
 		// Was the script completed?
-		if (DI::config()->get("system", "post_update_version") >= 1347) {
+		if (DI::keyValue()->get('post_update_version') >= 1347) {
 			return true;
 		}
 
 		if (!DBStructure::existsTable('item-activity') || !DBStructure::existsTable('item')) {
-			DI::config()->set('system', 'post_update_version', 1347);
+			DI::keyValue()->set('post_update_version', 1347);
 			return true;
 		}
 
-		$id = DI::config()->get("system", "post_update_version_1347_id", 0);
+		$id = DI::keyValue()->get('post_update_version_1347_id') ?? 0;
 
 		Logger::info('Start', ['item' => $id]);
 
@@ -537,7 +570,7 @@ class PostUpdate
 		$items = DBA::p("SELECT `item`.`id`, `item`.`verb` AS `item-verb`, `item-content`.`verb`, `item-activity`.`activity`
 			FROM `item` LEFT JOIN `item-content` ON `item-content`.`uri-id` = `item`.`uri-id`
 			LEFT JOIN `item-activity` ON `item-activity`.`uri-id` = `item`.`uri-id` AND `item`.`gravity` = ?
-			WHERE `item`.`id` >= ? AND `item`.`vid` IS NULL ORDER BY `item`.`id` LIMIT 10000", GRAVITY_ACTIVITY, $id);
+			WHERE `item`.`id` >= ? AND `item`.`vid` IS NULL ORDER BY `item`.`id` LIMIT 10000", Item::GRAVITY_ACTIVITY, $id);
 
 		if (DBA::errorNo() != 0) {
 			Logger::error('Database error', ['no' => DBA::errorNo(), 'message' => DBA::errorMessage()]);
@@ -562,12 +595,12 @@ class PostUpdate
 		}
 		DBA::close($items);
 
-		DI::config()->set("system", "post_update_version_1347_id", $id);
+		DI::keyValue()->set('post_update_version_1347_id', $id);
 
 		Logger::info('Processed', ['rows' => $rows, 'last' => $id]);
 
 		if ($start_id == $id) {
-			DI::config()->set("system", "post_update_version", 1347);
+			DI::keyValue()->set('post_update_version', 1347);
 			Logger::info('Done');
 			return true;
 		}
@@ -585,11 +618,11 @@ class PostUpdate
 	private static function update1348()
 	{
 		// Was the script completed?
-		if (DI::config()->get("system", "post_update_version") >= 1348) {
+		if (DI::keyValue()->get('post_update_version') >= 1348) {
 			return true;
 		}
 
-		$id = DI::config()->get("system", "post_update_version_1348_id", 0);
+		$id = DI::keyValue()->get('post_update_version_1348_id') ?? 0;
 
 		Logger::info('Start', ['contact' => $id]);
 
@@ -615,12 +648,12 @@ class PostUpdate
 		}
 		DBA::close($contacts);
 
-		DI::config()->set("system", "post_update_version_1348_id", $id);
+		DI::keyValue()->set('post_update_version_1348_id', $id);
 
 		Logger::info('Processed', ['rows' => $rows, 'last' => $id]);
 
 		if ($start_id == $id) {
-			DI::config()->set("system", "post_update_version", 1348);
+			DI::keyValue()->set('post_update_version', 1348);
 			Logger::info('Done');
 			return true;
 		}
@@ -638,11 +671,11 @@ class PostUpdate
 	private static function update1349()
 	{
 		// Was the script completed?
-		if (DI::config()->get("system", "post_update_version") >= 1349) {
+		if (DI::keyValue()->get('post_update_version') >= 1349) {
 			return true;
 		}
 
-		$id = DI::config()->get("system", "post_update_version_1349_id", '');
+		$id = DI::keyValue()->get('post_update_version_1349_id') ?? '';
 
 		Logger::info('Start', ['apcontact' => $id]);
 
@@ -668,12 +701,12 @@ class PostUpdate
 		}
 		DBA::close($apcontacts);
 
-		DI::config()->set("system", "post_update_version_1349_id", $id);
+		DI::keyValue()->set('post_update_version_1349_id', $id);
 
 		Logger::info('Processed', ['rows' => $rows, 'last' => $id]);
 
 		if ($start_id == $id) {
-			DI::config()->set("system", "post_update_version", 1349);
+			DI::keyValue()->set('post_update_version', 1349);
 			Logger::info('Done');
 			return true;
 		}
@@ -691,7 +724,7 @@ class PostUpdate
 	private static function update1383()
 	{
 		// Was the script completed?
-		if (DI::config()->get("system", "post_update_version") >= 1383) {
+		if (DI::keyValue()->get('post_update_version') >= 1383) {
 			return true;
 		}
 
@@ -717,7 +750,7 @@ class PostUpdate
 		}
 		DBA::close($photos);
 
-		DI::config()->set("system", "post_update_version", 1383);
+		DI::keyValue()->set('post_update_version', 1383);
 		Logger::info('Done', ['deleted' => $deleted]);
 		return true;
 	}
@@ -732,7 +765,7 @@ class PostUpdate
 	private static function update1384()
 	{
 		// Was the script completed?
-		if (DI::config()->get("system", "post_update_version") >= 1384) {
+		if (DI::keyValue()->get('post_update_version') >= 1384) {
 			return true;
 		}
 
@@ -740,7 +773,7 @@ class PostUpdate
 		Logger::info('Start', ['rest' => DBA::count('photo', $condition)]);
 
 		$rows = 0;
-		$photos = DBA::select('photo', [], $condition, ['limit' => 10000]);
+		$photos = DBA::select('photo', [], $condition, ['limit' => 100]);
 
 		if (DBA::errorNo() != 0) {
 			Logger::error('Database error', ['no' => DBA::errorNo(), 'message' => DBA::errorMessage()]);
@@ -762,7 +795,7 @@ class PostUpdate
 		Logger::info('Processed', ['rows' => $rows]);
 
 		if ($rows <= 100) {
-			DI::config()->set("system", "post_update_version", 1384);
+			DI::keyValue()->set('post_update_version', 1384);
 			Logger::info('Done');
 			return true;
 		}
@@ -771,7 +804,7 @@ class PostUpdate
 	}
 
 	/**
-	 * update the "hash" field in the photo table
+	 * update the "external-id" field in the post table
 	 *
 	 * @return bool "true" when the job is done
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
@@ -780,12 +813,12 @@ class PostUpdate
 	private static function update1400()
 	{
 		// Was the script completed?
-		if (DI::config()->get("system", "post_update_version") >= 1400) {
+		if (DI::keyValue()->get('post_update_version') >= 1400) {
 			return true;
 		}
 
 		if (!DBStructure::existsTable('item')) {
-			DI::config()->set("system", "post_update_version", 1400);
+			DI::keyValue()->set('post_update_version', 1400);
 			return true;
 		}
 
@@ -809,7 +842,461 @@ class PostUpdate
 		Logger::info('Processed', ['rows' => $rows]);
 
 		if ($rows <= 100) {
-			DI::config()->set("system", "post_update_version", 1400);
+			DI::keyValue()->set('post_update_version', 1400);
+			Logger::info('Done');
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * update the "uri-id" field in the contact table
+	 *
+	 * @return bool "true" when the job is done
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 * @throws \ImagickException
+	 */
+	private static function update1424()
+	{
+		// Was the script completed?
+		if (DI::keyValue()->get('post_update_version') >= 1424) {
+			return true;
+		}
+
+		$condition = ["`uri-id` IS NULL"];
+		Logger::info('Start', ['rest' => DBA::count('contact', $condition)]);
+
+		$rows = 0;
+		$contacts = DBA::select('contact', ['id', 'url'], $condition, ['limit' => 1000]);
+
+		if (DBA::errorNo() != 0) {
+			Logger::error('Database error', ['no' => DBA::errorNo(), 'message' => DBA::errorMessage()]);
+			return false;
+		}
+
+		while ($contact = DBA::fetch($contacts)) {
+			DBA::update('contact', ['uri-id' => ItemURI::getIdByURI($contact['url'])], ['id' => $contact['id']]);
+			++$rows;
+		}
+		DBA::close($contacts);
+
+		Logger::info('Processed', ['rows' => $rows]);
+
+		if ($rows <= 100) {
+			DI::keyValue()->set('post_update_version', 1424);
+			Logger::info('Done');
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * update the "uri-id" field in the fcontact table
+	 *
+	 * @return bool "true" when the job is done
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 * @throws \ImagickException
+	 */
+	private static function update1425()
+	{
+		// Was the script completed?
+		if (DI::keyValue()->get('post_update_version') >= 1425) {
+			return true;
+		}
+
+		if (!DBStructure::existsTable('fcontact')) {
+			DI::keyValue()->set('post_update_version', 1425);
+			return true;
+		}
+
+		$condition = ["`uri-id` IS NULL"];
+		Logger::info('Start', ['rest' => DBA::count('fcontact', $condition)]);
+
+		$rows = 0;
+		$fcontacts = DBA::select('fcontact', ['id', 'url', 'guid'], $condition, ['limit' => 1000]);
+
+		if (DBA::errorNo() != 0) {
+			Logger::error('Database error', ['no' => DBA::errorNo(), 'message' => DBA::errorMessage()]);
+			return false;
+		}
+
+		while ($fcontact = DBA::fetch($fcontacts)) {
+			if (!empty($fcontact['guid'])) {
+				$uriid = ItemURI::insert(['uri' => $fcontact['url'], 'guid' => $fcontact['guid']]);
+			} else {
+				$uriid = ItemURI::getIdByURI($fcontact['url']);
+			}
+			DBA::update('fcontact', ['uri-id' => $uriid], ['id' => $fcontact['id']]);
+			++$rows;
+		}
+		DBA::close($fcontacts);
+
+		Logger::info('Processed', ['rows' => $rows]);
+
+		if ($rows <= 100) {
+			DI::keyValue()->set('post_update_version', 1425);
+			Logger::info('Done');
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * update the "uri-id" field in the apcontact table
+	 *
+	 * @return bool "true" when the job is done
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 * @throws \ImagickException
+	 */
+	private static function update1426()
+	{
+		// Was the script completed?
+		if (DI::keyValue()->get('post_update_version') >= 1426) {
+			return true;
+		}
+
+		$condition = ["`uri-id` IS NULL"];
+		Logger::info('Start', ['rest' => DBA::count('apcontact', $condition)]);
+
+		$rows = 0;
+		$apcontacts = DBA::select('apcontact', ['url', 'uuid'], $condition, ['limit' => 1000]);
+
+		if (DBA::errorNo() != 0) {
+			Logger::error('Database error', ['no' => DBA::errorNo(), 'message' => DBA::errorMessage()]);
+			return false;
+		}
+
+		while ($apcontact = DBA::fetch($apcontacts)) {
+			if (!empty($apcontact['uuid'])) {
+				$uriid = ItemURI::insert(['uri' => $apcontact['url'], 'guid' => $apcontact['uuid']]);
+			} else {
+				$uriid = ItemURI::getIdByURI($apcontact['url']);
+			}
+			DBA::update('apcontact', ['uri-id' => $uriid], ['url' => $apcontact['url']]);
+			++$rows;
+		}
+		DBA::close($apcontacts);
+
+		Logger::info('Processed', ['rows' => $rows]);
+
+		if ($rows <= 100) {
+			DI::keyValue()->set('post_update_version', 1426);
+			Logger::info('Done');
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * update the "uri-id" field in the event table
+	 *
+	 * @return bool "true" when the job is done
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 * @throws \ImagickException
+	 */
+	private static function update1427()
+	{
+		// Was the script completed?
+		if (DI::keyValue()->get('post_update_version') >= 1427) {
+			return true;
+		}
+
+		$condition = ["`uri-id` IS NULL"];
+		Logger::info('Start', ['rest' => DBA::count('event', $condition)]);
+
+		$rows = 0;
+		$events = DBA::select('event', ['id', 'uri', 'guid'], $condition, ['limit' => 1000]);
+
+		if (DBA::errorNo() != 0) {
+			Logger::error('Database error', ['no' => DBA::errorNo(), 'message' => DBA::errorMessage()]);
+			return false;
+		}
+
+		while ($event = DBA::fetch($events)) {
+			if (!empty($event['guid'])) {
+				$uriid = ItemURI::insert(['uri' => $event['uri'], 'guid' => $event['guid']]);
+			} else {
+				$uriid = ItemURI::getIdByURI($event['uri']);
+			}
+			DBA::update('event', ['uri-id' => $uriid], ['id' => $event['id']]);
+			++$rows;
+		}
+		DBA::close($events);
+
+		Logger::info('Processed', ['rows' => $rows]);
+
+		if ($rows <= 100) {
+			DI::keyValue()->set('post_update_version', 1427);
+			Logger::info('Done');
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Fill the receivers of the post via the raw source
+	 *
+	 * @return bool "true" when the job is done
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 * @throws \ImagickException
+	 */
+	private static function update1452()
+	{
+		// Was the script completed?
+		if (DI::keyValue()->get('post_update_version') >= 1452) {
+			return true;
+		}
+
+		if (!DBStructure::existsTable('conversation')) {
+			DI::keyValue()->set('post_update_version', 1452);
+			return true;
+		}
+
+		$id = DI::keyValue()->get('post_update_version_1452_id') ?? 0;
+
+		Logger::info('Start', ['uri-id' => $id]);
+
+		$rows     = 0;
+		$received = '';
+
+		$conversations = DBA::p("SELECT `post-view`.`uri-id`, `conversation`.`source`, `conversation`.`received` FROM `conversation`
+			INNER JOIN `post-view` ON `post-view`.`uri` = `conversation`.`item-uri`
+			WHERE NOT `source` IS NULL AND `conversation`.`protocol` = ? AND `uri-id` > ? LIMIT ?",
+			Conversation::PARCEL_ACTIVITYPUB, $id, 1000);
+
+		if (DBA::errorNo() != 0) {
+			Logger::error('Database error', ['no' => DBA::errorNo(), 'message' => DBA::errorMessage()]);
+			return false;
+		}
+
+		while ($conversation = DBA::fetch($conversations)) {
+			$id       = $conversation['uri-id'];
+			$received = $conversation['received'];
+
+			$raw = json_decode($conversation['source'], true);
+			if (empty($raw)) {
+				continue;
+			}
+			$activity = JsonLD::compact($raw);
+
+			$urls = Receiver::getReceiverURL($activity);
+			Processor::storeReceivers($conversation['uri-id'], $urls);
+
+			if (!empty($activity['as:object'])) {
+				$urls = array_merge($urls, Receiver::getReceiverURL($activity['as:object']));
+				Processor::storeReceivers($conversation['uri-id'], $urls);
+			}
+			++$rows;
+		}
+
+		DBA::close($conversations);
+
+		DI::keyValue()->set('post_update_version_1452_id', $id);
+
+		Logger::info('Processed', ['rows' => $rows, 'last' => $id, 'last-received' => $received]);
+
+		if ($rows <= 100) {
+			DI::keyValue()->set('post_update_version', 1452);
+			Logger::info('Done');
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * Correct the parent.
+	 * This fixes a bug that was introduced in the development of version 2022.09
+	 *
+	 * @return bool "true" when the job is done
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 * @throws \ImagickException
+	 */
+	private static function update1483()
+	{
+		// Was the script completed?
+		if (DI::keyValue()->get('post_update_version') >= 1483) {
+			return true;
+		}
+
+		Logger::info('Start');
+
+		$posts = DBA::select('post-view', ['uri-id'], ['conversation' => './']);
+		while ($post = DBA::fetch($posts)) {
+			$parent = Item::getParent($post['uri-id']);
+			if ($parent != 0) {
+				DBA::update('post', ['parent-uri-id' => $parent], ['uri-id' => $post['uri-id']]);
+				DBA::update('post-user', ['parent-uri-id' => $parent], ['uri-id' => $post['uri-id']]);
+			}
+		}
+		DBA::close($posts);
+
+		DI::keyValue()->set('post_update_version', 1483);
+		Logger::info('Done');
+		return true;
+	}
+
+	/**
+	 * Handle duplicate contact entries
+	 *
+	 * @return bool "true" when the job is done
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 * @throws \ImagickException
+	 */
+	private static function update1484()
+	{
+		// Was the script completed?
+		if (DI::keyValue()->get('post_update_version') >= 1484) {
+			return true;
+		}
+
+		$id = DI::keyValue()->get('post_update_version_1484_id') ?? 0;
+
+		Logger::info('Start', ['id' => $id]);
+
+		$rows = 0;
+
+		$contacts = DBA::select('contact', ['id', 'uid', 'uri-id', 'url'], ["`id` > ?", $id], ['order' => ['id'], 'limit' => 1000]);
+
+		if (DBA::errorNo() != 0) {
+			Logger::error('Database error', ['no' => DBA::errorNo(), 'message' => DBA::errorMessage()]);
+			return false;
+		}
+
+		while ($contact = DBA::fetch($contacts)) {
+			$id = $contact['id'];
+			if (is_null($contact['uri-id'])) {
+				$contact['uri-id'] = ItemURI::getIdByURI($contact['url']);
+				DBA::update('contact', ['uri-id' => $contact['uri-id']], ['id' => $contact['id']]);
+			}
+			Contact::setAccountUser($contact['id'], $contact['uid'], $contact['uri-id'], $contact['url']);
+			++$rows;
+		}
+		DBA::close($contacts);
+
+		DI::keyValue()->set('post_update_version_1484_id', $id);
+
+		Logger::info('Processed', ['rows' => $rows, 'last' => $id]);
+
+		if ($rows <= 100) {
+			DI::keyValue()->set('post_update_version', 1484);
+			Logger::info('Done');
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * update the "gsid" (global server id) field in the contact table
+	 *
+	 * @return bool "true" when the job is done
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 * @throws \ImagickException
+	 */
+	private static function update1506()
+	{
+		// Was the script completed?
+		if (DI::keyValue()->get('post_update_version') >= 1506) {
+			return true;
+		}
+
+		$id = DI::keyValue()->get('post_update_version_1506_id') ?? 0;
+
+		Logger::info('Start', ['contact' => $id]);
+
+		$start_id = $id;
+		$rows = 0;
+		$condition = ["`id` > ? AND `gsid` IS NULL AND `network` = ?", $id, Protocol::DIASPORA];
+		$params = ['order' => ['id'], 'limit' => 10000];
+		$contacts = DBA::select('contact', ['id', 'url'], $condition, $params);
+
+		if (DBA::errorNo() != 0) {
+			Logger::error('Database error', ['no' => DBA::errorNo(), 'message' => DBA::errorMessage()]);
+			return false;
+		}
+
+		while ($contact = DBA::fetch($contacts)) {
+			$id = $contact['id'];
+
+			$parts = parse_url($contact['url']);
+			unset($parts['path']);
+			$server = (string)Uri::fromParts($parts);
+		
+			DBA::update('contact',
+				['gsid' => GServer::getID($server, true), 'baseurl' => GServer::cleanURL($server)],
+				['id' => $contact['id']]);
+
+			++$rows;
+		}
+		DBA::close($contacts);
+
+		DI::keyValue()->set('post_update_version_1506_id', $id);
+
+		Logger::info('Processed', ['rows' => $rows, 'last' => $id]);
+
+		if ($start_id == $id) {
+			DI::keyValue()->set('post_update_version', 1506);
+			Logger::info('Done');
+			return true;
+		}
+
+		return false;
+	}
+
+	/**
+	 * update the "gsid" (global server id) field in the inbox-status table
+	 *
+	 * @return bool "true" when the job is done
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 * @throws \ImagickException
+	 */
+	private static function update1507()
+	{
+		// Was the script completed?
+		if (DI::keyValue()->get('post_update_version') >= 1507) {
+			return true;
+		}
+
+		$id = DI::keyValue()->get('post_update_version_1507_id') ?? '';
+
+		Logger::info('Start', ['apcontact' => $id]);
+
+		$start_id = $id;
+		$rows = 0;
+		$condition = ["`url` > ? AND NOT `gsid` IS NULL", $id];
+		$params = ['order' => ['url'], 'limit' => 10000];
+		$apcontacts = DBA::select('apcontact', ['url', 'gsid', 'sharedinbox', 'inbox'], $condition, $params);
+
+		if (DBA::errorNo() != 0) {
+			Logger::error('Database error', ['no' => DBA::errorNo(), 'message' => DBA::errorMessage()]);
+			return false;
+		}
+
+		while ($apcontact = DBA::fetch($apcontacts)) {
+			$id = $apcontact['url'];
+
+			$inbox = [$apcontact['inbox']];
+			if (!empty($apcontact['sharedinbox'])) {
+				$inbox[] = $apcontact['sharedinbox'];
+			}
+			$condition = DBA::mergeConditions(['url' => $inbox], ["`gsid` IS NULL"]);
+			DBA::update('inbox-status', ['gsid' => $apcontact['gsid'], 'archive' => GServer::isDefunctById($apcontact['gsid'])], $condition);
+			++$rows;
+		}
+		DBA::close($apcontacts);
+
+		DI::keyValue()->set('post_update_version_1507_id', $id);
+
+		Logger::info('Processed', ['rows' => $rows, 'last' => $id]);
+
+		if ($start_id == $id) {
+			DI::keyValue()->set('post_update_version', 1507);
 			Logger::info('Done');
 			return true;
 		}

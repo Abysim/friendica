@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,11 +21,12 @@
 
 namespace Friendica\Worker;
 
-use Friendica\Core\Cache\Duration;
+use Friendica\Core\Cache\Enum\Duration;
 use Friendica\Core\Logger;
 use Friendica\Core\Search;
 use Friendica\DI;
 use Friendica\Model\Contact;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
 
 class SearchDirectory
 {
@@ -46,7 +47,7 @@ class SearchDirectory
 			}
 		}
 
-		$x = DI::httpRequest()->fetch(Search::getGlobalDirectory() . '/lsearch?p=1&n=500&search=' . urlencode($search));
+		$x = DI::httpClient()->fetch(Search::getGlobalDirectory() . '/lsearch?p=1&n=500&search=' . urlencode($search), HttpClientAccept::JSON);
 		$j = json_decode($x);
 
 		if (!empty($j->results)) {

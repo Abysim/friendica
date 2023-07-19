@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -26,6 +26,7 @@ use Friendica\App\Mode;
 use Friendica\Database\DBA;
 use Friendica\Database\DBStructure;
 use Friendica\DI;
+use Friendica\Model\User;
 use Friendica\Network\HTTPException\InternalServerErrorException;
 use Friendica\Util\DateTimeFormat;
 use Friendica\Util\Strings;
@@ -35,35 +36,47 @@ class Update
 	const SUCCESS = 0;
 	const FAILED  = 1;
 
+	const NEW_TABLE_STRUCTURE_VERSION = 1288;
+
 	/**
 	 * Function to check if the Database structure needs an update.
 	 *
 	 * @param string   $basePath   The base path of this application
 	 * @param boolean  $via_worker Is the check run via the worker?
 	 * @param App\Mode $mode       The current app mode
-	 *
+	 * @return void
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function check(string $basePath, bool $via_worker, App\Mode $mode)
+	public static function check(string $basePath, bool $via_worker)
 	{
 		if (!DBA::connected()) {
 			return;
 		}
 
 		// Don't check the status if the last update was failed
-		if (DI::config()->get('system', 'update', Update::SUCCESS, true) == Update::FAILED) {
+		if (DI::config()->get('system', 'update', Update::SUCCESS) == Update::FAILED) {
 			return;
 		}
 
 		$build = DI::config()->get('system', 'build');
 
 		if (empty($build)) {
-			DI::config()->set('system', 'build', DB_UPDATE_VERSION - 1);
-			$build = DB_UPDATE_VERSION - 1;
+			// legacy option - check if there's something in the Config table
+			if (DBStructure::existsTable('config')) {
+				$dbConfig = DBA::selectFirst('config', ['v'], ['cat' => 'system', 'k' => 'build']);
+				if (!empty($dbConfig)) {
+					$build = $dbConfig['v'];
+				}
+			}
+
+			if (empty($build)) {
+				DI::config()->set('system', 'build', DB_UPDATE_VERSION - 1);
+				$build = DB_UPDATE_VERSION - 1;
+			}
 		}
 
 		// We don't support upgrading from very old versions anymore
-		if ($build < NEW_TABLE_STRUCTURE_VERSION) {
+		if ($build < self::NEW_TABLE_STRUCTURE_VERSION) {
 			$error = DI::l10n()->t('Updates from version %s are not supported. Please update at least to version 2021.01 and wait until the postupdate finished version 1383.', $build);
 			if (DI::mode()->getExecutor() == Mode::INDEX) {
 				die($error);
@@ -73,8 +86,8 @@ class Update
 		}
 
 		// The postupdate has to completed version 1288 for the new post views to take over
-		$postupdate = DI::config()->get("system", "post_update_version", NEW_TABLE_STRUCTURE_VERSION);
-		if ($postupdate < NEW_TABLE_STRUCTURE_VERSION) {
+		$postupdate = DI::keyValue()->get('post_update_version') ?? self::NEW_TABLE_STRUCTURE_VERSION;
+		if ($postupdate < self::NEW_TABLE_STRUCTURE_VERSION) {
 			$error = DI::l10n()->t('Updates from postupdate version %s are not supported. Please update at least to version 2021.01 and wait until the postupdate finished version 1383.', $postupdate);
 			if (DI::mode()->getExecutor() == Mode::INDEX) {
 				die($error);
@@ -85,12 +98,14 @@ class Update
 
 		if ($build < DB_UPDATE_VERSION) {
 			if ($via_worker) {
-				// Calling the database update directly via the worker enables us to perform database changes to the workerqueue table itself.
-				// This is a fallback, since normally the database update will be performed by a worker job.
-				// This worker job doesn't work for changes to the "workerqueue" table itself.
+				/*
+				 * Calling the database update directly via the worker enables us to perform database changes to the workerqueue table itself.
+				 * This is a fallback, since normally the database update will be performed by a worker job.
+				 * This worker job doesn't work for changes to the "workerqueue" table itself.
+				 */
 				self::run($basePath);
 			} else {
-				Worker::add(PRIORITY_CRITICAL, 'DBUpdate');
+				Worker::add(Worker::PRIORITY_CRITICAL, 'DBUpdate');
 			}
 		}
 	}
@@ -103,11 +118,10 @@ class Update
 	 * @param bool   $override Overrides any running/stuck updates
 	 * @param bool   $verbose  Run the Update-Check verbose
 	 * @param bool   $sendMail Sends a Mail to the administrator in case of success/failure
-	 *
 	 * @return string Empty string if the update is successful, error messages otherwise
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function run(string $basePath, bool $force = false, bool $override = false, bool $verbose = false, bool $sendMail = true)
+	public static function run(string $basePath, bool $force = false, bool $override = false, bool $verbose = false, bool $sendMail = true): string
 	{
 		// In force mode, we release the dbupdate lock first
 		// Necessary in case of an stuck update
@@ -115,11 +129,18 @@ class Update
 			DI::lock()->release('dbupdate', true);
 		}
 
-		$build = DI::config()->get('system', 'build', null, true);
+		$build = DI::config()->get('system', 'build');
 
-		if (empty($build) || ($build > DB_UPDATE_VERSION)) {
-			$build = DB_UPDATE_VERSION - 1;
-			DI::config()->set('system', 'build', $build);
+		if (empty($build)) {
+			$dbConfig = DBA::selectFirst('config', ['v'], ['cat' => 'system', 'k' => 'build']);
+			if (!empty($dbConfig)) {
+				$build = $dbConfig['v'];
+			}
+
+			if (empty($build) || ($build > DB_UPDATE_VERSION)) {
+				DI::config()->set('system', 'build', DB_UPDATE_VERSION - 1);
+				$build = DB_UPDATE_VERSION - 1;
+			}
 		}
 
 		if ($build != DB_UPDATE_VERSION || $force) {
@@ -128,24 +149,34 @@ class Update
 			$stored = intval($build);
 			$current = intval(DB_UPDATE_VERSION);
 			if ($stored < $current || $force) {
-				DI::config()->load('database');
+				DI::config()->reload();
 
 				// Compare the current structure with the defined structure
 				// If the Lock is acquired, never release it automatically to avoid double updates
-				if (DI::lock()->acquire('dbupdate', 0, Cache\Duration::INFINITE)) {
+				if (DI::lock()->acquire('dbupdate', 0, Cache\Enum\Duration::INFINITE)) {
 
 					Logger::notice('Update starting.', ['from' => $stored, 'to' => $current]);
 
 					// Checks if the build changed during Lock acquiring (so no double update occurs)
-					$retryBuild = DI::config()->get('system', 'build', null, true);
-					if ($retryBuild !== $build) {
-						Logger::notice('Update already done.', ['from' => $stored, 'to' => $current]);
-						DI::lock()->release('dbupdate');
-						return '';
+					$retryBuild = DI::config()->get('system', 'build');
+					if ($retryBuild != $build) {
+						// legacy option - check if there's something in the Config table
+						if (DBStructure::existsTable('config')) {
+							$dbConfig = DBA::selectFirst('config', ['v'], ['cat' => 'system', 'k' => 'build']);
+							if (!empty($dbConfig)) {
+								$retryBuild = intval($dbConfig['v']);
+							}
+						}
+
+						if ($retryBuild != $build) {
+							Logger::notice('Update already done.', ['from' => $build, 'retry' => $retryBuild, 'to' => $current]);
+							DI::lock()->release('dbupdate');
+							return '';
+						}
 					}
 
 					DI::config()->set('system', 'maintenance', 1);
-		
+
 					// run the pre_update_nnnn functions in update.php
 					for ($version = $stored + 1; $version <= $current; $version++) {
 						Logger::notice('Execute pre update.', ['version' => $version]);
@@ -156,8 +187,10 @@ class Update
 							Logger::warning('Pre update failed', ['version' => $version]);
 							DI::config()->set('system', 'update', Update::FAILED);
 							DI::lock()->release('dbupdate');
-							DI::config()->set('system', 'maintenance', 0);
-							DI::config()->set('system', 'maintenance_reason', '');
+							DI::config()->beginTransaction()
+										->set('system', 'maintenance', false)
+										->delete('system', 'maintenance_reason')
+										->commit();
 							return $r;
 						} else {
 							Logger::notice('Pre update executed.', ['version' => $version]);
@@ -177,8 +210,10 @@ class Update
 						Logger::error('Update ERROR.', ['from' => $stored, 'to' => $current, 'retval' => $retval]);
 						DI::config()->set('system', 'update', Update::FAILED);
 						DI::lock()->release('dbupdate');
-						DI::config()->set('system', 'maintenance', 0);
-						DI::config()->set('system', 'maintenance_reason', '');
+						DI::config()->beginTransaction()
+									->set('system', 'maintenance', false)
+									->delete('system', 'maintenance_reason')
+									->commit();
 						return $retval;
 					} else {
 						Logger::notice('Database structure update finished.', ['from' => $stored, 'to' => $current]);
@@ -194,8 +229,10 @@ class Update
 							Logger::warning('Post update failed', ['version' => $version]);
 							DI::config()->set('system', 'update', Update::FAILED);
 							DI::lock()->release('dbupdate');
-							DI::config()->set('system', 'maintenance', 0);
-							DI::config()->set('system', 'maintenance_reason', '');
+							DI::config()->beginTransaction()
+										->set('system', 'maintenance', false)
+										->delete('system', 'maintenance_reason')
+										->commit();
 							return $r;
 						} else {
 							DI::config()->set('system', 'build', $version);
@@ -206,13 +243,17 @@ class Update
 					DI::config()->set('system', 'build', $current);
 					DI::config()->set('system', 'update', Update::SUCCESS);
 					DI::lock()->release('dbupdate');
-					DI::config()->set('system', 'maintenance', 0);
-					DI::config()->set('system', 'maintenance_reason', '');
+					DI::config()->beginTransaction()
+								->set('system', 'maintenance', false)
+								->delete('system', 'maintenance_reason')
+								->commit();
 
 					Logger::notice('Update success.', ['from' => $stored, 'to' => $current]);
 					if ($sendMail) {
 						self::updateSuccessful($stored, $current);
 					}
+				} else {
+					Logger::warning('Update lock could not be acquired');
 				}
 			}
 		}
@@ -226,11 +267,10 @@ class Update
 	 * @param int    $version  the DB version number of the function
 	 * @param string $prefix   the prefix of the function (update, pre_update)
 	 * @param bool   $sendMail whether to send emails on success/failure
-
 	 * @return bool true, if the update function worked
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function runUpdateFunction(int $version, string $prefix, bool $sendMail = true)
+	public static function runUpdateFunction(int $version, string $prefix, bool $sendMail = true): bool
 	{
 		$funcname = $prefix . '_' . $version;
 
@@ -244,7 +284,7 @@ class Update
 			// If the update fails or times-out completely you may need to
 			// delete the config entry to try again.
 
-			if (DI::lock()->acquire('dbupdate_function', 120, Cache\Duration::INFINITE)) {
+			if (DI::lock()->acquire('dbupdate_function', 120, Cache\Enum\Duration::INFINITE)) {
 
 				// call the specific update
 				Logger::notice('Pre update function start.', ['function' => $funcname]);
@@ -282,32 +322,19 @@ class Update
 	 *
 	 * @param int    $update_id     number of failed update
 	 * @param string $error_message error message
+	 * @return void
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	private static function updateFailed(int $update_id, string $error_message) {
-		//send the administrators an e-mail
-		$condition = ['email' => explode(',', str_replace(' ', '', DI::config()->get('config', 'admin_email'))), 'parent-uid' => 0];
-		$adminlist = DBA::select('user', ['uid', 'language', 'email'], $condition, ['order' => ['uid']]);
-
-		// No valid result?
-		if (!DBA::isResult($adminlist)) {
+	private static function updateFailed(int $update_id, string $error_message)
+	{
+		$adminEmails = User::getAdminListForEmailing(['uid', 'language', 'email']);
+		if (!$adminEmails) {
 			Logger::warning('Cannot notify administrators .', ['update' => $update_id, 'message' => $error_message]);
-
-			// Don't continue
 			return;
 		}
 
-		$sent = [];
-
-		// every admin could had different language
-		while ($admin = DBA::fetch($adminlist)) {
-			if (in_array($admin['email'], $sent)) {
-				continue;
-			}
-			$sent[] = $admin['email'];
-
-			$lang = $admin['language'] ?? 'en';
-			$l10n = DI::l10n()->withLang($lang);
+		foreach($adminEmails as $admin) {
+			$l10n = DI::l10n()->withLang($admin['language'] ?: 'en');
 
 			$preamble = Strings::deindent($l10n->t("
 				The friendica developers released update %s recently,
@@ -338,35 +365,20 @@ class Update
 	 */
 	private static function updateSuccessful(int $from_build, int $to_build)
 	{
-		//send the administrators an e-mail
-		$condition = ['email' => explode(',', str_replace(' ', '', DI::config()->get('config', 'admin_email'))), 'parent-uid' => 0];
-		$adminlist = DBA::select('user', ['uid', 'language', 'email'], $condition, ['order' => ['uid']]);
+		foreach(User::getAdminListForEmailing(['uid', 'language', 'email']) as $admin) {
+			$l10n = DI::l10n()->withLang($admin['language'] ?: 'en');
 
-		if (DBA::isResult($adminlist)) {
-			$sent = [];
+			$preamble = Strings::deindent($l10n->t('
+				The friendica database was successfully updated from %s to %s.',
+				$from_build, $to_build));
 
-			// every admin could had different language
-			while ($admin = DBA::fetch($adminlist)) {
-				if (in_array($admin['email'], $sent)) {
-					continue;
-				}
-				$sent[] = $admin['email'];
-
-				$lang = (($admin['language']) ? $admin['language'] : 'en');
-				$l10n = DI::l10n()->withLang($lang);
-
-				$preamble = Strings::deindent($l10n->t('
-					The friendica database was successfully updated from %s to %s.',
-					$from_build, $to_build));
-
-				$email = DI::emailer()
-					->newSystemMail()
-					->withMessage($l10n->t('[Friendica Notify] Database update'), $preamble)
-					->forUser($admin)
-					->withRecipient($admin['email'])
-					->build();
-				DI::emailer()->send($email);
-			}
+			$email = DI::emailer()
+				->newSystemMail()
+				->withMessage($l10n->t('[Friendica Notify] Database update'), $preamble)
+				->forUser($admin)
+				->withRecipient($admin['email'])
+				->build();
+			DI::emailer()->send($email);
 		}
 
 		Logger::debug('Database structure update successful.');

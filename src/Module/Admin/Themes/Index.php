@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -29,15 +29,15 @@ use Friendica\Util\Strings;
 
 class Index extends BaseAdmin
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		parent::content($parameters);
+		parent::content();
 
 		$allowed_themes = Theme::getAllowedList();
 
 		// reload active themes
 		if (!empty($_GET['action'])) {
-			self::checkFormSecurityTokenRedirectOnError(DI::baseUrl()->get() . '/admin/themes', 'admin_themes', 't');
+			self::checkFormSecurityTokenRedirectOnError('/admin/themes', 'admin_themes', 't');
 
 			switch ($_GET['action']) {
 				case 'reload':
@@ -48,7 +48,7 @@ class Index extends BaseAdmin
 					}
 					Theme::setAllowedList($allowed_themes);
 
-					info(DI::l10n()->t('Themes reloaded'));
+					DI::sysmsg()->addInfo(DI::l10n()->t('Themes reloaded'));
 					break;
 
 				case 'toggle' :
@@ -56,17 +56,17 @@ class Index extends BaseAdmin
 					if ($theme) {
 						$theme = Strings::sanitizeFilePathItem($theme);
 						if (!is_dir("view/theme/$theme")) {
-							notice(DI::l10n()->t('Item not found.'));
+							DI::sysmsg()->addNotice(DI::l10n()->t('Item not found.'));
 							return '';
 						}
 
 						if (in_array($theme, Theme::getAllowedList())) {
 							Theme::uninstall($theme);
-							info(DI::l10n()->t('Theme %s disabled.', $theme));
+							DI::sysmsg()->addInfo(DI::l10n()->t('Theme %s disabled.', $theme));
 						} elseif (Theme::install($theme)) {
-							info(DI::l10n()->t('Theme %s successfully enabled.', $theme));
+							DI::sysmsg()->addInfo(DI::l10n()->t('Theme %s successfully enabled.', $theme));
 						} else {
-							notice(DI::l10n()->t('Theme %s failed to install.', $theme));
+							DI::sysmsg()->addNotice(DI::l10n()->t('Theme %s failed to install.', $theme));
 						}
 					}
 
@@ -112,7 +112,6 @@ class Index extends BaseAdmin
 			'$page'                => DI::l10n()->t('Themes'),
 			'$submit'              => DI::l10n()->t('Save Settings'),
 			'$reload'              => DI::l10n()->t('Reload active themes'),
-			'$baseurl'             => DI::baseUrl()->get(true),
 			'$function'            => 'themes',
 			'$addons'              => $addons,
 			'$pcount'              => count($themes),

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,7 +24,7 @@ namespace Friendica\Model\Post;
 use Friendica\Database\DBA;
 use \BadMethodCallException;
 use Friendica\Database\Database;
-use Friendica\Database\DBStructure;
+use Friendica\DI;
 
 class User
 {
@@ -43,11 +43,7 @@ class User
 			throw new BadMethodCallException('Empty URI_id');
 		}
 
-		if (DBA::exists('post-user', ['uri-id' => $uri_id, 'uid' => $uid])) {
-			return false;
-		}
-
-		$fields = DBStructure::getFieldsForTable('post-user', $data);
+		$fields = DI::dbaDefinition()->truncateFieldsForTable('post-user', $data);
 
 		// Additionally assign the key fields
 		$fields['uri-id'] = $uri_id;
@@ -56,6 +52,33 @@ class User
 		// Public posts are always seen
 		if ($uid == 0) {
 			$fields['unseen'] = false;
+		}
+
+		// Does the entry already exist?
+		if (DBA::exists('post-user', ['uri-id' => $uri_id, 'uid' => $uid])) {
+			$postuser = DBA::selectFirst('post-user', [], ['uri-id' => $uri_id, 'uid' => $uid]);
+
+			// We quit here, when there are obvious differences
+			foreach (['created', 'owner-id', 'author-id', 'vid', 'network', 'private', 'wall', 'origin'] as $key) {
+				if ($fields[$key] != $postuser[$key]) {
+					return 0;
+				}
+			}
+
+			$update = [];
+			foreach (['gravity', 'parent-uri-id', 'thr-parent-id'] as $key) {
+				if ($fields[$key] != $postuser[$key]) {
+					$update[$key] = $fields[$key];
+				}
+			}
+
+			// When the parents changed, we apply these changes to the existing entry
+			if (!empty($update)) {
+				DBA::update('post-user', $update, ['id' => $postuser['id']]);
+				return $postuser['id'];
+			} else {
+				return 0;
+			}
 		}
 
 		if (!DBA::insert('post-user', $fields, Database::INSERT_IGNORE)) {
@@ -81,7 +104,7 @@ class User
 			throw new BadMethodCallException('Empty URI_id');
 		}
 
-		$fields = DBStructure::getFieldsForTable('post-user', $data);
+		$fields = DI::dbaDefinition()->truncateFieldsForTable('post-user', $data);
 
 		// Remove the key fields
 		unset($fields['uri-id']);

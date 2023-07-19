@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -109,6 +109,11 @@ class Category
 		}
 
 		return array_column($tags, 'name');
+	}
+
+	public static function existsForURIId(int $uri_id, int $uid)
+	{
+		return DBA::exists('post-category', ['uri-id' => $uri_id, 'uid' => $uid]);
 	}
 
 	/**

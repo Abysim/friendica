@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,9 +22,8 @@
 namespace Friendica\App;
 
 use Detection\MobileDetect;
-use Friendica\Core\Config\Cache;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\Database\Database;
-use Friendica\Util\BasePath;
 
 /**
  * Mode of the current Friendica Node
@@ -45,6 +44,37 @@ class Mode
 
 	const BACKEND_CONTENT_TYPES = ['application/jrd+json', 'text/xml',
 		'application/rss+xml', 'application/atom+xml', 'application/activity+json'];
+
+	/**
+	 * A list of modules, which are backend methods
+	 *
+	 * @var array
+	 */
+	const BACKEND_MODULES = [
+		'_well_known',
+		'api',
+		'dfrn_notify',
+		'feed',
+		'fetch',
+		'followers',
+		'following',
+		'hcard',
+		'hostxrd',
+		'inbox',
+		'manifest',
+		'nodeinfo',
+		'noscrape',
+		'objects',
+		'outbox',
+		'poco',
+		'pubsub',
+		'pubsubhubbub',
+		'receive',
+		'rsd_xml',
+		'salmon',
+		'statistics_json',
+		'xrd',
+	];
 
 	/***
 	 * @var int The mode of this Application
@@ -98,15 +128,13 @@ class Mode
 	 *
 	 * @throws \Exception
 	 */
-	public function determine(BasePath $basepath, Database $database, Cache $configCache)
+	public function determine(string $basePath, Database $database, IManageConfigValues $config): Mode
 	{
 		$mode = 0;
 
-		$basepathName = $basepath->getPath();
-
-		if (!file_exists($basepathName . '/config/local.config.php')
-		    && !file_exists($basepathName . '/config/local.ini.php')
-		    && !file_exists($basepathName . '/.htconfig.php')) {
+		if (!file_exists($basePath . '/config/local.config.php') &&
+			!file_exists($basePath . '/config/local.ini.php') &&
+			!file_exists($basePath . '/.htconfig.php')) {
 			return new Mode($mode);
 		}
 
@@ -118,16 +146,7 @@ class Mode
 
 		$mode |= Mode::DBAVAILABLE;
 
-		if ($database->fetchFirst("SHOW TABLES LIKE 'config'") === false) {
-			return new Mode($mode);
-		}
-
-		$mode |= Mode::DBCONFIGAVAILABLE;
-
-		if (!empty($configCache->get('system', 'maintenance')) ||
-		    // Don't use Config or Configuration here because we're possibly BEFORE initializing the Configuration,
-		    // so this could lead to a dependency circle
-		    !empty($database->selectFirst('config', ['v'], ['cat' => 'system', 'k' => 'maintenance'])['v'])) {
+		if (!empty($config->get('system', 'maintenance'))) {
 			return new Mode($mode);
 		}
 
@@ -139,14 +158,14 @@ class Mode
 	/**
 	 * Checks if the site is called via a backend process
 	 *
-	 * @param bool         $isBackend    True, if the call is from a backend script (daemon, worker, ...)
-	 * @param Module       $module       The pre-loaded module (just name, not class!)
-	 * @param array        $server       The $_SERVER variable
-	 * @param MobileDetect $mobileDetect The mobile detection library
+	 * @param bool             $isBackend    True, if the call is from a backend script (daemon, worker, ...)
+	 * @param array            $server       The $_SERVER variable
+	 * @param Arguments        $args         The Friendica App arguments
+	 * @param MobileDetect     $mobileDetect The mobile detection library
 	 *
 	 * @return Mode returns the determined mode
 	 */
-	public function determineRunMode(bool $isBackend, Module $module, array $server, MobileDetect $mobileDetect)
+	public function determineRunMode(bool $isBackend, array $server, Arguments $args, MobileDetect $mobileDetect): Mode
 	{
 		foreach (self::BACKEND_CONTENT_TYPES as $type) {
 			if (strpos(strtolower($server['HTTP_ACCEPT'] ?? ''), $type) !== false) {
@@ -154,7 +173,7 @@ class Mode
 			}
 		}
 
-		$isBackend = $isBackend || $module->isBackend();
+		$isBackend = $isBackend || in_array($args->getModuleName(), static::BACKEND_MODULES);
 		$isMobile  = $mobileDetect->isMobile();
 		$isTablet  = $mobileDetect->isTablet();
 		$isAjax    = strtolower($server['HTTP_X_REQUESTED_WITH'] ?? '') == 'xmlhttprequest';
@@ -169,7 +188,7 @@ class Mode
 	 *
 	 * @return bool returns true, if the mode is set
 	 */
-	public function has($mode)
+	public function has(int $mode): bool
 	{
 		return ($this->mode & $mode) > 0;
 	}
@@ -195,20 +214,20 @@ class Mode
 	 *
 	 * @return int Execution Mode
 	 */
-	public function getExecutor()
+	public function getExecutor(): int
 	{
 		return $this->executor;
 	}
 
 	/**
-	 * Install mode is when the local config file is missing or the DB schema hasn't been installed yet.
+	 * Install mode is when the local config file is missing or the database isn't available.
 	 *
-	 * @return bool
+	 * @return bool Whether installation mode is active (local/database configuration files present or not)
 	 */
-	public function isInstall()
+	public function isInstall(): bool
 	{
 		return !$this->has(Mode::LOCALCONFIGPRESENT) ||
-		       !$this->has(MODE::DBCONFIGAVAILABLE);
+		       !$this->has(MODE::DBAVAILABLE);
 	}
 
 	/**
@@ -216,11 +235,10 @@ class Mode
 	 *
 	 * @return bool
 	 */
-	public function isNormal()
+	public function isNormal(): bool
 	{
 		return $this->has(Mode::LOCALCONFIGPRESENT) &&
 		       $this->has(Mode::DBAVAILABLE) &&
-		       $this->has(Mode::DBCONFIGAVAILABLE) &&
 		       $this->has(Mode::MAINTENANCEDISABLED);
 	}
 
@@ -229,7 +247,7 @@ class Mode
 	 *
 	 * @return bool Is it a backend call
 	 */
-	public function isBackend()
+	public function isBackend(): bool
 	{
 		return $this->isBackend;
 	}
@@ -239,7 +257,7 @@ class Mode
 	 *
 	 * @return bool true if it was an AJAX request
 	 */
-	public function isAjax()
+	public function isAjax(): bool
 	{
 		return $this->isAjax;
 	}
@@ -249,7 +267,7 @@ class Mode
 	 *
 	 * @return bool true if it was an mobile request
 	 */
-	public function isMobile()
+	public function isMobile(): bool
 	{
 		return $this->isMobile;
 	}
@@ -259,7 +277,7 @@ class Mode
 	 *
 	 * @return bool true if it was an tablet request
 	 */
-	public function isTablet()
+	public function isTablet(): bool
 	{
 		return $this->isTablet;
 	}

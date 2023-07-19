@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,15 +21,16 @@
 
 namespace Friendica\Module\Admin;
 
+use Friendica\Core\System;
 use Friendica\Module\BaseAdmin;
 
 class PhpInfo extends BaseAdmin
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		self::checkAdminAccess();
 
 		phpinfo();
-		exit();
+		System::exit();
 	}
 }

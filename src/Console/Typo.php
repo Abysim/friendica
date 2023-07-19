@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,7 +21,7 @@
 
 namespace Friendica\Console;
 
-use Friendica\Core\Config\IConfig;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 
 /**
  * Tired of chasing typos and finding them after a commit.
@@ -32,7 +32,7 @@ class Typo extends \Asika\SimpleConsole\Console
 	protected $helpOptions = ['h', 'help', '?'];
 
 	/**
-	 * @var IConfig
+	 * @var IManageConfigValues
 	 */
 	private $config;
 
@@ -53,14 +53,14 @@ HELP;
 		return $help;
 	}
 
-	public function __construct(IConfig $config, array $argv = null)
+	public function __construct(IManageConfigValues $config, array $argv = null)
 	{
 		parent::__construct($argv);
 
 		$this->config = $config;
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		if ($this->getOption('v')) {
 			$this->out('Class: ' . __CLASS__);
@@ -103,13 +103,6 @@ HELP;
 		}
 
 		$files = glob('mod/*.php');
-		$this->checkFiles($php_path, $files);
-
-		if ($this->getOption('v')) {
-			$this->out('Directory: include');
-		}
-
-		$files = glob('include/*.php');
 		$this->checkFiles($php_path, $files);
 
 		if ($this->getOption('v')) {

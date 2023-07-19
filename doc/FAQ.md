@@ -3,8 +3,6 @@ Frequently Asked Questions - FAQ
 
 * [Home](help)
 
-User
-
 * **[Where I can find help?](help/FAQ#help)**
 * **[Why do I getting warnings about certificates?](help/FAQ#ssl)**
 * **[How can I upload images, files, links, videos and sound files to posts?](help/FAQ#upload)**
@@ -16,16 +14,7 @@ User
 * **[How to create a RSS feed of the stream?](help/FAQ#rss)**
 * **[What friendica clients can I use?](help/FAQ#clients)**
 
-Admins
 
-* **[Can I configure multiple domains with the same code instance?](help/FAQ#multiple)**
-* **[Where can I find the source code of friendica, addons and themes?](help/FAQ#sources)**
-* **[I've changed the my email address now the admin panel is gone?](help/FAQ#adminaccount1)**
-* **[Can there be more then just one admin for a node?](help/FAQ#adminaccount2)**
-* **[The Database structure seems not to be updated. What can I do?](help/FAQ#dbupdate)**
-
-User
---------
 <a name="help"></a>
 
 ### Where I can find help?
@@ -33,9 +22,10 @@ User
 If this FAQ does not answer your question you can always reach out to the community via the following options:
 
   * Friendica Support Forum: [@helpers@forum.friendi.ca](https://forum.friendi.ca/~helpers)
-  * XMPP: support(at)forum.friendi.ca
-  * IRC: [#friendica at freenode.net](https://webchat.freenode.net/?settings=#friendica)
-  * Matrix: [#friendica-en:matrix.org](https://matrix.to/#/#friendica-en:matrix.org) or [#friendi.ca:matrix.org](https://matrix.to/#/#friendi.ca:matrix.org)
+  * Community chat rooms (the IRC, Matrix and XMPP rooms are bridged) these public chats are logged [from IRC](https://gnusociarg.nsupdate.info/2021/%23friendica/) and [Matrix](https://view.matrix.org/alias/%23friendi.ca:matrix.org/)
+    * XMPP: support(at)forum.friendi.ca
+    * IRC: #friendica at [libera.chat](https://web.libera.chat/?channels=#friendica)
+    * Matrix: [#friendica-en:matrix.org](https://matrix.to/#/#friendica-en:matrix.org) or [#friendi.ca:matrix.org](https://matrix.to/#/#friendi.ca:matrix.org)
   * [Mailing List](http://mailman.friendi.ca/mailman/listinfo/support-friendi.ca)
   <!--- * [XMPP](xmpp:support@forum.friendi.ca?join)
 	https://github.com/github/markup/issues/202
@@ -60,7 +50,7 @@ We recommend to talk to the admin(s) of the affected friendica server. (Admins, 
 ### How can I upload images, files, links, videos and sound files to posts?
 
 You can upload images from your computer using the [editor](help/Text_editor).
-An overview of all uploaded images is listed at *yourpage.com/photos/profilename*.
+An overview of all uploaded images is listed at *yourpage.com/profile/profilename/photos*.
 On that page, you can also upload images directly and choose if your contacts will receive a message about this upload.
 
 Generally, you can attach any kind of file to a post.
@@ -181,62 +171,49 @@ Example: Friendica Support
 <a name="clients"></a>
 ### What friendica clients can I use?
 
-Friendica is using a [Twitter/GNU Social compatible API](help/api), which means you can use any Twitter/GNU Social client for your platform as long as you can change the API path in its settings.
-Here is a list of known working clients:
+Friendica supports [Mastodon API](help/API-Mastodon) and [Twitter API | gnusocial](help/api).
+This means you can use some of the Mastodon and Twitter clients for Friendica.
+The available features are client specific and may differ.
 
-* Android
-  * [Friendiqa](https://git.friendi.ca/lubuwest/Friendiqa) ([F-Droid](https://git.friendi.ca/lubuwest/Friendiqa#install), [Google Play](https://play.google.com/store/apps/details?id=org.qtproject.friendiqa))
-  * [Fedilab](https://fedilab.app) ([F-Droid](https://f-droid.org/app/fr.gouv.etalab.mastodon), [Google Play](https://play.google.com/store/apps/details?id=app.fedilab.android))
-  * [AndStatus](http://andstatus.org) ([F-Droid](https://f-droid.org/repository/browse/?fdid=org.andstatus.app), [Google Play](https://play.google.com/store/apps/details?id=org.andstatus.app))
-  * [Twidere](https://dimension.im/) ([F-Droid](https://f-droid.org/repository/browse/?fdid=org.mariotaku.twidere), [Google Play](https://play.google.com/store/apps/details?id=com.twidere.twiderex), [GitHub](https://github.com/TwidereProject/Twidere-Android))
-* SailfishOS
-  * [Friendly](https://openrepos.net/content/fabrixxm/friendly#comment-form)
-* Linux
-  * [Choqok](https://choqok.kde.org)
-* Windows
-  * [Friendica Mobile](https://www.microsoft.com/de-DE/store/p/friendica-mobile/9nblggh0fhmn?rtc=1) (Windows 10)
+#### Android
 
-Depending on the features of the client you might encounter some glitches in usability, like being limited in the length of your postings to 140 characters and having no access to the [permission settings](help/Groups-and-Privacy).
+* [AndStatus](http://andstatus.org) ([F-Droid](https://f-droid.org/repository/browse/?fdid=org.andstatus.app), [Google Play](https://play.google.com/store/apps/details?id=org.andstatus.app))
+* [Fedi](https://github.com/Big-Fig/Fediverse.app) ([Google Play](https://play.google.com/store/apps/details?id=com.fediverse.app))
+* [Fedilab](https://fedilab.app) ([F-Droid](https://f-droid.org/app/fr.gouv.etalab.mastodon), [Google Play](https://play.google.com/store/apps/details?id=app.fedilab.android))
+* [Friendiqa](https://git.friendi.ca/lubuwest/Friendiqa) ([F-Droid](https://git.friendi.ca/lubuwest/Friendiqa#install), [Google Play](https://play.google.com/store/apps/details?id=org.qtproject.friendiqa))
+* [Husky](https://git.sr.ht/~captainepoch/husky) ([F-Droid](https://f-droid.org/repository/browse/?fdid=su.xash.husky), [Google Play](https://play.google.com/store/apps/details?id=su.xash.husky))
+* [Mastodon](https://github.com/mastodon/mastodon-android) ([F-Droid](https://f-droid.org/en/packages/org.joinmastodon.android/), [Google Play](https://play.google.com/store/apps/details?id=org.joinmastodon.android))
+* [Subway Tooter](https://github.com/tateisu/SubwayTooter) ([F-Droid](https://android.izzysoft.de/repo/apk/jp.juggler.subwaytooter))
+* [Tooot](https://tooot.app/) ([Google Play](https://play.google.com/store/apps/details?id=com.xmflsct.app.tooot))
+* [Tusky](https://tusky.app) ([F-Droid](https://f-droid.org/repository/browse/?fdid=com.keylesspalace.tusky), [Google Play](https://play.google.com/store/apps/details?id=com.keylesspalace.tusky))
+* [TwidereX](https://github.com/TwidereProject/TwidereX-Android) ([F-Droid](https://f-droid.org/en/packages/com.twidere.twiderex/), [Google Play](https://play.google.com/store/apps/details?id=com.twidere.twiderex))
+* [Yuito](https://github.com/accelforce/Yuito) ([Google Play](https://play.google.com/store/apps/details?id=net.accelf.yuito))
 
-Admin
---------
+#### iOS
 
-<a name="multiple"></a>
-### Can I configure multiple domains with the same code instance?
+* [Mastodon](https://joinmastodon.org/apps) ([AppStore](https://apps.apple.com/us/app/mastodon-for-iphone/id1571998974))
+* [Stella*](https://www.stella-app.net/) ([AppStore](https://apps.apple.com/us/app/stella-for-mastodon-twitter/id921372048))
+* [Tooot](https://github.com/tooot-app) ([AppStore](https://apps.apple.com/app/id1549772269)
+* [TwidereX](https://github.com/TwidereProject/TwidereX-iOS) ([AppStore](https://apps.apple.com/app/twidere-x/id1530314034))
 
-No, this function is no longer supported as of Friendica 3.3 onwards.
+#### Linux
 
-<a name="sources"></a>
-### Where can I find the source code of friendica, addons and themes?
+* [Choqok](https://choqok.kde.org)
+* [Whalebird](https://whalebird.social/en/desktop/contents) ([GitHub](https://github.com/h3poteto/whalebird-desktop))
+* [TheDesk](https://thedesk.top/en/) ([GitHub](https://github.com/cutls/TheDesk))
+* [Toot](https://toot.readthedocs.io/en/latest/)
 
-You can find the main repository [here](https://github.com/friendica/friendica).
-There you will always find the current stable version of friendica.
+#### macOS
 
-Addons are listed at [this page](https://github.com/friendica/friendica-addons).
+* [TheDesk](https://thedesk.top/en/) ([GitHub](https://github.com/cutls/TheDesk))
+* [Whalebird](https://whalebird.social/en/desktop/contents) ([AppStore](https://apps.apple.com/de/app/whalebird/id1378283354), [GitHub](https://github.com/h3poteto/whalebird-desktop))
 
-If you are searching for new themes, you can find them at [Friendica-Themes.com](http://friendica-themes.com/)
+#### Windows
 
-<a name="adminaccount1"></a>
-### I've changed my email address now the admin panel is gone?
+* [TheDesk](https://thedesk.top/en/) ([GitHub](https://github.com/cutls/TheDesk))
+* [Whalebird](https://whalebird.social/en/desktop/contents) ([Website Download](https://whalebird.social/en/desktop/contents/downloads#windows), [GitHub](https://github.com/h3poteto/whalebird-desktop))
 
-Have a look into your <tt>config/local.config.php</tt> and fix your email address there.
+#### Web Frontend
 
-<a name="adminaccount2"></a>
-### Can there be more then one admin for a node?
-
-Yes.
-You just have to list more then one email address in the
-<tt>config/local.config.php</tt> file.
-The listed emails need to be separated by a comma.
-
-<a name="dbupdate">
-### The Database structure seems not to be updated. What can I do?
-
-Please have a look at the Admin panel under [DB updates](/admin/dbsync/) and follow the link to *check database structure*.
-This will start a background process to check if the structure is up to the current definition.
-
-You can manually execute the structure update from the CLI in the base directory of your Friendica installation by running the following command:
-
-    bin/console dbstructure update
-
-if there occur any errors, please contact the [support forum](https://forum.friendi.ca/profile/helpers).
+* [Halcyon](https://www.halcyon.social/)
+* [Pinafore](https://github.com/nolanlawson/pinafore)

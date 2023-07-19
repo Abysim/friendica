@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,9 +23,10 @@ namespace Friendica\Test\src\Core\Lock;
 
 use Dice\Dice;
 use Friendica\App;
-use Friendica\Core\Config\IConfig;
-use Friendica\Core\Config\JitConfig;
-use Friendica\Core\Lock\SemaphoreLock;
+use Friendica\Core\Config\Capability\IManageConfigValues;
+use Friendica\Core\Config\Model\ReadOnlyFileConfig;
+use Friendica\Core\Config\ValueObject\Cache;
+use Friendica\Core\System;
 use Friendica\DI;
 use Mockery;
 use Mockery\MockInterface;
@@ -41,24 +42,24 @@ class SemaphoreLockTest extends LockTest
 		$app->shouldReceive('getHostname')->andReturn('friendica.local');
 		$dice->shouldReceive('create')->with(App::class)->andReturn($app);
 
-		$configMock = Mockery::mock(JitConfig::class);
-		$configMock
-			->shouldReceive('get')
-			->with('system', 'temppath')
-			->andReturn('/tmp/');
-		$dice->shouldReceive('create')->with(IConfig::class)->andReturn($configMock);
+		$configCache = new Cache(['system' => ['temppath' => '/tmp']]);
+		$configMock = new ReadOnlyFileConfig($configCache);
+		$dice->shouldReceive('create')->with(IManageConfigValues::class)->andReturn($configMock);
 
 		// @todo Because "get_temppath()" is using static methods, we have to initialize the BaseObject
-		DI::init($dice);
+		DI::init($dice, true);
 
 		parent::setUp();
 	}
 
 	protected function getInstance()
 	{
-		return new SemaphoreLock();
+		return new \Friendica\Core\Lock\Type\SemaphoreLock();
 	}
 
+	/**
+	 * @doesNotPerformAssertions
+	 */
 	public function testLockTTL()
 	{
 		self::markTestSkipped("Semaphore doesn't work with TTL");
@@ -70,7 +71,7 @@ class SemaphoreLockTest extends LockTest
 	 */
 	public function testMissingFileNotOverriding()
 	{
-		$file = get_temppath() . '/test.sem';
+		$file = System::getTempPath() . '/test.sem';
 		touch($file);
 
 		self::assertTrue(file_exists($file));
@@ -88,7 +89,7 @@ class SemaphoreLockTest extends LockTest
 	 */
 	public function testMissingFileOverriding()
 	{
-		$file = get_temppath() . '/test.sem';
+		$file = System::getTempPath() . '/test.sem';
 		touch($file);
 
 		self::assertTrue(file_exists($file));
@@ -101,7 +102,7 @@ class SemaphoreLockTest extends LockTest
 	 */
 	public function testOverrideSemFile()
 	{
-		$file = get_temppath() . '/test.sem';
+		$file = System::getTempPath() . '/test.sem';
 		touch($file);
 
 		self::assertTrue(file_exists($file));

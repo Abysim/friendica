@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,7 +24,7 @@ namespace Friendica\Test\src\Console;
 use Friendica\App;
 use Friendica\App\Mode;
 use Friendica\Console\Config;
-use Friendica\Core\Config\IConfig;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Mockery;
 use Mockery\LegacyMockInterface;
 use Mockery\MockInterface;
@@ -35,7 +35,7 @@ class ConfigConsoleTest extends ConsoleTest
 	 * @var App\Mode|MockInterface $appMode
 	 */
 	private $appMode;
-	/** @var IConfig|LegacyMockInterface|MockInterface */
+	/** @var IManageConfigValues|LegacyMockInterface|MockInterface */
 	private $configMock;
 
 	protected function setUp() : void
@@ -52,7 +52,7 @@ class ConfigConsoleTest extends ConsoleTest
 		$this->appMode->shouldReceive('has')
 					  ->andReturn(true);
 
-		$this->configMock = Mockery::mock(IConfig::class);
+		$this->configMock = Mockery::mock(IManageConfigValues::class);
 	}
 
 	public function testSetGetKeyValue()
@@ -65,8 +65,13 @@ class ConfigConsoleTest extends ConsoleTest
 		$this->configMock
 			->shouldReceive('get')
 			->with('config', 'test')
-			->andReturn('now')
+			->andReturn('old')
 			->twice();
+		$this->configMock
+			->shouldReceive('get')
+			->with('config', 'test')
+			->andReturn('now')
+			->once();
 
 		$console = new Config($this->appMode, $this->configMock, $this->consoleArgv);
 		$console->setArgument(0, 'config');
@@ -97,7 +102,7 @@ class ConfigConsoleTest extends ConsoleTest
 		$console->setArgument(0, 'config');
 		$console->setArgument(1, 'test');
 		$txt = $this->dumpExecute($console);
-		self::assertEquals("config.test => \n", $txt);
+		self::assertEquals("config.test => NULL\n", $txt);
 	}
 
 	public function testSetArrayValue()
@@ -116,6 +121,23 @@ class ConfigConsoleTest extends ConsoleTest
 		$txt = $this->dumpExecute($console);
 
 		self::assertEquals("[Error] config.test is an array and can't be set using this command.\n", $txt);
+	}
+
+	public function testSetExistingValue()
+	{
+		$this->configMock
+			->shouldReceive('get')
+			->with('config', 'test')
+			->andReturn('now')
+			->twice();
+
+		$console = new Config($this->appMode, $this->configMock, $this->consoleArgv);
+		$console->setArgument(0, 'config');
+		$console->setArgument(1, 'test');
+		$console->setArgument(2, 'now');
+		$txt = $this->dumpExecute($console);
+
+		self::assertEquals("[Error] config.test already set to now.\n", $txt);
 	}
 
 	public function testTooManyArguments()
@@ -171,7 +193,7 @@ CONF;
 			->shouldReceive('get')
 			->with('test', 'it')
 			->andReturn(null)
-			->once();
+			->twice();
 		$console = new Config($this->appMode, $this->configMock, [$this->consoleArgv]);
 		$console->setArgument(0, 'test');
 		$console->setArgument(1, 'it');

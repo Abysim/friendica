@@ -81,7 +81,7 @@ input[type="range"] {
 
 .form-control[disabled],
 .form-control[readonly],
-.ieldset[disabled] .form-control {
+.fieldset[disabled] .form-control {
 	background-color: $background_color;
 	color: $font_color_darker;
 }
@@ -250,8 +250,7 @@ input[type="submit"],
 
 @media (min-width: 768px) {
 	.wall-item-container .wall-item-links,
-	.wall-item-container .wall-item-actions button,
-	.wall-item-container .body-attach > a {
+	.wall-item-container .wall-item-actions button > a {
 		opacity: 0.3;
 		-webkit-transition: all 0.25s ease-in-out;
 		-moz-transition: all 0.25s ease-in-out;
@@ -260,8 +259,7 @@ input[type="submit"],
 		transition: all 0.25s ease-in-out;
 	}
 	.wall-item-container:hover .wall-item-links,
-	.wall-item-container:hover .wall-item-actions button,
-	.wall-item-container:hover .body-attach > a {
+	.wall-item-container:hover .wall-item-actions button > a {
 		opacity: 1;
 		-webkit-transition: all 0.25s ease-in-out;
 		-moz-transition: all 0.25s ease-in-out;
@@ -346,4 +344,13 @@ input[type="text"].tt-input {
 
 .textcomplete-item.active > a {
 	background-color: $nav_icon_hover_color !important;
+}
+
+#preview_profile-jot-text, .comment-edit-form .preview {
+	background-color: $nav_bg;
+	border-width: 1px;
+}
+
+textarea#profile-jot-text:focus + #preview_profile-jot-text, textarea.comment-edit-text:focus + .comment-edit-form .preview {
+	border-color: $link_color;
 }

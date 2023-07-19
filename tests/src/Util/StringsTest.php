@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -63,7 +63,7 @@ class StringsTest extends TestCase
 	/**
 	 * try to fail it with invalid input
 	 *
-	 * @todo What's corect behaviour here? An exception?
+	 * @todo What's correct behaviour here? An exception?
 	 */
 	public function testRandomNameNegativeLength()
 	{
@@ -90,10 +90,8 @@ class StringsTest extends TestCase
 	{
 		$invalidstring='<submit type="button" onclick="alert(\'failed!\');" />';
 
-		$validstring = Strings::escapeTags($invalidstring);
 		$escapedString = Strings::escapeHtml($invalidstring);
 
-		self::assertEquals('[submit type="button" onclick="alert(\'failed!\');" /]', $validstring);
 		self::assertEquals(
 			"&lt;submit type=&quot;button&quot; onclick=&quot;alert('failed!');&quot; /&gt;",
 			$escapedString
@@ -115,22 +113,18 @@ class StringsTest extends TestCase
 				'input' => '',
 				'valid' => false,
 			],
-			'nullHex' => [
-				'input' => null,
-				'valid' => false,
-			],
 		];
 	}
 
 	/**
 	 * Tests if the string is a valid hexadecimal value
 	 *
-	 * @param string|null $input
-	 * @param bool        $valid
+	 * @param string $input Input string
+	 * @param bool   $valid Whether testing on valid or invalid
 	 *
 	 * @dataProvider dataIsHex
 	 */
-	public function testIsHex(string $input = null, bool $valid = false)
+	public function testIsHex(string $input, bool $valid = false)
 	{
 		self::assertEquals($valid, Strings::isHex($input));
 	}

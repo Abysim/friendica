@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,7 @@ use Friendica\Network\HTTPException;
 
 class BadRequestException extends HTTPException
 {
-	protected $code = 400;
+	protected $code        = 400;
+	protected $httpdesc    = 'Bad Request';
+	protected $explanation = 'The server cannot or will not process the request due to an apparent client error.';
 }

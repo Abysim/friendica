@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,22 +23,10 @@ namespace Friendica\Test\src\Content\Text;
 
 use Exception;
 use Friendica\Content\Text\Markdown;
-use Friendica\Test\MockedTest;
-use Friendica\Test\Util\AppMockTrait;
-use Friendica\Test\Util\VFSTrait;
+use Friendica\Test\FixtureTest;
 
-class MarkdownTest extends MockedTest
+class MarkdownTest extends FixtureTest
 {
-	use VFSTrait;
-	use AppMockTrait;
-
-	protected function setUp(): void
-	{
-		parent::setUp();
-		$this->setUpVfsDir();
-		$this->mockApp($this->root);
-	}
-
 	public function dataMarkdown()
 	{
 		$inputFiles = glob(__DIR__ . '/../../../datasets/content/text/markdown/*.md');

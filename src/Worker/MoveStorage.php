@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -34,10 +34,10 @@ class MoveStorage
 	public static function execute()
 	{
 		$current = DI::storage();
-		$moved = DI::storageManager()->move($current);
+		$moved   = DI::storageManager()->move($current);
 
 		if ($moved) {
-			Worker::add(PRIORITY_LOW, 'MoveStorage');
+			Worker::add(Worker::PRIORITY_LOW, 'MoveStorage');
 		}
 	}
 }

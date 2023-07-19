@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,6 +22,7 @@
 namespace Friendica\Module;
 
 use Friendica\BaseModule;
+use Friendica\Core\System;
 use Friendica\DI;
 use Friendica\Util\XML;
 
@@ -31,12 +32,9 @@ use Friendica\Util\XML;
  */
 class ReallySimpleDiscovery extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-		header('Content-Type: text/xml');
-
-		$xml = null;
-		echo XML::fromArray([
+		$content = XML::fromArray([
 			'rsd' => [
 				'@attributes' => [
 					'version' => '1.0',
@@ -50,7 +48,7 @@ class ReallySimpleDiscovery extends BaseModule
 							'@attributes' => [
 								'name'      => 'Twitter',
 								'preferred' => 'true',
-								'apiLink'   => DI::baseUrl()->get(),
+								'apiLink'   => DI::baseUrl(),
 								'blogID'    => '',
 							],
 							'settings'    => [
@@ -68,7 +66,7 @@ class ReallySimpleDiscovery extends BaseModule
 					],
 				],
 			],
-		], $xml);
-		exit();
+		]);
+		System::httpExit($content, Response::TYPE_XML);
 	}
 }

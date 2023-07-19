@@ -44,7 +44,7 @@
 
 			</div>
 			{{if $item.owner_url}}
-			<div class="contact-photo-wrapper mframe wwto" id="wall-item-ownerphoto-wrapper-{{$item.id}}" >
+			<div class="contact-photo-wrapper mframe wwto" id="wall-item-ownerphoto-wrapper-{{$item.id}}">
 				<a href="{{$item.owner_url}}" target="redir" title="{{$item.olinktitle}}" class="contact-photo-link" id="wall-item-ownerphoto-link-{{$item.id}}">
 					<img src="{{$item.owner_photo}}" class="contact-photo {{$item.osparkle}}" id="wall-item-ownerphoto-{{$item.id}}" alt="{{$item.owner_name}}" />
 				</a>
@@ -53,8 +53,8 @@
 			<div class="wall-item-location">{{$item.location_html nofilter}}</div>
 		</div>
 		<div class="wall-item-content">
-			{{if $item.title}}<h2><a href="{{$item.plink.href}}" class="{{$item.sparkle}} p-name">{{$item.title}}</a></h2>{{/if}}
-			<div class="wall-item-body e-content {{if !$item.title}}p-name{{/if}}">{{$item.body_html nofilter}}</div>
+			{{if $item.title}}<h2 dir="auto"><a href="{{$item.plink.href}}" class="{{$item.sparkle}} p-name">{{$item.title}}</a></h2>{{/if}}
+			<div class="wall-item-body e-content {{if !$item.title}}p-name{{/if}}" dir="auto">{{$item.body_html nofilter}}</div>
 		</div>
 	</div>
 	<div class="wall-item-bottom">
@@ -90,7 +90,7 @@
                                 title="{{$item.linktitle}}"
                                 class="wall-item-name-link"><span
                                 class="wall-item-name{{$item.sparkle}}">{{$item.name}}</span></a>
-                                <span class="wall-item-ago" title="{{$item.localtime}}"><time class="dt-published" datetime="{{$item.localtime}}">{{$item.ago}}</time></span>
+                                <span class="wall-item-ago"><time class="dt-published" title="{{$item.localtime}}" datetime="{{$item.utc}}">{{$item.ago}}</time></span>
 				<span class="pinned">{{$item.pinned}}</span>
 				 {{if $item.owner_url}}<br/>{{$item.to}} <a href="{{$item.owner_url}}" target="redir" title="{{$item.olinktitle}}" class="wall-item-name-link"><span class="wall-item-name{{$item.osparkle}}" id="wall-item-ownername-{{$item.id}}">{{$item.owner_name}}</span></a> {{$item.vwall}}
 				 {{/if}}
@@ -145,10 +145,10 @@
 
 			<div class="wall-item-actions-tools">
 
-				{{if $item.drop.pagedrop}}
+				{{if $item.drop && $item.drop.pagedrop}}
 					<input type="checkbox" title="{{$item.drop.select}}" name="itemselected[]" class="item-select" value="{{$item.id}}" />
 				{{/if}}
-				{{if $item.drop.dropping}}
+				{{if $item.drop && $item.drop.dropping}}
 					<a href="item/drop/{{$item.id}}/{{$item.return}}" onclick="return confirmDelete();" class="icon delete s16" title="{{$item.drop.delete}}">{{$item.drop.delete}}</a>
 				{{/if}}
 				{{if $item.edpost}}
@@ -160,7 +160,11 @@
 	</div>
 	<div class="wall-item-bottom">
 		<div class="wall-item-links"></div>
-		{{if $item.responses}}
+		{{if $item.emojis}}
+			{{foreach $item.emojis as $emoji}}
+				<span class="wall-item-emoji" title="{{$emoji.title}}">{{$emoji.emoji}} {{$emoji.total}}</span>
+			{{/foreach}}
+		{{elseif $item.responses}}
 			{{foreach $item.responses as $verb=>$response}}
 				<div class="wall-item-{{$verb}}" id="wall-item-{{$verb}}-{{$item.id}}">{{$response.output nofilter}}</div>
 			{{/foreach}}
@@ -196,10 +200,10 @@
 
 {{* top thread comment box *}}
 {{if $item.threaded}}{{if $item.comment_html}}{{if $item.thread_level==1}}
-<div class="wall-item-comment-wrapper" >{{$item.comment_html nofilter}}</div>
+<div class="wall-item-comment-wrapper">{{$item.comment_html nofilter}}</div>
 {{/if}}{{/if}}{{/if}}
 
 
 {{if $item.flatten}}
-<div class="wall-item-comment-wrapper" >{{$item.comment_html nofilter}}</div>
+<div class="wall-item-comment-wrapper">{{$item.comment_html nofilter}}</div>
 {{/if}}

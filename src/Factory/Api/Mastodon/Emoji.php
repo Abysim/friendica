@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -26,16 +26,17 @@ use Friendica\Collection\Api\Mastodon\Emojis;
 
 class Emoji extends BaseFactory
 {
-	public function create(string $shortcode, string $url)
+	public function create(string $shortcode, string $url): \Friendica\Object\Api\Mastodon\Emoji
 	{
 		return new \Friendica\Object\Api\Mastodon\Emoji($shortcode, $url);
 	}
 
 	/**
 	 * @param array $smilies
+	 *
 	 * @return Emojis
 	 */
-	public function createCollectionFromSmilies(array $smilies)
+	public function createCollectionFromSmilies(array $smilies): Emojis
 	{
 		$prototype = null;
 
@@ -47,7 +48,7 @@ class Emoji extends BaseFactory
 
 				if ($prototype === null) {
 					$prototype = $this->create($shortcode, $url);
-					$emojis[] = $prototype;
+					$emojis[]  = $prototype;
 				} else {
 					$emojis[] = \Friendica\Object\Api\Mastodon\Emoji::createFromPrototype($prototype, $shortcode, $url);
 				}

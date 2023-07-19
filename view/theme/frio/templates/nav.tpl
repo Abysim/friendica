@@ -1,17 +1,17 @@
-{{* we have modified the navmenu (look at function frio_remote_nav() ) to have remote links. $nav.userinfo is a new variable and replaces the original $userinfo variable *}}
-{{if $nav.userinfo}}
+{{* we have modified the navmenu (look at function frio_remote_nav() ) to have remote links. *}}
+{{if $userinfo}}
 	<header>
 		{{* {{$langselector}} *}}
 
 		<div id="site-location">{{$sitelocation}}</div>
 		<div id="banner" class="hidden-sm hidden-xs">
-			{{* show on remote/visitor connections an other logo which symols that fact*}}
+			{{* show on remote/visitor connections another logo which symbols that fact*}}
 			{{if $nav.remote}}
 				<a href="{{$baseurl}}">
 					<div id="remote-logo-img" aria-label="{{$home}}"></div>
 				</a>
 			{{else}}
-				{{* #logo-img is the the placeholder to insert a mask (friendica logo) into this div
+				{{* #logo-img is the placeholder to insert a mask (friendica logo) into this div
 				For Firefox we have to call the paths of the mask (look at the bottom of this file).
 				Because for FF we need relative paths we apply them with js after the page is loaded (look at theme.js *}}
 				<a href="{{$baseurl}}">
@@ -41,7 +41,7 @@
 					<button type="button" class="navbar-toggle collapsed pull-left visible-sm visible-xs"
 						data-toggle="offcanvas" data-target="aside" aria-haspopup="true">
 						<span class="sr-only">Toggle navigation</span>
-						<i class="fa fa-ellipsis-v fa-fw fa-lg" aria-hidden="true"></i>
+						<i class="fa fa-angle-double-right fa-fw fa-lg" aria-hidden="true"></i>
 					</button>
 
 					{{* Left section of the NavBar with navigation shortcuts/icons *}}
@@ -81,10 +81,10 @@
 							</li>
 						{{/if}}
 
-						{{if $nav.events}}
+						{{if $nav.calendar}}
 							<li class="nav-segment hidden-xs">
-								<a accesskey="e" id="nav-events-link" href="{{$nav.events.0}}" data-toggle="tooltip"
-									aria-label="{{$nav.events.1}}" title="{{$nav.events.1}}" class="nav-menu"><i
+								<a accesskey="e" id="nav-calendar-link" href="{{$nav.calendar.0}}" data-toggle="tooltip"
+									aria-label="{{$nav.calendar.1}}" title="{{$nav.calendar.1}}" class="nav-menu"><i
 										class="fa fa-lg fa-calendar fa-fw"></i></a>
 							</li>
 						{{/if}}
@@ -110,7 +110,7 @@
 								{{* The notifications dropdown menu. There are two parts of menu. The second is at the bottom of this file. It is loaded via js. Look at nav-notifications-template *}}
 								<ul id="nav-notifications-menu" class="dropdown-menu menu-popup" role="menu"
 									aria-labelledby="nav-notifications-menu-btn">
-									{{* the following list entry must have the id "nav-notificaionts-mark-all". Without it this isn't visable. ....strange behavior :-/ *}}
+									{{* the following list entry must have the id "nav-notifications-mark-all". Without it this isn't visible. ....strange behavior :-/ *}}
 									<li role="presentation" id="nav-notifications-mark-all" class="dropdown-header">
 										<div class="arrow"></div>
 										{{$nav.notifications.1}}
@@ -141,7 +141,6 @@
 						{{if $nav.search}}
 							<li id="search-box" class="hidden-xs">
 								<form class="navbar-form" role="search" method="get" action="{{$nav.search.0}}">
-									<!-- <img class="hidden-xs" src="{{$nav.userinfo.icon}}" alt="{{$nav.userinfo.name}}" style="max-width:33px; max-height:33px; min-width:33px; min-height:33px; width:33px; height:33px;"> -->
 									<div class="form-group form-group-search">
 										<input accesskey="s" id="nav-search-input-field" class="form-control form-search"
 											type="text" name="q" data-toggle="tooltip" title="{{$search_hint}}"
@@ -154,17 +153,17 @@
 						{{/if}}
 
 						{{* The user dropdown menu *}}
-						{{if $nav.userinfo}}
+						{{if $userinfo}}
 							<li id="nav-user-linkmenu" class="dropdown account nav-menu hidden-xs">
 								<button accesskey="u" id="main-menu" class="btn-link dropdown-toggle nav-avatar"
 									data-toggle="dropdown" type="button" aria-haspopup="true" aria-expanded="false"
 									aria-controls="nav-user-menu">
 									<div aria-hidden="true" class="user-title pull-left hidden-xs hidden-sm hidden-md">
-										<strong>{{$nav.userinfo.name}}</strong><br>
-										{{if $nav.remote}}<span class="trunctate">{{$nav.remote}}</span>{{/if}}
+										<strong>{{$userinfo.name}}</strong><br>
+										{{if $nav.remote}}<span class="truncate">{{$nav.remote}}</span>{{/if}}
 									</div>
 
-									<img id="avatar" src="{{$nav.userinfo.icon}}" alt="{{$nav.userinfo.name}}">
+									<img id="avatar" src="{{$userinfo.icon}}" alt="{{$userinfo.name}}">
 									<span class="caret"></span>
 								</button>
 
@@ -195,7 +194,8 @@
 										</li>
 									{{/if}}
 									{{if $nav.messages}}
-										<li role="presentation"><a role="menuitem"
+										<li role="presentation">
+											<a role="menuitem"
 												class="nav-commlink {{$nav.messages.2}} {{$sel.messages}}"
 												href="{{$nav.messages.0}}" title="{{$nav.messages.3}}">
 												<i class="fa fa-envelope fa-fw" aria-hidden="true"></i>
@@ -206,7 +206,8 @@
 									{{/if}}
 									<li role="presentation" class="divider"></li>
 									{{if $nav.contacts}}
-										<li role="presentation"><a role="menuitem" id="nav-menu-contacts-link"
+										<li role="presentation">
+											<a role="menuitem" id="nav-menu-contacts-link"
 												class="nav-link {{$nav.contacts.2}}" href="{{$nav.contacts.0}}"
 												title="{{$nav.contacts.3}}">
 												<i class="fa fa-users fa-fw" aria-hidden="true"></i>
@@ -236,6 +237,7 @@
 												href="{{$nav.apps.0}}" title="{{$nav.apps.3}}">
 												<i class="fa fa-puzzle-piece fa-fw" aria-hidden="true"></i> {{$nav.apps.1}}
 											</a>
+										</li>
 										<li role="presentation" class="divider"></li>
 									{{/if}}
 									{{if $nav.help}}
@@ -255,28 +257,49 @@
 										</li>
 									{{/if}}
 									{{if $nav.admin}}
-										<li role="presentation"><a accesskey="a" role="menuitem" id="nav-admin-link"
+										<li role="presentation">
+											<a accesskey="a" role="menuitem" id="nav-admin-link"
 												class="nav-link {{$nav.admin.2}}" href="{{$nav.admin.0}}"
 												title="{{$nav.admin.3}}"><i class="fa fa-user-secret fa-fw" aria-hidden="true"></i>
-												{{$nav.admin.1}}</a></li>
+												{{$nav.admin.1}}
+											</a>
+										</li>
+									{{/if}}
+									{{if $nav.moderation}}
+										<li role="presentation">
+											<a accesskey="m" role="menuitem" id="nav-moderation-link"
+												class="nav-link {{$nav.moderation.2}}" href="{{$nav.moderation.0}}"
+												title="{{$nav.moderation.3}}"><i class="fa fa-gavel fa-fw" aria-hidden="true"></i>
+												{{$nav.moderation.1}}
+											</a>
+										</li>
 									{{/if}}
 									{{if $nav.tos}}
 										<li role="presentation" class="divider"></li>
-										<li role="presentation"><a role="menuitem" id="nav-tos-link" class="nav-link {{$nav.tos.2}}"
+										<li role="presentation">
+											<a role="menuitem" id="nav-tos-link" class="nav-link {{$nav.tos.2}}"
 												href="{{$nav.tos.0}}" title="{{$nav.tos.3}}"><i class="fa fa-file-text"
-													aria-hidden="true"></i> {{$nav.tos.1}}</a></li>
+													aria-hidden="true"></i> {{$nav.tos.1}}
+											</a>
+										</li>
 									{{/if}}
 									<li role="presentation" class="divider"></li>
 									{{if $nav.logout}}
-										<li role="presentation"><a role="menuitem" id="nav-logout-link"
+										<li role="presentation">
+											<a role="menuitem" id="nav-logout-link"
 												class="nav-link {{$nav.logout.2}}" href="{{$nav.logout.0}}"
 												title="{{$nav.logout.3}}"><i class="fa fa fa-sign-out fa-fw" aria-hidden="true"></i>
-												{{$nav.logout.1}}</a></li>
+												{{$nav.logout.1}}
+											</a>
+										</li>
 									{{else}}
-										<li role="presentation"><a role="menuitem" id="nav-login-link"
+										<li role="presentation">
+											<a role="menuitem" id="nav-login-link"
 												class="nav-login-link {{$nav.login.2}}" href="{{$nav.login.0}}"
 												title="{{$nav.login.3}}"><i class="fa fa-power-off fa-fw" aria-hidden="true"></i>
-												{{$nav.login.1}}</a></li>
+												{{$nav.login.1}}
+											</a>
+										</li>
 									{{/if}}
 								</ul>
 							</li>{{* End of userinfo dropdown menu *}}
@@ -300,40 +323,54 @@
 								{{/if}}
 							{{/if}}
 							<li role="presentation" class="list-group-item">
-								<img src="{{$nav.userinfo.icon}}" alt="{{$nav.userinfo.name}}"
+								<img src="{{$userinfo.icon}}" alt="{{$userinfo.name}}"
 									style="max-width:15px; max-height:15px; min-width:15px; min-height:15px; width:15px; height:15px;">
-								{{$nav.userinfo.name}}{{if $nav.remote}} ({{$nav.remote}}){{/if}}
+								{{$userinfo.name}}{{if $nav.remote}} ({{$nav.remote}}){{/if}}
 							</li>
 							{{foreach $nav.usermenu as $usermenu}}
-								<li role="menuitem" class="list-group-item"><a role="menuitem" class="{{$usermenu.2}}"
-										href="{{$usermenu.0}}" title="{{$usermenu.3}}">{{$usermenu.1}}</a></li>
+								<li role="presentation" class="list-group-item">
+									<a role="menuitem" class="{{$usermenu.2}}"
+										href="{{$usermenu.0}}" title="{{$usermenu.3}}">{{$usermenu.1}}
+									</a>
+								</li>
 							{{/foreach}}
 							{{if $nav.notifications || $nav.contacts || $nav.messages || $nav.delegation}}
 								<li role="presentation" class="divider"></li>
 							{{/if}}
 							{{if $nav.notifications}}
-								<li role="presentation" class="list-group-item"><a role="menuitem"
+								<li role="presentation" class="list-group-item">
+									<a role="menuitem"
 										href="{{$nav.notifications.all.0}}" title="{{$nav.notifications.1}}"><i
-											class="fa fa-bell fa-fw" aria-hidden="true"></i> {{$nav.notifications.1}}</a>
+											class="fa fa-bell fa-fw" aria-hidden="true"></i> {{$nav.notifications.1}}
+									</a>
 								</li>
 							{{/if}}
 							{{if $nav.contacts}}
-								<li role="presentation" class="list-group-item"><a role="menuitem"
+								<li role="presentation" class="list-group-item">
+									<a role="menuitem"
 										class="nav-link {{$nav.contacts.2}}" href="{{$nav.contacts.0}}"
 										title="{{$nav.contacts.3}}"><i class="fa fa-users fa-fw" aria-hidden="true"></i>
-										{{$nav.contacts.1}}</a></li>
+										{{$nav.contacts.1}}
+									</a>
+								</li>
 							{{/if}}
 							{{if $nav.messages}}
-								<li role="presentation" class="list-group-item"><a role="menuitem"
+								<li role="presentation" class="list-group-item">
+									<a role="menuitem"
 										class="nav-link {{$nav.messages.2}} {{$sel.messages}}" href="{{$nav.messages.0}}"
 										title="{{$nav.messages.3}}"><i class="fa fa-envelope fa-fw" aria-hidden="true"></i>
-										{{$nav.messages.1}}</a></li>
+										{{$nav.messages.1}}
+									</a>
+								</li>
 							{{/if}}
 							{{if $nav.delegation}}
-								<li role="presentation" class="list-group-item"><a role="menuitem"
+								<li role="presentation" class="list-group-item">
+									<a role="menuitem"
 										class="nav-commlink {{$nav.delegation.2}} {{$sel.delegation}}"
 										href="{{$nav.delegation.0}}" title="{{$nav.delegation.3}}"><i class="fa fa-flag fa-fw"
-											aria-hidden="true"></i> {{$nav.delegation.1}}</a></li>
+											aria-hidden="true"></i> {{$nav.delegation.1}}
+									</a>
+								</li>
 							{{/if}}
 							{{if $nav.settings || $nav.admin || $nav.logout}}
 								<li role="presentation" class="divider"></li>
@@ -342,25 +379,44 @@
 								<li role="presentation" class="list-group-item">
 									<a role="menuitem" class="nav-link {{$nav.settings.2}}" href="{{$nav.settings.0}}"
 										title="{{$nav.settings.3}}"><i class="fa fa-cog fa-fw" aria-hidden="true"></i>
-										{{$nav.settings.1}}</a>
+										{{$nav.settings.1}}
+									</a>
 								</li>
 							{{/if}}
 							{{if $nav.admin}}
-								<li role="presentation" class="list-group-item"><a role="menuitem"
+								<li role="presentation" class="list-group-item">
+									<a role="menuitem"
 										class="nav-link {{$nav.admin.2}}" href="{{$nav.admin.0}}" title="{{$nav.admin.3}}"><i
 											class="fa fa-user-secret fa-fw" aria-hidden="true"></i>
-										{{$nav.admin.1}}</a></li>
+										{{$nav.admin.1}}
+									</a>
+								</li>
+							{{/if}}
+							{{if $nav.moderation}}
+								<li role="presentation" class="list-group-item">
+									<a role="menuitem"
+										class="nav-link {{$nav.moderation.2}}" href="{{$nav.moderation.0}}" title="{{$nav.moderation.3}}"><i
+											class="fa fa-gavel fa-fw" aria-hidden="true"></i>
+										{{$nav.moderation.1}}
+									</a>
+								</li>
 							{{/if}}
 							{{if $nav.logout}}
-								<li role="presentation" class="list-group-item"><a role="menuitem"
+								<li role="presentation" class="list-group-item">
+									<a role="menuitem"
 										class="nav-link {{$nav.logout.2}}" href="{{$nav.logout.0}}" title="{{$nav.logout.3}}"><i
 											class="fa fa fa-sign-out fa-fw" aria-hidden="true"></i>
-										{{$nav.logout.1}}</a></li>
+										{{$nav.logout.1}}
+									</a>
+								</li>
 							{{else}}
-								<li role="presentation" class="list-group-item"><a role="menuitem"
+								<li role="presentation" class="list-group-item">
+									<a role="menuitem"
 										class="nav-login-link {{$nav.login.2}}" href="{{$nav.login.0}}"
 										title="{{$nav.login.3}}"><i class="fa fa-power-off fa-fw" aria-hidden="true"></i>
-										{{$nav.login.1}}</a></li>
+										{{$nav.login.1}}
+									</a>
+								</li>
 							{{/if}}
 						</ul>
 					</div>
@@ -369,14 +425,16 @@
 			</div><!-- end of div for navbar width-->
 		</div><!-- /.container -->
 	</nav><!-- /.navbar -->
-{{/if}}
-
-
-{{* The navbar for users which are not logged in *}}
-{{if $nav.userinfo == ''}}
+{{else}}
+	{{* The navbar for users which are not logged in *}}
 	<nav class="navbar navbar-fixed-top">
 		<div class="container">
 			<div class="navbar-header pull-left">
+				<button type="button" class="navbar-toggle collapsed pull-left visible-sm visible-xs"
+				        data-toggle="offcanvas" data-target="aside" aria-haspopup="true">
+					<span class="sr-only">Toggle navigation</span>
+					<i class="fa fa-ellipsis-v fa-fw fa-lg" aria-hidden="true"></i>
+				</button>
 				<a class="navbar-brand" href="#">
 					<div id="navbrand-container">
 						<div id="logo-img"></div>
@@ -402,14 +460,12 @@
 			</div>
 		</div>
 	</nav>
-
 {{/if}}
 
 {{* provide a a search input for mobile view, which expands by pressing the search icon *}}
 <div id="search-mobile" class="hidden-lg hidden-md hidden-sm collapse row well">
 	<div class="col-xs-12">
 		<form class="navbar-form" role="search" method="get" action="{{$nav.search.0}}">
-			<!-- <img class="hidden-xs" src="{{$nav.userinfo.icon}}" alt="{{$nav.userinfo.name}}" style="max-width:33px; max-height:33px; min-width:33px; min-height:33px; width:33px; height:33px;"> -->
 			<div class="form-group form-group-search">
 				<input id="nav-search-input-field-mobile" class="form-control form-search" type="text" name="q"
 					data-toggle="tooltip" title="{{$search_hint}}" placeholder="{{$nav.search.1}}">
@@ -419,7 +475,7 @@
 	</div>
 </div>
 
-{{* The second navbar which contains nav points of the actual page - (nav points are actual handled by this theme throug js *}}
+{{* The second navbar which contains nav points of the actual page - (nav points are actual handled by this theme through js *}}
 <div id="topbar-second" class="topbar">
 	<div class="container">
 		<div class="col-lg-3 col-md-3 hidden-sm hidden-xs" id="nav-short-info"></div>
@@ -427,22 +483,6 @@
 		<div class="col-lg-2 col-md-2 col-sm-1 col-xs-2" id="navbar-button"></div>
 	</div>
 </div>
-
-{{*The second part of the notifications dropdown menu. It handles the notifications *}}
-{{if $nav.notifications}}
-	<ul id="nav-notifications-template" class="media-list" style="display:none;" rel="template">
-		<li class="{4} notif-entry">
-			<div class="notif-entry-wrapper media">
-				<div class="notif-photo-wrapper media-object pull-left" aria-hidden="true"><a href="{6}"
-						class="userinfo click-card" tabIndex="-1"><img data-src="{1}"></a></div>
-				<a href="{0}" class="notif-desc-wrapper media-body">
-					{2}
-					<div><time class="notif-when time" data-toggle="tooltip" title="{5}">{3}</time></div>
-				</a>
-			</div>
-		</li>
-	</ul>
-{{/if}}
 
 {{* This is the mask of the firefox logo. We set the background of #logo-img to the user icon color and apply this mask to it
 The result is a friendica logo in the user icon color.*}}

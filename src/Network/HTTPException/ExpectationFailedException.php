@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,7 @@ use Friendica\Network\HTTPException;
 
 class ExpectationFailedException extends HTTPException
 {
-	protected $code = 417;
+	protected $code        = 417;
+	protected $httpdesc    = 'Expectation Failed';
+	protected $explanation = 'The server cannot meet the requirements of the Expect request-header field.';
 }

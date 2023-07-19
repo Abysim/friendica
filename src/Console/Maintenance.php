@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,7 +22,7 @@
 namespace Friendica\Console;
 
 use Friendica\App;
-use Friendica\Core\Config\IConfig;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 
 /**
  * Sets maintenance mode for this node
@@ -36,7 +36,7 @@ class Maintenance extends \Asika\SimpleConsole\Console
 	 */
 	private $appMode;
 	/**
-	 * @var IConfig
+	 * @var IManageConfigValues
 	 */
 	private $config;
 
@@ -69,7 +69,7 @@ HELP;
 		return $help;
 	}
 
-	public function __construct(App\Mode $appMode, IConfig $config, $argv = null)
+	public function __construct(App\Mode $appMode, IManageConfigValues $config, $argv = null)
 	{
 		parent::__construct($argv);
 
@@ -77,7 +77,7 @@ HELP;
 		$this->config = $config;
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		if ($this->getOption('v')) {
 			$this->out('Class: ' . __CLASS__);
@@ -100,15 +100,19 @@ HELP;
 
 		$enabled = intval($this->getArgument(0));
 
-		$this->config->set('system', 'maintenance', $enabled);
+		$transactionConfig = $this->config->beginTransaction();
+
+		$transactionConfig->set('system', 'maintenance', $enabled);
 
 		$reason = $this->getArgument(1);
 
 		if ($enabled && $this->getArgument(1)) {
-			$this->config->set('system', 'maintenance_reason', $this->getArgument(1));
+			$transactionConfig->set('system', 'maintenance_reason', $this->getArgument(1));
 		} else {
-			$this->config->set('system', 'maintenance_reason', '');
+			$transactionConfig->delete('system', 'maintenance_reason');
 		}
+
+		$transactionConfig->commit();
 
 		if ($enabled) {
 			$mode_str = "maintenance mode";

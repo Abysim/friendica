@@ -1,47 +1,41 @@
-<div id="friendica" class="generic-page-wrapper">
+<div id="friendica">
 	<h1>Friendica</h1>
-	<br>
 	<p>{{$about nofilter}}</p>
-	<br>
 	<p>{{$friendica nofilter}}</p>
-	<br>
 	<p>{{$bugs nofilter}}</p>
-	<br>
 	<p>{{$info nofilter}}</p>
-	<br>
 
 	<p>{{$visible_addons.title nofilter}}</p>
-	{{if $visible_addons.list}}
-	<div style="margin-left: 25px; margin-right: 25px; margin-bottom: 25px;">{{$visible_addons.list nofilter}}</div>
-	{{/if}}
+{{if $visible_addons.list}}
+	<div style="margin-left: 25px; margin-right: 25px; margin-bottom: 25px;">{{$visible_addons.list}}</div>
+{{/if}}
 
-	{{if $tos}}
+{{if $tos}}
 	<p>{{$tos nofilter}}</p>
-	{{/if}}
+{{/if}}
 
-	{{if $block_list}}
+{{if $block_list}}
 	<div id="about_blocklist">
-		<p>{{$block_list.title nofilter}}</p>
-		<br>
+		<p>{{$block_list.title}}</p>
 		<table class="table">
 			<thead>
 				<tr>
-					<th>{{$block_list.header[0] nofilter}}</th>
-					<th>{{$block_list.header[1] nofilter}}</th>
+					<th>{{$block_list.header[0]}}</th>
+					<th>{{$block_list.header[1]}}</th>
 				</tr>
 			</thead>
 			<tbody>
 			{{foreach $block_list.list as $blocked}}
 				<tr>
-					<td>{{$blocked.domain nofilter}}</td>
-					<td>{{$blocked.reason nofilter}}</td>
+					<td>{{$blocked.domain}}</td>
+					<td>{{$blocked.reason}}</td>
 				</tr>
 			{{/foreach}}
 			</tbody>
 		</table>
+		<p><a rel="nofollow" href="/blocklist/domain/download"><i class="fa fa-download"></i> {{$block_list.download}}</a></p>
 	</div>
+{{/if}}
 
-	{{/if}}
-
-{{$hooked nofilter}}
+	{{$hooked nofilter}}
 </div>

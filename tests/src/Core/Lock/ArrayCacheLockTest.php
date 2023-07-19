@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,16 +21,19 @@
 
 namespace Friendica\Test\src\Core\Lock;
 
-use Friendica\Core\Cache\ArrayCache;
-use Friendica\Core\Lock\CacheLock;
+use Friendica\Core\Cache\Type\ArrayCache;
+use Friendica\Core\Lock\Type\CacheLock;
 
 class ArrayCacheLockTest extends LockTest
 {
 	protected function getInstance()
 	{
-		return new CacheLock(new ArrayCache('localhost'));
+		return new \Friendica\Core\Lock\Type\CacheLock(new ArrayCache('localhost'));
 	}
 
+	/**
+	 * @doesNotPerformAssertions
+	 */
 	public function testLockTTL()
 	{
 		self::markTestSkipped("ArrayCache doesn't support TTL");

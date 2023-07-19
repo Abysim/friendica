@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,6 +23,7 @@ namespace Friendica\Module;
 
 use Friendica\BaseModule;
 use Friendica\Core\Logger;
+use Friendica\Core\System;
 use Friendica\DI;
 use Friendica\Model\Attach as MAttach;
 
@@ -34,23 +35,21 @@ class Attach extends BaseModule
 	/**
 	 * Return to user an attached file given the id
 	 */
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-		$a = DI::app();
-		if ($a->argc != 2) {
+		if (empty($this->parameters['item'])) {
 			throw new \Friendica\Network\HTTPException\BadRequestException();
 		}
 
-		// @TODO: Replace with parameter from router
-		$item_id = intval($a->argv[1]);
-		
+		$item_id = intval($this->parameters['item']);
+
 		// Check for existence
 		$item = MAttach::exists(['id' => $item_id]);
 		if ($item === false) {
 			throw new \Friendica\Network\HTTPException\NotFoundException(DI::l10n()->t('Item was not found.'));
 		}
 
-		// Now we'll fetch the item, if we have enough permisson
+		// Now we'll fetch the item, if we have enough permission
 		$item = MAttach::getByIdWithPermission($item_id);
 		if ($item === false) {
 			throw new \Friendica\Network\HTTPException\ForbiddenException(DI::l10n()->t('Permission denied.'));
@@ -58,7 +57,7 @@ class Attach extends BaseModule
 
 		$data = MAttach::getData($item);
 		if (is_null($data)) {
-			Logger::log('NULL data for attachment with id ' . $item['id']);
+			Logger::notice('NULL data for attachment with id ' . $item['id']);
 			throw new \Friendica\Network\HTTPException\NotFoundException(DI::l10n()->t('Item was not found.'));
 		}
 
@@ -73,7 +72,7 @@ class Attach extends BaseModule
 		}
 
 		echo $data;
-		exit();
+		System::exit();
 		// NOTREACHED
 	}
 }

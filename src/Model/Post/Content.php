@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -26,6 +26,7 @@ use Friendica\Core\Protocol;
 use Friendica\Database\Database;
 use Friendica\Database\DBA;
 use Friendica\Database\DBStructure;
+use Friendica\DI;
 use Friendica\Model\Post;
 
 class Content
@@ -44,7 +45,7 @@ class Content
 			throw new BadMethodCallException('Empty URI_id');
 		}
 
-		$fields = DBStructure::getFieldsForTable('post-content', $data);
+		$fields = DI::dbaDefinition()->truncateFieldsForTable('post-content', $data);
 
 		// Additionally assign the key fields
 		$fields['uri-id'] = $uri_id;
@@ -67,7 +68,7 @@ class Content
 			throw new BadMethodCallException('Empty URI_id');
 		}
 
-		$fields = DBStructure::getFieldsForTable('post-content', $data);
+		$fields = DI::dbaDefinition()->truncateFieldsForTable('post-content', $data);
 
 		// Remove the key fields
 		unset($fields['uri-id']);

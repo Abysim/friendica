@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,8 +22,10 @@
 namespace Friendica\Util;
 
 use Friendica\Core\Logger;
-use Friendica\Core\System;
 use Friendica\DI;
+use Friendica\Model\Photo;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
+use Friendica\Object\Image;
 
 /**
  * Image utilities
@@ -33,17 +35,46 @@ class Images
 	/**
 	 * Maps Mime types to Imagick formats
 	 *
-	 * @return array
+	 * @return array Format map
 	 */
 	public static function getFormatsMap()
 	{
-		$m = [
+		return [
 			'image/jpeg' => 'JPG',
+			'image/jpg' => 'JPG',
 			'image/png' => 'PNG',
-			'image/gif' => 'GIF'
+			'image/gif' => 'GIF',
 		];
+	}
 
-		return $m;
+	/**
+	 * Return file extension for MIME type
+	 *
+	 * @param string $mimetype MIME type
+	 * @return string File extension for MIME type
+	 */
+	public static function getExtensionByMimeType(string $mimetype): string
+	{
+		switch ($mimetype) {
+			case 'image/png':
+				$imagetype = IMAGETYPE_PNG;
+				break;
+
+			case 'image/gif':
+				$imagetype = IMAGETYPE_GIF;
+				break;
+
+			case 'image/jpeg':
+			case 'image/jpg':
+				$imagetype = IMAGETYPE_JPEG;
+				break;
+
+			default: // Unknown type must be a blob then
+				return 'blob';
+				break;
+		}
+
+		return image_type_to_extension($imagetype);
 	}
 
 	/**
@@ -51,11 +82,13 @@ class Images
 	 *
 	 * @return array
 	 */
-	public static function supportedTypes()
+	public static function supportedTypes(): array
 	{
 		$types = [
-			'image/jpeg' => 'jpg'
+			'image/jpeg' => 'jpg',
+			'image/jpg' => 'jpg',
 		];
+
 		if (class_exists('Imagick')) {
 			// Imagick::queryFormats won't help us a lot there...
 			// At least, not yet, other parts of friendica uses this array
@@ -77,21 +110,20 @@ class Images
 	 *
 	 * @param string $image_data Image data
 	 * @param string $filename   File name (for guessing the type via the extension)
-	 * @param string $mime       default mime type
-	 *
-	 * @return string
+	 * @param string $default    Default MIME type
+	 * @return string MIME type
 	 * @throws \Exception
 	 */
-	public static function getMimeTypeByData(string $image_data, string $filename = '', string $mime = '')
+	public static function getMimeTypeByData(string $image_data, string $filename = '', string $default = ''): string
 	{
-		if (substr($mime, 0, 6) == 'image/') {
-			Logger::info('Using default mime type', ['filename' => $filename, 'mime' => $mime]);
-			return $mime;
+		if (substr($default, 0, 6) == 'image/') {
+			Logger::info('Using default mime type', ['filename' => $filename, 'mime' => $default]);
+			return $default;
 		}
 
 		$image = @getimagesizefromstring($image_data);
 		if (!empty($image['mime'])) {
-			Logger::info('Mime type detected via data', ['filename' => $filename, 'default' => $mime, 'mime' => $image['mime']]);
+			Logger::info('Mime type detected via data', ['filename' => $filename, 'default' => $default, 'mime' => $image['mime']]);
 			return $image['mime'];
 		}
 
@@ -103,21 +135,20 @@ class Images
 	 *
 	 * @param string $sourcefile Source file of the image
 	 * @param string $filename   File name (for guessing the type via the extension)
-	 * @param string $mime       default mime type
-	 *
-	 * @return string
+	 * @param string $default    default MIME type
+	 * @return string MIME type
 	 * @throws \Exception
 	 */
-	public static function getMimeTypeBySource(string $sourcefile, string $filename = '', string $mime = '')
+	public static function getMimeTypeBySource(string $sourcefile, string $filename = '', string $default = ''): string
 	{
-		if (substr($mime, 0, 6) == 'image/') {
-			Logger::info('Using default mime type', ['filename' => $filename, 'mime' => $mime]);
-			return $mime;
+		if (substr($default, 0, 6) == 'image/') {
+			Logger::info('Using default mime type', ['filename' => $filename, 'mime' => $default]);
+			return $default;
 		}
 
 		$image = @getimagesize($sourcefile);
 		if (!empty($image['mime'])) {
-			Logger::info('Mime type detected via file', ['filename' => $filename, 'default' => $mime, 'image' => $image]);
+			Logger::info('Mime type detected via file', ['filename' => $filename, 'default' => $default, 'image' => $image]);
 			return $image['mime'];
 		}
 
@@ -125,14 +156,13 @@ class Images
 	}
 
 	/**
-	 * Guess image mimetype from the filename
+	 * Guess image MIME type from the filename's extension
 	 *
-	 * @param string $filename   Image filename
-	 *
-	 * @return string
+	 * @param string $filename Image filename
+	 * @return string Guessed MIME type by extension
 	 * @throws \Exception
 	 */
-	public static function guessTypeByExtension(string $filename)
+	public static function guessTypeByExtension(string $filename): string
 	{
 		$ext = pathinfo(parse_url($filename, PHP_URL_PATH), PATHINFO_EXTENSION);
 		$types = self::supportedTypes();
@@ -148,11 +178,13 @@ class Images
 	}
 
 	/**
+	 * Gets info array from given URL, cached data has priority
+	 *
 	 * @param string $url
-	 * @return array
+	 * @return array Info
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function getInfoFromURLCached($url)
+	public static function getInfoFromURLCached(string $url): array
 	{
 		$data = [];
 
@@ -160,23 +192,27 @@ class Images
 			return $data;
 		}
 
-		$data = DI::cache()->get($url);
+		$cacheKey = 'getInfoFromURL:' . sha1($url);
+
+		$data = DI::cache()->get($cacheKey);
 
 		if (empty($data) || !is_array($data)) {
 			$data = self::getInfoFromURL($url);
 
-			DI::cache()->set($url, $data);
+			DI::cache()->set($cacheKey, $data);
 		}
 
-		return $data;
+		return $data ?? [];
 	}
 
 	/**
+	 * Gets info from URL uncached
+	 *
 	 * @param string $url
-	 * @return array
+	 * @return array Info array
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function getInfoFromURL($url)
+	public static function getInfoFromURL(string $url): array
 	{
 		$data = [];
 
@@ -184,7 +220,22 @@ class Images
 			return $data;
 		}
 
-		$img_str = DI::httpRequest()->fetch($url, 4);
+		if (Network::isLocalLink($url) && ($data = Photo::getResourceData($url))) {
+			$photo = Photo::selectFirst([], ['resource-id' => $data['guid'], 'scale' => $data['scale']]);
+			if (!empty($photo)) {
+				$img_str = Photo::getImageDataForPhoto($photo);
+			}
+			// @todo Possibly add a check for locally stored files
+		}
+
+		if (empty($img_str)) {
+			try {
+				$img_str = DI::httpClient()->fetch($url, HttpClientAccept::IMAGE, 4);
+			} catch (\Exception $exception) {
+				Logger::notice('Image is invalid', ['url' => $url, 'exception' => $exception]);
+				return [];
+			}
+		}
 
 		if (!$img_str) {
 			return [];
@@ -193,36 +244,33 @@ class Images
 		$filesize = strlen($img_str);
 
 		try {
-			if (function_exists("getimagesizefromstring")) {
-				$data = @getimagesizefromstring($img_str);
-			} else {
-				$tempfile = tempnam(get_temppath(), "cache");
-
-				$stamp1 = microtime(true);
-				file_put_contents($tempfile, $img_str);
-				DI::profiler()->saveTimestamp($stamp1, "file");
-
-				$data = getimagesize($tempfile);
-				unlink($tempfile);
-			}
+			$data = @getimagesizefromstring($img_str);
 		} catch (\Exception $e) {
 			return [];
 		}
 
 		if ($data) {
+			$image = new Image($img_str);
+
+			if ($image->isValid()) {
+				$data['blurhash'] = $image->getBlurHash();
+			}
+
 			$data['size'] = $filesize;
 		}
 
-		return $data;
+		return is_array($data) ? $data : [];
 	}
 
 	/**
-	 * @param integer $width
-	 * @param integer $height
-	 * @param integer $max
-	 * @return array
+	 * Returns scaling information
+	 *
+	 * @param integer $width Width
+	 * @param integer $height Height
+	 * @param integer $max Max width/height
+	 * @return array Scaling dimensions
 	 */
-	public static function getScalingDimensions($width, $height, $max)
+	public static function getScalingDimensions(int $width, int $height, int $max): array
 	{
 		if ((!$width) || (!$height)) {
 			return ['width' => 0, 'height' => 0];
@@ -267,5 +315,41 @@ class Images
 		}
 
 		return ['width' => $dest_width, 'height' => $dest_height];
+	}
+
+	/**
+	 * Get a BBCode tag for an local photo page URL with a preview thumbnail and an image description
+	 *
+	 * @param string $resource_id
+	 * @param string $nickname The local user owner of the resource
+	 * @param int    $preview Preview image size identifier, either 0, 1 or 2 in decreasing order of size
+	 * @param string $ext Image file extension
+	 * @param string $description
+	 * @return string
+	 */
+	public static function getBBCodeByResource(string $resource_id, string $nickname, int $preview, string $ext, string $description = ''): string
+	{
+		return self::getBBCodeByUrl(
+			DI::baseUrl() . '/photos/' . $nickname . '/image/' . $resource_id,
+			DI::baseUrl() . '/photo/' . $resource_id . '-' . $preview. '.' . $ext,
+			$description
+		);
+	}
+
+	/**
+	 * Get a BBCode tag for an image URL with a preview thumbnail and an image description
+	 *
+	 * @param string $photo Full image URL
+	 * @param string $preview Preview image URL
+	 * @param string $description
+	 * @return string
+	 */
+	public static function getBBCodeByUrl(string $photo, string $preview = null, string $description = ''): string
+	{
+		if (!empty($preview)) {
+			return '[url=' . $photo . '][img=' . $preview . ']' . $description . '[/img][/url]';
+		}
+
+		return '[img=' . $photo . ']' . $description . '[/img]';
 	}
 }

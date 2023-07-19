@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -70,7 +70,7 @@ HELP;
 		$this->l10n = $l10n;
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		if ($this->getOption('v')) {
 			$this->out('Class: ' . __CLASS__);

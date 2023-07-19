@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,6 +24,7 @@ namespace Friendica\Worker;
 use Friendica\Core\Logger;
 use Friendica\DI;
 use Friendica\Model\Nodeinfo as ModelNodeInfo;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
 
 class NodeInfo
 {
@@ -32,9 +33,9 @@ class NodeInfo
 		Logger::info('start');
 		ModelNodeInfo::update();
 		// Now trying to register
-		$url = 'http://the-federation.info/register/' . DI::baseUrl()->getHostname();
+		$url = 'http://the-federation.info/register/' . DI::baseUrl()->getHost();
 		Logger::debug('Check registering url', ['url' => $url]);
-		$ret = DI::httpRequest()->fetch($url);
+		$ret = DI::httpClient()->fetch($url, HttpClientAccept::HTML);
 		Logger::debug('Check registering answer', ['answer' => $ret]);
 		Logger::info('end');
 	}

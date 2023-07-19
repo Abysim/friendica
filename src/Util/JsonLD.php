@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,9 +21,10 @@
 
 namespace Friendica\Util;
 
-use Friendica\Core\Cache\Duration;
+use Friendica\Core\Cache\Enum\Duration;
 use Friendica\Core\Logger;
 use Exception;
+use Friendica\Core\System;
 use Friendica\DI;
 
 /**
@@ -41,6 +42,35 @@ class JsonLD
 	 */
 	public static function documentLoader($url)
 	{
+		switch ($url) {
+			case 'https://w3id.org/security/v1':
+				$url = DI::basePath() . '/static/security-v1.jsonld';
+				break;
+			case 'https://w3id.org/identity/v1':
+				$url = DI::basePath() . '/static/identity-v1.jsonld';
+				break;
+			case 'https://www.w3.org/ns/activitystreams':
+				$url = DI::basePath() . '/static/activitystreams.jsonld';
+				break;
+			case 'https://funkwhale.audio/ns':
+				$url = DI::basePath() . '/static/funkwhale.audio.jsonld';
+				break;
+			default:
+				switch (parse_url($url, PHP_URL_PATH)) {
+					case '/schemas/litepub-0.1.jsonld';
+						$url = DI::basePath() . '/static/litepub-0.1.jsonld';
+						break;
+					case '/apschema/v1.2':
+					case '/apschema/v1.9':
+					case '/apschema/v1.10':
+						$url = DI::basePath() . '/static/apschema.jsonld';
+						break;
+					default:
+						Logger::info('Got url', ['url' =>$url]);
+						break;
+				}
+		}
+
 		$recursion = 0;
 
 		$x = debug_backtrace();
@@ -54,7 +84,7 @@ class JsonLD
 
 		if ($recursion > 5) {
 			Logger::error('jsonld bomb detected at: ' . $url);
-			exit();
+			System::exit();
 		}
 
 		$result = DI::cache()->get('documentLoader:' . $url);
@@ -105,11 +135,12 @@ class JsonLD
 	 * Compacts a given JSON array
 	 *
 	 * @param array $json
+	 * @param bool  $logfailed
 	 *
 	 * @return array Compacted JSON array
 	 * @throws Exception
 	 */
-	public static function compact($json)
+	public static function compact($json, bool $logfailed = true): array
 	{
 		jsonld_set_document_loader('Friendica\Util\JsonLD::documentLoader');
 
@@ -124,24 +155,42 @@ class JsonLD
 			'toot' => (object)['@id' => 'http://joinmastodon.org/ns#', '@type' => '@id'],
 			'litepub' => (object)['@id' => 'http://litepub.social/ns#', '@type' => '@id'],
 			'sc' => (object)['@id' => 'http://schema.org#', '@type' => '@id'],
-			'pt' => (object)['@id' => 'https://joinpeertube.org/ns#', '@type' => '@id']];
+			'pt' => (object)['@id' => 'https://joinpeertube.org/ns#', '@type' => '@id'],
+			'mobilizon' => (object)['@id' => 'https://joinmobilizon.org/ns#', '@type' => '@id'],
+			'fedibird' => (object)['@id' => 'http://fedibird.com/ns#', '@type' => '@id'],
+			'misskey' => (object)['@id' => 'https://misskey-hub.net/ns#', '@type' => '@id'],
+		];
+
+		$orig_json = $json;
 
 		// Preparation for adding possibly missing content to the context
 		if (!empty($json['@context']) && is_string($json['@context'])) {
 			$json['@context'] = [$json['@context']];
 		}
 
-		// Workaround for servers with missing context
-		// See issue https://github.com/nextcloud/social/issues/330
 		if (!empty($json['@context']) && is_array($json['@context'])) {
-			$json['@context'][] = 'https://w3id.org/security/v1';
+			// Remove empty entries from the context (a problem with WriteFreely)
+			$json['@context'] = array_filter($json['@context']);
+
+			// Workaround for servers with missing context
+			// See issue https://github.com/nextcloud/social/issues/330
+			if (!in_array('https://w3id.org/security/v1', $json['@context'])) {
+				$json['@context'][] = 'https://w3id.org/security/v1';
+			}
+
+			// Issue 12419: Workaround for GoToSocial
+			$pos = array_search('http://joinmastodon.org/ns', $json['@context']);
+			if (is_int($pos)) {
+				$json['@context'][$pos] = ['toot' => 'http://joinmastodon.org/ns#'];
+			}
 		}
 
-		// Trying to avoid memory problems with large content fields
-		if (!empty($json['object']['source']['content'])) {
-			$content = $json['object']['source']['content'];
-			$json['object']['source']['content'] = '';
-		}
+		// Bookwyrm transmits "id" fields with "null", which isn't allowed.
+		array_walk_recursive($json, function (&$value, $key) {
+			if ($key == 'id' && is_null($value)) {
+				$value = '';
+			}
+		});
 
 		$jsonobj = json_decode(json_encode($json, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 
@@ -150,15 +199,19 @@ class JsonLD
 		}
 		catch (Exception $e) {
 			$compacted = false;
-			Logger::error('compacting error');
-			// Sooner or later we should log some details as well - but currently this leads to memory issues
-			// Logger::log('compacting error:' . substr(print_r($e, true), 0, 10000), Logger::DEBUG);
+			Logger::notice('compacting error', ['msg' => $e->getMessage(), 'previous' => $e->getPrevious(), 'line' => $e->getLine()]);
+			if ($logfailed && DI::config()->get('debug', 'ap_log_failure')) {
+				$tempfile = tempnam(System::getTempPath(), 'failed-jsonld');
+				file_put_contents($tempfile, json_encode(['json' => $orig_json, 'callstack' => System::callstack(20), 'msg' => $e->getMessage(), 'previous' => $e->getPrevious()], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
+				Logger::notice('Failed message stored', ['file' => $tempfile]);
+			}
 		}
 
 		$json = json_decode(json_encode($compacted, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE), true);
 
-		if (isset($json['as:object']['as:source']['as:content']) && !empty($content)) {
-			$json['as:object']['as:source']['as:content'] = $content;
+		if ($json === false) {
+			Logger::notice('JSON encode->decode failed', ['orig_json' => $orig_json, 'compacted' => $compacted]);
+			$json = [];
 		}
 
 		return $json;
@@ -180,7 +233,7 @@ class JsonLD
 		}
 
 		// If it isn't an array yet, make it to one
-		if (!is_int(key($array[$element]))) {
+		if (!is_array($array[$element]) || !is_int(key($array[$element]))) {
 			$array[$element] = [$array[$element]];
 		}
 

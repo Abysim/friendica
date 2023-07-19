@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -30,6 +30,8 @@ namespace Friendica\App;
  */
 class Arguments
 {
+	const DEFAULT_MODULE = 'home';
+
 	/**
 	 * @var string The complete query string
 	 */
@@ -39,6 +41,10 @@ class Arguments
 	 */
 	private $command;
 	/**
+	 * @var string The name of the current module
+	 */
+	private $moduleName;
+	/**
 	 * @var array The arguments of the current execution
 	 */
 	private $argv;
@@ -46,13 +52,19 @@ class Arguments
 	 * @var int The count of arguments
 	 */
 	private $argc;
+	/**
+	 * @var string The used HTTP method
+	 */
+	private $method;
 
-	public function __construct(string $queryString = '', string $command = '', array $argv = [], int $argc = 0)
+	public function __construct(string $queryString = '', string $command = '', string $moduleName = '', array $argv = [], int $argc = 0, string $method = Router::GET)
 	{
 		$this->queryString = $queryString;
 		$this->command     = $command;
+		$this->moduleName  = $moduleName;
 		$this->argv        = $argv;
 		$this->argc        = $argc;
+		$this->method      = $method;
 	}
 
 	/**
@@ -66,25 +78,54 @@ class Arguments
 	/**
 	 * @return string The whole command of this call
 	 */
-	public function getCommand()
+	public function getCommand(): string
 	{
 		return $this->command;
 	}
 
 	/**
+	 * @return string The module name based on the arguments
+	 * @deprecated 2022.12 - With the new (sub-)routes, it's not trustworthy anymore, use the ModuleClass instead
+	 * @see Router::getModuleClass()
+	 */
+	public function getModuleName(): string
+	{
+		return $this->moduleName;
+	}
+
+	/**
 	 * @return array All arguments of this call
 	 */
-	public function getArgv()
+	public function getArgv(): array
 	{
 		return $this->argv;
 	}
 
 	/**
+	 * @return string The used HTTP method
+	 */
+	public function getMethod(): string
+	{
+		return $this->method;
+	}
+
+	/**
 	 * @return int The count of arguments of this call
 	 */
-	public function getArgc()
+	public function getArgc(): int
 	{
 		return $this->argc;
+	}
+
+	public function setArgv(array $argv)
+	{
+		$this->argv = $argv;
+		$this->argc = count($argv);
+	}
+
+	public function setArgc(int $argc)
+	{
+		$this->argc = $argc;
 	}
 
 	/**
@@ -106,7 +147,7 @@ class Arguments
 	 *
 	 * @return bool if the argument position exists
 	 */
-	public function has(int $position)
+	public function has(int $position): bool
 	{
 		return array_key_exists($position, $this->argv);
 	}
@@ -119,7 +160,7 @@ class Arguments
 	 *
 	 * @return Arguments The determined arguments
 	 */
-	public function determine(array $server, array $get)
+	public function determine(array $server, array $get): Arguments
 	{
 		// removing leading / - maybe a nginx problem
 		$server['QUERY_STRING'] = ltrim($server['QUERY_STRING'] ?? '', '/');
@@ -161,6 +202,20 @@ class Arguments
 
 		$queryString = $command . ($queryParameters ? '?' . http_build_query($queryParameters) : '');
 
-		return new Arguments($queryString, $command, $argv, $argc);
+		if ($argc > 0) {
+			$module = str_replace('.', '_', $argv[0]);
+			$module = str_replace('-', '_', $module);
+		} else {
+			$module = self::DEFAULT_MODULE;
+		}
+
+		// Compatibility with the Firefox App
+		if (($module == "users") && ($command == "users/sign_in")) {
+			$module = "login";
+		}
+
+		$httpMethod = in_array($server['REQUEST_METHOD'] ?? '', Router::ALLOWED_METHODS) ? $server['REQUEST_METHOD'] : Router::GET;
+
+		return new Arguments($queryString, $command, $module, $argv, $argc, $httpMethod);
 	}
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -38,7 +38,7 @@ final class ACLFormatter
 	public function expand(string $acl_string = null)
 	{
 		// In case there is no ID list, return empty array (=> no ACL set)
-		if (!isset($acl_string)) {
+		if (empty($acl_string)) {
 			return [];
 		}
 

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -34,15 +34,20 @@ $dice = $dice->addRule(Friendica\App\Mode::class, ['call' => [['determineRunMode
 
 \Friendica\DI::init($dice);
 
+\Friendica\Core\Logger\Handler\ErrorHandler::register($dice->create(\Psr\Log\LoggerInterface::class));
+
 $a = \Friendica\DI::app();
 
 \Friendica\DI::mode()->setExecutor(\Friendica\App\Mode::INDEX);
 
 $a->runFrontend(
-	$dice->create(\Friendica\App\Module::class),
 	$dice->create(\Friendica\App\Router::class),
-	$dice->create(\Friendica\Core\PConfig\IPConfig::class),
+	$dice->create(\Friendica\Core\PConfig\Capability\IManagePersonalConfigValues::class),
 	$dice->create(\Friendica\Security\Authentication::class),
 	$dice->create(\Friendica\App\Page::class),
-	$start_time
+	$dice->create(\Friendica\Content\Nav::class),
+	$dice->create(Friendica\Module\Special\HTTPException::class),
+	new \Friendica\Util\HTTPInputData($_SERVER),
+	$start_time,
+	$_SERVER
 );

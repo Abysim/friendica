@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,10 +22,10 @@
 namespace Friendica\Security;
 
 use Friendica\Database\DBA;
+use Friendica\DI;
 use Friendica\Model\Contact;
 use Friendica\Model\Group;
 use Friendica\Model\User;
-use Friendica\Core\Session;
 
 /**
  * Secures that User is allow to do requests
@@ -36,20 +36,20 @@ class Security
 	{
 		static $verified = 0;
 
-		if (!Session::isAuthenticated()) {
+		if (!DI::userSession()->isAuthenticated()) {
 			return false;
 		}
 
-		$uid = local_user();
+		$uid = DI::userSession()->getLocalUserId();
 		if ($uid == $owner) {
 			return true;
 		}
 
-		if (local_user() && ($owner == 0)) {
+		if (DI::userSession()->getLocalUserId() && ($owner == 0)) {
 			return true;
 		}
 
-		if (!empty(Session::getRemoteContactID($owner))) {
+		if (!empty($cid = DI::userSession()->getRemoteContactID($owner))) {
 			// use remembered decision and avoid a DB lookup for each and every display item
 			// DO NOT use this function if there are going to be multiple owners
 			// We have a contact-id for an authenticated remote user, this block determines if the contact
@@ -60,22 +60,19 @@ class Security
 			} elseif ($verified === 1) {
 				return false;
 			} else {
-				$cid = Session::getRemoteContactID($owner);
-				if (!$cid) {
+				$user = User::getById($owner);
+				if (!$user || $user['blockwall']) {
+					$verified = 1;
 					return false;
 				}
 
-				$r = q("SELECT `contact`.*, `user`.`page-flags` FROM `contact` INNER JOIN `user` on `user`.`uid` = `contact`.`uid`
-					WHERE `contact`.`uid` = %d AND `contact`.`id` = %d AND `contact`.`blocked` = 0 AND `contact`.`pending` = 0
-					AND `user`.`blockwall` = 0 AND `readonly` = 0  AND (`contact`.`rel` IN (%d , %d) OR `user`.`page-flags` = %d) LIMIT 1",
-					intval($owner),
-					intval($cid),
-					intval(Contact::SHARING),
-					intval(Contact::FRIEND),
-					intval(User::PAGE_FLAGS_COMMUNITY)
-				);
+				$contact = Contact::getById($cid);
+				if ($contact || $contact['blocked'] || $contact['readonly'] || $contact['pending']) {
+					$verified = 1;
+					return false;
+				}
 
-				if (DBA::isResult($r)) {
+				if (in_array($contact['rel'], [Contact::SHARING, Contact::FRIEND]) || ($user['page-flags'] == User::PAGE_FLAGS_COMMUNITY)) {
 					$verified = 2;
 					return true;
 				} else {
@@ -96,8 +93,8 @@ class Security
 	 */
 	public static function getPermissionsSQLByUserId(int $owner_id, bool $accessible = false)
 	{
-		$local_user = local_user();
-		$remote_contact = Session::getRemoteContactID($owner_id);
+		$local_user = DI::userSession()->getLocalUserId();
+		$remote_contact = DI::userSession()->getRemoteContactID($owner_id);
 		$acc_sql = '';
 
 		if ($accessible) {

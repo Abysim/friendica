@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,11 +24,11 @@ use Friendica\App;
 use Friendica\Core\System;
 use Friendica\DI;
 
-require_once("mod/notes.php");
+require_once 'mod/notes.php';
 
-function update_notes_content(App $a) {
-
-	$profile_uid = intval($_GET["p"]);
+function update_notes_content(App $a)
+{
+	$profile_uid = intval($_GET['p']);
 
 	/**
 	 *

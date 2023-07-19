@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -26,30 +26,29 @@ use Friendica\Content\Nav;
 use Friendica\Content\Pager;
 use Friendica\Content\Widget;
 use Friendica\Core\Hook;
-use Friendica\Core\Session;
 use Friendica\Core\Renderer;
+use Friendica\Core\Search;
 use Friendica\DI;
 use Friendica\Model;
 use Friendica\Model\Profile;
 use Friendica\Network\HTTPException;
-use Friendica\Util\Strings;
 
 /**
  * Shows the local directory of this node
  */
 class Directory extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
 		$app = DI::app();
 		$config = DI::config();
 
-		if (($config->get('system', 'block_public') && !Session::isAuthenticated()) ||
-			($config->get('system', 'block_local_dir') && !Session::isAuthenticated())) {
+		if (($config->get('system', 'block_public') && !DI::userSession()->isAuthenticated()) ||
+			($config->get('system', 'block_local_dir') && !DI::userSession()->isAuthenticated())) {
 			throw new HTTPException\ForbiddenException(DI::l10n()->t('Public access denied.'));
 		}
 
-		if (local_user()) {
+		if (DI::userSession()->getLocalUserId()) {
 			DI::page()['aside'] .= Widget::findPeople();
 			DI::page()['aside'] .= Widget::follow();
 		}
@@ -59,12 +58,10 @@ class Directory extends BaseModule
 
 		Nav::setSelected('directory');
 
-		$search = (!empty($_REQUEST['search']) ?
-			Strings::escapeTags(trim(rawurldecode($_REQUEST['search']))) :
-			'');
+		$search = trim(rawurldecode($_REQUEST['search'] ?? ''));
 
 		$gDirPath = '';
-		$dirURL = $config->get('system', 'directory');
+		$dirURL = Search::getGlobalDirectory();
 		if (strlen($dirURL)) {
 			$gDirPath = Profile::zrl($dirURL, true);
 		}
@@ -74,16 +71,10 @@ class Directory extends BaseModule
 		$profiles = Profile::searchProfiles($pager->getStart(), $pager->getItemsPerPage(), $search);
 
 		if ($profiles['total'] === 0) {
-			notice(DI::l10n()->t('No entries (some entries may be hidden).'));
+			DI::sysmsg()->addNotice(DI::l10n()->t('No entries (some entries may be hidden).'));
 		} else {
-			if (in_array('small', $app->argv)) {
-				$photo = 'thumb';
-			} else {
-				$photo = 'photo';
-			}
-
 			foreach ($profiles['entries'] as $entry) {
-				$contact = Model\Contact::getByURLForUser($entry['url'], local_user());
+				$contact = Model\Contact::getByURLForUser($entry['url'], DI::userSession()->getLocalUserId());
 				if (!empty($contact)) {
 					$entries[] = Contact::getContactTemplateVars($contact);
 				}
@@ -120,7 +111,7 @@ class Directory extends BaseModule
 	 *
 	 * @throws \Exception
 	 */
-	public static function formatEntry(array $contact, $photo_size = 'photo')
+	public static function formatEntry(array $contact, string $photo_size = 'photo'): array
 	{
 		$itemurl = (($contact['addr'] != "") ? $contact['addr'] : $contact['url']);
 
@@ -174,7 +165,7 @@ class Directory extends BaseModule
 			'img_hover'    => $contact['name'],
 			'name'         => $contact['name'],
 			'details'      => $details,
-			'account_type' => Model\Contact::getAccountType($contact),
+			'account_type' => Model\Contact::getAccountType($contact['contact-type'] ?? 0),
 			'profile'      => $profile,
 			'location'     => $location_e,
 			'tags'         => $contact['pub_keywords'],

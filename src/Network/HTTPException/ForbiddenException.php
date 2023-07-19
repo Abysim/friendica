@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,7 @@ use Friendica\Network\HTTPException;
 
 class ForbiddenException extends HTTPException
 {
-	protected $code = 403;
+	protected $code        = 403;
+	protected $httpdesc    = 'Forbidden';
+	protected $explanation = 'The request was valid, but the server is refusing action. The user might not have the necessary permissions for a resource, or may need an account.';
 }

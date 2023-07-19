@@ -65,17 +65,17 @@ table.bbcodes > * > tr > th {
   <td><a href="http://friendi.ca" target="external-link">Friendica</a></td>
 </tr>
 <tr>
-  <td>[img]https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.jpg[/img]</td>
-  <td><img src="https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.jpg" alt="Immagine/foto"></td>
+  <td>[img]https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.png[/img]</td>
+  <td><img src="https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.png"></td>
 </tr>
 <tr>
-  <td>[img=https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.jpg]The Friendica Logo[/img]</td>
-  <td><img src="https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.jpg" alt="The Friendica Logo"></td>
+  <td>[img=https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.png]The Friendica Logo[/img]</td>
+  <td><img src="https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.png" alt="The Friendica Logo"></td>
 </tr>
 <tr>
-  <td>[img=64x32]https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.jpg[/img]<br>
+  <td>[img=64x32]https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica.svg[/img]<br>
 <br>Note: provided height is simply discarded.</td>
-  <td><img src="https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.jpg" style="width: 64px;"></td>
+  <td><img src="https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica.svg" style="width: 64px;"></td>
 </tr>
 <tr>
   <td>[size=xx-small]small text[/size]</td>
@@ -191,7 +191,7 @@ code</code></td>
       You should not read any further if you want to be surprised.<br>
       <span id="spoiler-wrap-0716e642" class="spoiler-wrap fakelink" onclick="openClose('spoiler-0716e642');">Click to open/close</span>
       <blockquote class="spoiler" id="spoiler-0716e642" style="display: none;">There is a happy end.</blockquote>
-      <div class="body-attach"><div class="clear"></div></div>
+      <div class="body-attach"></div>
     </div>
   </td>
 </tr>
@@ -202,7 +202,7 @@ code</code></td>
       <strong class="spoiler">Author wrote:</strong><br>
       <span id="spoiler-wrap-a893765a" class="spoiler-wrap fakelink" onclick="openClose('spoiler-a893765a');">Click to open/close</span>
       <blockquote class="spoiler" id="spoiler-a893765a" style="display: none;">Spoiler quote</blockquote>
-      <div class="body-attach"><div class="clear"></div></div>
+      <div class="body-attach"></div>
     </div>
   </td>
 </tr>
@@ -645,15 +645,15 @@ On Mastodon this field is used for the content warning.
   <td>;-) :-O</td>
 </tr>
 <tr>
-  <td>Custom inline styles<br>
+  <td>Custom block styles<br>
 <br>
 [style=text-shadow: 0 0 4px #CC0000;]You can change all the CSS properties of this block.[/style]</td>
-  <td><span style="text-shadow: 0 0 4px #cc0000;;">You can change all the CSS properties of this block.</span></td>
+  <td><div style="text-shadow: 0 0 4px #cc0000;;">You can change all the CSS properties of this block.</div></td>
 </tr>
 <tr>
-  <td>Custom class block<br>
+  <td>Custom inline styles<br>
 <br>
-[class=custom]If the class exists, this block will have the custom class style applied.[/class]</td>
-  <td><pre>&lt;span class="custom"&gt;If the class exists,<br> this block will have the custom class<br> style applied.&lt;/span&gt;</pre></td>
+You can change all the [style=text-shadow: 0 0 4px #CC0000;]CSS properties[/style] of this inline text.</td>
+  <td>You can change all the <span style="text-shadow: 0 0 4px #cc0000;;">CSS properties</span> of this inline text.</td>
 </tr>
 </table>

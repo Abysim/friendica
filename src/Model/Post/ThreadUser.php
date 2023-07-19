@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,6 +25,7 @@ use \BadMethodCallException;
 use Friendica\Database\Database;
 use Friendica\Database\DBA;
 use Friendica\Database\DBStructure;
+use Friendica\DI;
 
 class ThreadUser
 {
@@ -43,7 +44,7 @@ class ThreadUser
 			throw new BadMethodCallException('Empty URI_id');
 		}
 
-		$fields = DBStructure::getFieldsForTable('post-thread-user', $data);
+		$fields = DI::dbaDefinition()->truncateFieldsForTable('post-thread-user', $data);
 
 		// Additionally assign the key fields
 		$fields['uri-id'] = $uri_id;
@@ -68,7 +69,7 @@ class ThreadUser
 			throw new BadMethodCallException('Empty URI_id');
 		}
 
-		$fields = DBStructure::getFieldsForTable('post-thread-user', $data);
+		$fields = DI::dbaDefinition()->truncateFieldsForTable('post-thread-user', $data);
 
 		// Remove the key fields
 		unset($fields['uri-id']);
@@ -98,10 +99,10 @@ class ThreadUser
 	}
 
 	/**
-	 * @param int $uri_id 
-	 * @param int $uid 
-	 * @return bool 
-	 * @throws Exception 
+	 * @param int $uri_id
+	 * @param int $uid
+	 * @return bool
+	 * @throws Exception
 	 */
 	public static function getIgnored(int $uri_id, int $uid)
 	{
@@ -113,41 +114,14 @@ class ThreadUser
 	}
 
 	/**
-	 * @param int $uri_id 
-	 * @param int $uid 
-	 * @param int $ignored 
-	 * @return void 
-	 * @throws Exception 
+	 * @param int $uri_id
+	 * @param int $uid
+	 * @param int $ignored
+	 * @return void
+	 * @throws Exception
 	 */
 	public static function setIgnored(int $uri_id, int $uid, int $ignored)
 	{
 		DBA::update('post-thread-user', ['ignored' => $ignored], ['uri-id' => $uri_id, 'uid' => $uid], true);
-	}
-
-	/**
-	 * @param int $uri_id 
-	 * @param int $uid 
-	 * @return bool 
-	 * @throws Exception 
-	 */
-	public static function getPinned(int $uri_id, int $uid)
-	{
-		$threaduser = DBA::selectFirst('post-thread-user', ['pinned'], ['uri-id' => $uri_id, 'uid' => $uid]);
-		if (empty($threaduser)) {
-			return false;
-		}
-		return (bool)$threaduser['pinned'];
-	}
-
-	/**
-	 * @param int $uri_id 
-	 * @param int $uid 
-	 * @param int $pinned 
-	 * @return void 
-	 * @throws Exception 
-	 */
-	public static function setPinned(int $uri_id, int $uid, int $pinned)
-	{
-		DBA::update('post-thread-user', ['pinned' => $pinned], ['uri-id' => $uri_id, 'uid' => $uid], true);
 	}
 }

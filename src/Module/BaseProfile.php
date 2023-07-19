@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,28 +23,25 @@ namespace Friendica\Module;
 
 use Friendica\App;
 use Friendica\BaseModule;
+use Friendica\Content\Feature;
 use Friendica\Core\Hook;
 use Friendica\Core\Renderer;
 use Friendica\DI;
+use Friendica\Model\User;
 
 class BaseProfile extends BaseModule
 {
 	/**
 	 * Returns the HTML for the profile pages tabs
 	 *
-	 * @param App    $a
 	 * @param string $current
 	 * @param bool   $is_owner
 	 * @param string $nickname
 	 * @return string
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function getTabsHTML(App $a, string $current, bool $is_owner, string $nickname = null)
+	public static function getTabsHTML(string $current, bool $is_owner, string $nickname, bool $hide_friends)
 	{
-		if (is_null($nickname)) {
-			$nickname = $a->user['nickname'];
-		}
-
 		$baseProfileUrl = DI::baseUrl() . '/profile/' . $nickname;
 
 		$tabs = [
@@ -57,52 +54,53 @@ class BaseProfile extends BaseModule
 				'accesskey' => 'r',
 			],
 			[
-				'label' => DI::l10n()->t('Status'),
-				'url'   => $baseProfileUrl . '/status',
+				'label' => DI::l10n()->t('Conversations'),
+				'url'   => $baseProfileUrl . '/conversations',
 				'sel'   => $current == 'status' ? 'active' : '',
-				'title' => DI::l10n()->t('Status Messages and Posts'),
+				'title' => DI::l10n()->t('Conversations started'),
 				'id'    => 'status-tab',
 				'accesskey' => 'm',
 			],
 			[
 				'label' => DI::l10n()->t('Photos'),
-				'url'   => DI::baseUrl() . '/photos/' . $nickname,
+				'url'   => $baseProfileUrl . '/photos',
 				'sel'   => $current == 'photos' ? 'active' : '',
 				'title' => DI::l10n()->t('Photo Albums'),
 				'id'    => 'photo-tab',
 				'accesskey' => 'h',
 			],
 			[
-				'label' => DI::l10n()->t('Videos'),
-				'url'   => DI::baseUrl() . '/videos/' . $nickname,
-				'sel'   => $current == 'videos' ? 'active' : '',
-				'title' => DI::l10n()->t('Videos'),
-				'id'    => 'video-tab',
-				'accesskey' => 'v',
+				'label' => DI::l10n()->t('Media'),
+				'url'   => $baseProfileUrl . '/media',
+				'sel'   => $current == 'media' ? 'active' : '',
+				'title' => DI::l10n()->t('Media'),
+				'id'    => 'media-tab',
+				'accesskey' => 'd',
 			],
 		];
 
-		// the calendar link for the full featured events calendar
-		if ($is_owner && $a->theme_events_in_profile) {
+		// the calendar link for the full-featured events calendar
+		if ($is_owner) {
 			$tabs[] = [
-				'label' => DI::l10n()->t('Events'),
-				'url'   => DI::baseUrl() . '/events',
-				'sel'   => $current == 'events' ? 'active' : '',
-				'title' => DI::l10n()->t('Events and Calendar'),
-				'id'    => 'events-tab',
-				'accesskey' => 'e',
+				'label' => DI::l10n()->t('Calendar'),
+				'url'   => DI::baseUrl() . '/calendar',
+				'sel'   => $current == 'calendar' ? 'active' : '',
+				'title' => DI::l10n()->t('Calendar'),
+				'id'    => 'calendar-tab',
+				'accesskey' => 'c',
 			];
-			// if the user is not the owner of the calendar we only show a calendar
-			// with the public events of the calendar owner
-		} elseif (!$is_owner) {
-			$tabs[] = [
-				'label' => DI::l10n()->t('Events'),
-				'url'   => DI::baseUrl() . '/cal/' . $nickname,
-				'sel'   => $current == 'cal' ? 'active' : '',
-				'title' => DI::l10n()->t('Events and Calendar'),
-				'id'    => 'events-tab',
-				'accesskey' => 'e',
-			];
+		} else {
+			$owner = User::getByNickname($nickname, ['uid']);
+			if(DI::userSession()->isAuthenticated() || $owner && Feature::isEnabled($owner['uid'], 'public_calendar')) {
+				$tabs[] = [
+					'label' => DI::l10n()->t('Calendar'),
+					'url'   => DI::baseUrl() . '/calendar/show/' . $nickname,
+					'sel'   => $current == 'calendar' ? 'active' : '',
+					'title' => DI::l10n()->t('Calendar'),
+					'id'    => 'calendar-tab',
+					'accesskey' => 'c',
+				];
+			}
 		}
 
 		if ($is_owner) {
@@ -114,9 +112,17 @@ class BaseProfile extends BaseModule
 				'id'    => 'notes-tab',
 				'accesskey' => 't',
 			];
+			$tabs[] = [
+				'label' => DI::l10n()->t('Scheduled Posts'),
+				'url'   => $baseProfileUrl . '/schedule',
+				'sel'   => $current == 'schedule' ? 'active' : '',
+				'title' => DI::l10n()->t('Posts that are scheduled for publishing'),
+				'id'    => 'schedule-tab',
+				'accesskey' => 'o',
+			];
 		}
 
-		if (empty($a->profile['hide-friends'])) {
+		if (!$hide_friends) {
 			$tabs[] = [
 				'label' => DI::l10n()->t('Contacts'),
 				'url'   => $baseProfileUrl . '/contacts',

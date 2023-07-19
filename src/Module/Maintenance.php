@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -34,9 +34,9 @@ use Friendica\Util\Strings;
  */
 class Maintenance extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		$reason = DI::config()->get('system', 'maintenance_reason');
+		$reason = DI::config()->get('system', 'maintenance_reason') ?? '';
 
 		if ((substr(Strings::normaliseLink($reason), 0, 7) === 'http://') ||
 			(substr(Strings::normaliseLink($reason), 0, 8) === 'https://')) {
@@ -45,7 +45,7 @@ class Maintenance extends BaseModule
 
 		$exception = new HTTPException\ServiceUnavailableException($reason);
 
-		header($_SERVER["SERVER_PROTOCOL"] . ' ' . $exception->getCode() . ' ' . DI::l10n()->t('System down for maintenance'));
+		header($_SERVER['SERVER_PROTOCOL'] . ' ' . $exception->getCode() . ' ' . DI::l10n()->t('System down for maintenance'));
 
 		$tpl = Renderer::getMarkupTemplate('exception.tpl');
 

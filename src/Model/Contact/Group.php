@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,6 +22,8 @@
 namespace Friendica\Model\Contact;
 
 use Friendica\Database\DBA;
+use Friendica\DI;
+use Friendica\Model\Contact;
 
 /**
  * This class provides information about contact groups based on the "group_member" table.
@@ -35,7 +37,7 @@ class Group
 	 * @return array
 	 * @throws \Exception
 	 */
-	public static function getById(int $gid)
+	public static function getById(int $gid): array
 	{
 		$return = [];
 
@@ -52,7 +54,7 @@ class Group
 				AND NOT `contact`.`pending`
 				ORDER BY `contact`.`name` ASC',
 				$gid,
-				local_user()
+				DI::userSession()->getLocalUserId()
 			);
 
 			if (DBA::isResult($stmt)) {
@@ -75,20 +77,9 @@ class Group
 	 */
 	public static function listUngrouped(int $uid)
 	{
-		return q("SELECT *
-			   FROM `contact`
-			   WHERE `uid` = %d
-			   AND NOT `self`
-			   AND NOT `deleted`
-			   AND NOT `blocked`
-			   AND NOT `pending`
-			   AND NOT `failed`
-			   AND `id` NOT IN (
-			   	SELECT DISTINCT(`contact-id`)
-			   	FROM `group_member`
-			   	INNER JOIN `group` ON `group`.`id` = `group_member`.`gid`
-			   	WHERE `group`.`uid` = %d
-			   )", intval($uid), intval($uid));
+		return Contact::selectToArray([], ["`uid` = ? AND NOT `self` AND NOT `deleted` AND NOT `blocked` AND NOT `pending` AND NOT `failed`
+			AND `id` NOT IN (SELECT DISTINCT(`contact-id`) FROM `group_member` INNER JOIN `group` ON `group`.`id` = `group_member`.`gid`
+			   	WHERE `group`.`uid` = ? AND `contact-id` = `contact`.`id`)", $uid, $uid]);
 	}
 
 	/**

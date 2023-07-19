@@ -17,7 +17,7 @@ function showHideForumlist() {
 <div id="forumlist-sidebar-right" class="widget">
 	<h3 id="forumlist">{{$title}}</h3>
 
-	<ul id="forumlist-sidbar-ul" role="menu">
+	<ul id="forumlist-sidebar-ul" role="menu">
 		{{foreach $forums as $forum}}
 		{{if $forum.id <= $visible_forums}}
 		<li class="forum-widget-entry forum-{{$forum.cid}}" id="forum-widget-entry-{{$forum.id}}" role="menuitem">
@@ -25,7 +25,7 @@ function showHideForumlist() {
 			<a href="{{$forum.external_url}}" title="{{$forum.link_desc}}" class="label sparkle" target="_blank" rel="noopener noreferrer">
 				<img class="forumlist-img" src="{{$forum.micro}}" alt="{{$forum.link_desc}}" />
 			</a>
-			<a class="forum-widget-link {{if $forum.selected}}forum-selected{{/if}}" id="forum-widget-link-{{$forum.id}}" href="{{$forum.url}}" >{{$forum.name}}</a>
+			<a class="forum-widget-link {{if $forum.selected}}forum-selected{{/if}}" id="forum-widget-link-{{$forum.id}}" href="{{$forum.url}}">{{$forum.name}}</a>
 		</li>
 		{{/if}}
 	
@@ -35,7 +35,7 @@ function showHideForumlist() {
 			<a href="{{$forum.external_url}}" title="{{$forum.link_desc}}" class="label sparkle" target="_blank" rel="noopener noreferrer">
 				<img class="forumlist-img" src="{{$forum.micro}}" alt="{{$forum.link_desc}}" />
 			</a>
-			<a class="forum-widget-link {{if $forum.selected}}forum-selected{{/if}}" id="forum-widget-link-{{$forum.id}}" href="{{$forum.url}}" >{{$forum.name}}</a>
+			<a class="forum-widget-link {{if $forum.selected}}forum-selected{{/if}}" id="forum-widget-link-{{$forum.id}}" href="{{$forum.url}}">{{$forum.name}}</a>
 		</li>
 		{{/if}}
 		{{/foreach}}

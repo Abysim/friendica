@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -41,11 +41,11 @@ class PollContacts
 			$abandon_days = 0;
 		}
 
-		$condition = ['network' => [Protocol::FEED, Protocol::MAIL, Protocol::OSTATUS], 'self' => false, 'blocked' => false];
+		$condition = ['network' => [Protocol::FEED, Protocol::MAIL, Protocol::OSTATUS], 'self' => false, 'blocked' => false, 'archive' => false];
 
 		if (!empty($abandon_days)) {
 			$condition = DBA::mergeConditions($condition,
-				["`uid` != ? AND `uid` IN (SELECT `uid` FROM `user` WHERE NOT `account_expired` AND NOT `account_removed`  AND `login_date` > UTC_TIMESTAMP() - INTERVAL ? DAY)", 0, $abandon_days]);
+				["`uid` != ? AND `uid` IN (SELECT `uid` FROM `user` WHERE NOT `account_expired` AND NOT `account_removed` AND `last-activity` > ?)", 0, DateTimeFormat::utc('now - ' . $abandon_days . ' days')]);
 		} else 	{
 			$condition = DBA::mergeConditions($condition,
 				["`uid` != ? AND `uid` IN (SELECT `uid` FROM `user` WHERE NOT `account_expired` AND NOT `account_removed`)", 0]);
@@ -71,16 +71,17 @@ class PollContacts
 			}
 
 			if ((($contact['network'] == Protocol::FEED) && ($contact['priority'] <= 3)) || ($contact['network'] == Protocol::MAIL)) {
-				$priority = PRIORITY_MEDIUM;
+				$priority = Worker::PRIORITY_MEDIUM;
 			} elseif ($contact['archive']) {
-				$priority = PRIORITY_NEGLIGIBLE;
+				$priority = Worker::PRIORITY_NEGLIGIBLE;
 			} else {
-				$priority = PRIORITY_LOW;
+				$priority = Worker::PRIORITY_LOW;
 			}
 
 			Logger::notice("Polling " . $contact["network"] . " " . $contact["id"] . " " . $contact['priority'] . " " . $contact["nick"] . " " . $contact["name"]);
 
 			Worker::add(['priority' => $priority, 'dont_fork' => true, 'force_priority' => true], 'OnePoll', (int)$contact['id']);
+			Worker::coolDown();
 		}
 		DBA::close($contacts);
 	}

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,10 +22,10 @@
 namespace Friendica\Util;
 
 use Friendica\App;
-use Friendica\Core\Config\IConfig;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\Core\Hook;
 use Friendica\Core\L10n;
-use Friendica\Core\PConfig\IPConfig;
+use Friendica\Core\PConfig\Capability\IManagePersonalConfigValues;
 use Friendica\Network\HTTPException\InternalServerErrorException;
 use Friendica\Object\EMail\IEmail;
 use Friendica\Protocol\Email;
@@ -38,9 +38,9 @@ use Psr\Log\LoggerInterface;
  */
 class Emailer
 {
-	/** @var IConfig */
+	/** @var IManageConfigValues */
 	private $config;
-	/** @var IPConfig */
+	/** @var IManagePersonalConfigValues */
 	private $pConfig;
 	/** @var LoggerInterface */
 	private $logger;
@@ -54,7 +54,7 @@ class Emailer
 	/** @var string */
 	private $siteEmailName;
 
-	public function __construct(IConfig $config, IPConfig $pConfig, App\BaseURL $baseURL, LoggerInterface $logger,
+	public function __construct(IManageConfigValues $config, IManagePersonalConfigValues $pConfig, App\BaseURL $baseURL, LoggerInterface $logger,
 	                            L10n $defaultLang)
 	{
 		$this->config      = $config;
@@ -65,7 +65,7 @@ class Emailer
 
 		$this->siteEmailAddress = $this->config->get('config', 'sender_email');
 		if (empty($this->siteEmailAddress)) {
-			$hostname = $this->baseUrl->getHostname();
+			$hostname = $this->baseUrl->getHost();
 			if (strpos($hostname, ':')) {
 				$hostname = substr($hostname, 0, strpos($hostname, ':'));
 			}
@@ -141,7 +141,7 @@ class Emailer
 				$countMessageId += count($value);
 			}
 		}
-		if ($countMessageId > 0) {
+		if ($countMessageId > 1) {
 			$this->logger->warning('More than one Message-ID found - RFC violation', ['email' => $email]);
 		}
 
@@ -163,9 +163,9 @@ class Emailer
 
 		// generate a multipart/alternative message header
 		$messageHeader = $email->getAdditionalMailHeaderString() .
-		                 "From: $fromName <{$fromAddress}>\n" .
-		                 "Reply-To: $fromName <{$replyTo}>\n" .
-		                 "MIME-Version: 1.0\n" .
+		                 "From: $fromName <{$fromAddress}>\r\n" .
+		                 "Reply-To: $fromName <{$replyTo}>\r\n" .
+		                 "MIME-Version: 1.0\r\n" .
 		                 "Content-Type: multipart/alternative; boundary=\"{$mimeBoundary}\"";
 
 		// assemble the final multipart message body with the text and html types included

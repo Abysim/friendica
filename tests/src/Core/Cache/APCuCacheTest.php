@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,7 +21,7 @@
 
 namespace Friendica\Test\src\Core\Cache;
 
-use Friendica\Core\Cache\APCuCache;
+use Friendica\Core\Cache\Type\APCuCache;
 
 /**
  * @group APCU

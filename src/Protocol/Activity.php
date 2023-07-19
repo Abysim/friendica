@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -163,18 +163,37 @@ final class Activity
 	 * @var string
 	 */
 	const ANNOUNCE   = ActivityNamespace::ACTIVITY2 . 'Announce';
-
 	/**
-	 * Pokes an user.
+	 * Indicates that the actor has read the object.
 	 *
-	 * @see https://github.com/friendica/friendica/wiki/ActivityStreams#activity_poke
+	 * @see https://www.w3.org/TR/activitystreams-vocabulary/#dfn-read
 	 * @var string
 	 */
-	const POKE       = ActivityNamespace::ZOT . '/activity/poke';
-
+	const READ       = ActivityNamespace::ACTIVITY2 . 'Read';
+	/**
+	 *  Indicates that the actor has listened to the object. 
+	 *
+	 * @see https://www.w3.org/TR/activitystreams-vocabulary/#dfn-listen
+	 * @var string
+	 */
+	const LISTEN     = ActivityNamespace::ACTIVITY2 . 'Listen';
+	/**
+	 * Indicates that the actor has viewed the object.
+	 *
+	 * @see https://www.w3.org/TR/activitystreams-vocabulary/#dfn-view
+	 * @var string
+	 */
+	const VIEW       = ActivityNamespace::ACTIVITY2 . 'View';
 
 	const O_UNFOLLOW    = ActivityNamespace::OSTATUS . '/unfollow';
 	const O_UNFAVOURITE = ActivityNamespace::OSTATUS . '/unfavorite';
+
+	/**
+	 * React to a post via an emoji
+	 *
+	 * @var string
+	 */
+	const EMOJIREACT = ActivityNamespace::LITEPUB . '/emojireact';
 
 	/**
 	 * likes (etc.) can apply to other things besides posts. Check if they are post children,
@@ -183,10 +202,13 @@ final class Activity
 	 * Hidden activities, which doesn't need to be shown
 	 */
 	const HIDDEN_ACTIVITIES = [
-		Activity::LIKE, Activity::DISLIKE,
-		Activity::ATTEND, Activity::ATTENDNO, Activity::ATTENDMAYBE,
-		Activity::FOLLOW,
-		Activity::ANNOUNCE,
+		self::LIKE, self::DISLIKE,
+		self::ATTEND, self::ATTENDNO, self::ATTENDMAYBE,
+		self::FOLLOW,
+		self::ANNOUNCE,
+		self::EMOJIREACT,
+		self::VIEW,
+		self::READ,
 	];
 
 	/**
@@ -196,7 +218,7 @@ final class Activity
 	 *
 	 * @return bool True, if the activity is hidden
 	 */
-	public function isHidden(string $activity)
+	public function isHidden(string $activity): bool
 	{
 		foreach (self::HIDDEN_ACTIVITIES as $hiddenActivity) {
 			if ($this->match($activity, $hiddenActivity)) {
@@ -215,7 +237,7 @@ final class Activity
 	 *
 	 * @return boolean
 	 */
-	public function match(string $haystack, string $needle)
+	public function match(string $haystack, string $needle): bool
 	{
 		return (($haystack === $needle) ||
 		        ((basename($needle) === $haystack) &&

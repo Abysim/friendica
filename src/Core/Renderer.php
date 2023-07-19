@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,7 +23,7 @@ namespace Friendica\Core;
 
 use Exception;
 use Friendica\DI;
-use Friendica\Network\HTTPException\InternalServerErrorException;
+use Friendica\Network\HTTPException\ServiceUnavailableException;
 use Friendica\Render\TemplateEngine;
 
 /**
@@ -48,20 +48,19 @@ class Renderer
 	 * beyond are used.
 	 */
 	public static $theme = [
-		'sourcename' => '',
-		'videowidth' => 425,
-		'videoheight' => 350,
-		'stylesheet' => '',
+		'videowidth'      => 425,
+		'videoheight'     => 350,
+		'stylesheet'      => '',
 		'template_engine' => 'smarty3',
 	];
 
 	private static $ldelim = [
 		'internal' => '',
-		'smarty3' => '{{'
+		'smarty3'  => '{{'
 	];
 	private static $rdelim = [
 		'internal' => '',
-		'smarty3' => '}}'
+		'smarty3'  => '}}'
 	];
 
 	/**
@@ -70,14 +69,14 @@ class Renderer
 	 * @param string $template
 	 * @param array  $vars
 	 * @return string
-	 * @throws InternalServerErrorException
+	 * @throws ServiceUnavailableException
 	 */
-	public static function replaceMacros(string $template, array $vars = [])
+	public static function replaceMacros(string $template, array $vars = []): string
 	{
-		$stamp1 = microtime(true);
+		DI::profiler()->startRecording('rendering');
 
 		// pass $baseurl to all templates if it isn't set
-		$vars = array_merge(['$baseurl' => DI::baseUrl()->get(), '$APP' => DI::app()], $vars);
+		$vars = array_merge(['$baseurl' => DI::baseUrl(), '$APP' => DI::app()], $vars);
 
 		$t = self::getTemplateEngine();
 
@@ -85,13 +84,13 @@ class Renderer
 			$output = $t->replaceMacros($template, $vars);
 		} catch (Exception $e) {
 			DI::logger()->critical($e->getMessage(), ['template' => $template, 'vars' => $vars]);
-			$message = is_site_admin() ?
+			$message = DI::app()->isSiteAdmin() ?
 				$e->getMessage() :
 				DI::l10n()->t('Friendica can\'t display this page at the moment, please contact the administrator.');
-			throw new InternalServerErrorException($message);
+			throw new ServiceUnavailableException($message);
 		}
 
-		DI::profiler()->saveTimestamp($stamp1, "rendering");
+		DI::profiler()->stopRecording();
 
 		return $output;
 	}
@@ -102,25 +101,25 @@ class Renderer
 	 * @param string $file   Template to load.
 	 * @param string $subDir Subdirectory (Optional)
 	 *
-	 * @return string template.
-	 * @throws InternalServerErrorException
+	 * @return string Template
+	 * @throws ServiceUnavailableException
 	 */
-	public static function getMarkupTemplate($file, $subDir = '')
+	public static function getMarkupTemplate(string $file, string $subDir = ''): string
 	{
-		$stamp1 = microtime(true);
+		DI::profiler()->startRecording('file');
 		$t = self::getTemplateEngine();
 
 		try {
 			$template = $t->getTemplateFile($file, $subDir);
 		} catch (Exception $e) {
 			DI::logger()->critical($e->getMessage(), ['file' => $file, 'subDir' => $subDir]);
-			$message = is_site_admin() ?
+			$message = DI::app()->isSiteAdmin() ?
 				$e->getMessage() :
 				DI::l10n()->t('Friendica can\'t display this page at the moment, please contact the administrator.');
-			throw new InternalServerErrorException($message);
+			throw new ServiceUnavailableException($message);
 		}
 
-		DI::profiler()->saveTimestamp($stamp1, "file");
+		DI::profiler()->stopRecording();
 
 		return $template;
 	}
@@ -129,9 +128,11 @@ class Renderer
 	 * Register template engine class
 	 *
 	 * @param string $class
-	 * @throws InternalServerErrorException
+	 *
+	 * @return void
+	 * @throws ServiceUnavailableException
 	 */
-	public static function registerTemplateEngine($class)
+	public static function registerTemplateEngine(string $class)
 	{
 		$v = get_class_vars($class);
 
@@ -141,10 +142,10 @@ class Renderer
 		} else {
 			$admin_message = DI::l10n()->t('template engine cannot be registered without a name.');
 			DI::logger()->critical($admin_message, ['class' => $class]);
-			$message = is_site_admin() ?
+			$message = DI::app()->isSiteAdmin() ?
 				$admin_message :
 				DI::l10n()->t('Friendica can\'t display this page at the moment, please contact the administrator.');
-			throw new InternalServerErrorException($message);
+			throw new ServiceUnavailableException($message);
 		}
 	}
 
@@ -155,9 +156,9 @@ class Renderer
 	 * or default
 	 *
 	 * @return TemplateEngine Template Engine instance
-	 * @throws InternalServerErrorException
+	 * @throws ServiceUnavailableException
 	 */
-	public static function getTemplateEngine()
+	public static function getTemplateEngine(): TemplateEngine
 	{
 		$template_engine = (self::$theme['template_engine'] ?? '') ?: 'smarty3';
 
@@ -167,7 +168,7 @@ class Renderer
 			} else {
 				$a = DI::app();
 				$class = self::$template_engines[$template_engine];
-				$obj = new $class($a->getCurrentTheme(), $a->theme_info);
+				$obj = new $class($a->getCurrentTheme(), $a->getThemeInfo());
 				self::$template_engine_instance[$template_engine] = $obj;
 				return $obj;
 			}
@@ -175,10 +176,10 @@ class Renderer
 
 		$admin_message = DI::l10n()->t('template engine is not registered!');
 		DI::logger()->critical($admin_message, ['template_engine' => $template_engine]);
-		$message = is_site_admin() ?
+		$message = DI::app()->isSiteAdmin() ?
 			$admin_message :
 			DI::l10n()->t('Friendica can\'t display this page at the moment, please contact the administrator.');
-		throw new InternalServerErrorException($message);
+		throw new ServiceUnavailableException($message);
 	}
 
 	/**
@@ -186,7 +187,7 @@ class Renderer
 	 *
 	 * @return string the active template engine
 	 */
-	public static function getActiveTemplateEngine()
+	public static function getActiveTemplateEngine(): string
 	{
 		return self::$theme['template_engine'];
 	}
@@ -195,8 +196,10 @@ class Renderer
 	 * sets the active template engine
 	 *
 	 * @param string $engine the template engine (default is Smarty3)
+	 *
+	 * @return void
 	 */
-	public static function setActiveTemplateEngine($engine = 'smarty3')
+	public static function setActiveTemplateEngine(string $engine = 'smarty3')
 	{
 		self::$theme['template_engine'] = $engine;
 	}
@@ -212,7 +215,7 @@ class Renderer
 	 *
 	 * @return string the right delimiter
 	 */
-	public static function getTemplateLeftDelimiter($engine = 'smarty3')
+	public static function getTemplateLeftDelimiter(string $engine = 'smarty3'): string
 	{
 		return self::$ldelim[$engine];
 	}
@@ -228,7 +231,7 @@ class Renderer
 	 *
 	 * @return string the left delimiter
 	 */
-	public static function getTemplateRightDelimiter($engine = 'smarty3')
+	public static function getTemplateRightDelimiter(string $engine = 'smarty3'): string
 	{
 		return self::$rdelim[$engine];
 	}

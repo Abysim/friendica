@@ -1,6 +1,6 @@
 -- ------------------------------------------
--- Friendica 2021.03-rc (Red Hot Poker)
--- DB_UPDATE_VERSION 1413
+-- Friendica 2023.05 (Giant Rhubarb)
+-- DB_UPDATE_VERSION 1518
 -- ------------------------------------------
 
 
@@ -9,16 +9,21 @@
 --
 CREATE TABLE IF NOT EXISTS `gserver` (
 	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
-	`url` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`nurl` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`url` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`nurl` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
 	`version` varchar(255) NOT NULL DEFAULT '' COMMENT '',
 	`site_name` varchar(255) NOT NULL DEFAULT '' COMMENT '',
 	`info` text COMMENT '',
 	`register_policy` tinyint NOT NULL DEFAULT 0 COMMENT '',
 	`registered-users` int unsigned NOT NULL DEFAULT 0 COMMENT 'Number of registered users',
+	`active-week-users` int unsigned COMMENT 'Number of active users in the last week',
+	`active-month-users` int unsigned COMMENT 'Number of active users in the last month',
+	`active-halfyear-users` int unsigned COMMENT 'Number of active users in the last six month',
+	`local-posts` int unsigned COMMENT 'Number of local posts',
+	`local-comments` int unsigned COMMENT 'Number of local comments',
 	`directory-type` tinyint DEFAULT 0 COMMENT 'Type of directory service (Poco, Mastodon)',
-	`poco` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`noscrape` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`poco` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`noscrape` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
 	`network` char(4) NOT NULL DEFAULT '' COMMENT '',
 	`protocol` tinyint unsigned COMMENT 'The protocol of the server',
 	`platform` varchar(255) NOT NULL DEFAULT '' COMMENT '',
@@ -29,6 +34,7 @@ CREATE TABLE IF NOT EXISTS `gserver` (
 	`last_poco_query` datetime DEFAULT '0001-01-01 00:00:00' COMMENT '',
 	`last_contact` datetime DEFAULT '0001-01-01 00:00:00' COMMENT 'Last successful connection request',
 	`last_failure` datetime DEFAULT '0001-01-01 00:00:00' COMMENT 'Last failed connection request',
+	`blocked` boolean COMMENT 'Server is blocked',
 	`failed` boolean COMMENT 'Connection failed',
 	`next_contact` datetime DEFAULT '0001-01-01 00:00:00' COMMENT 'Next connection request',
 	 PRIMARY KEY(`id`),
@@ -54,6 +60,7 @@ CREATE TABLE IF NOT EXISTS `user` (
 	`language` varchar(32) NOT NULL DEFAULT 'en' COMMENT 'default language',
 	`register_date` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'timestamp of registration',
 	`login_date` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'timestamp of last login',
+	`last-activity` date COMMENT 'Day of the last activity',
 	`default-location` varchar(255) NOT NULL DEFAULT '' COMMENT 'Default for item.location',
 	`allow_location` boolean NOT NULL DEFAULT '0' COMMENT '1 allows to display the location',
 	`theme` varchar(255) NOT NULL DEFAULT '' COMMENT 'user theme preference',
@@ -64,7 +71,7 @@ CREATE TABLE IF NOT EXISTS `user` (
 	`verified` boolean NOT NULL DEFAULT '0' COMMENT 'user is verified through email',
 	`blocked` boolean NOT NULL DEFAULT '0' COMMENT '1 for user is blocked',
 	`blockwall` boolean NOT NULL DEFAULT '0' COMMENT 'Prohibit contacts to post to the profile page of the user',
-	`hidewall` boolean NOT NULL DEFAULT '0' COMMENT 'Hide profile details from unkown viewers',
+	`hidewall` boolean NOT NULL DEFAULT '0' COMMENT 'Hide profile details from unknown viewers',
 	`blocktags` boolean NOT NULL DEFAULT '0' COMMENT 'Prohibit contacts to tag the post of this user',
 	`unkmail` boolean NOT NULL DEFAULT '0' COMMENT 'Permit unknown people to send private mails to this user',
 	`cntunkmail` int unsigned NOT NULL DEFAULT 10 COMMENT '',
@@ -75,7 +82,7 @@ CREATE TABLE IF NOT EXISTS `user` (
 	`pwdreset` varchar(255) COMMENT 'Password reset request token',
 	`pwdreset_time` datetime COMMENT 'Timestamp of the last password reset request',
 	`maxreq` int unsigned NOT NULL DEFAULT 10 COMMENT '',
-	`expire` int unsigned NOT NULL DEFAULT 0 COMMENT '',
+	`expire` int unsigned NOT NULL DEFAULT 0 COMMENT 'Delay in days before deleting user-related posts. Scope is controlled by pConfig.',
 	`account_removed` boolean NOT NULL DEFAULT '0' COMMENT 'if 1 the account is removed',
 	`account_expired` boolean NOT NULL DEFAULT '0' COMMENT '',
 	`account_expires_on` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'timestamp when account expires and will be deleted',
@@ -95,6 +102,18 @@ CREATE TABLE IF NOT EXISTS `user` (
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='The local users';
 
 --
+-- TABLE item-uri
+--
+CREATE TABLE IF NOT EXISTS `item-uri` (
+	`id` int unsigned NOT NULL auto_increment,
+	`uri` varbinary(383) NOT NULL COMMENT 'URI of an item',
+	`guid` varbinary(255) COMMENT 'A unique identifier for an item',
+	 PRIMARY KEY(`id`),
+	 UNIQUE INDEX `uri` (`uri`),
+	 INDEX `guid` (`guid`)
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='URI and GUID for items';
+
+--
 -- TABLE contact
 --
 CREATE TABLE IF NOT EXISTS `contact` (
@@ -102,82 +121,88 @@ CREATE TABLE IF NOT EXISTS `contact` (
 	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'Owner User id',
 	`created` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
 	`updated` datetime DEFAULT '0001-01-01 00:00:00' COMMENT 'Date of last contact update',
-	`self` boolean NOT NULL DEFAULT '0' COMMENT '1 if the contact is the user him/her self',
-	`remote_self` boolean NOT NULL DEFAULT '0' COMMENT '',
-	`rel` tinyint unsigned NOT NULL DEFAULT 0 COMMENT 'The kind of the relation between the user and the contact',
-	`duplex` boolean NOT NULL DEFAULT '0' COMMENT '',
 	`network` char(4) NOT NULL DEFAULT '' COMMENT 'Network of the contact',
-	`protocol` char(4) NOT NULL DEFAULT '' COMMENT 'Protocol of the contact',
 	`name` varchar(255) NOT NULL DEFAULT '' COMMENT 'Name that this contact is known by',
 	`nick` varchar(255) NOT NULL DEFAULT '' COMMENT 'Nick- and user name of the contact',
 	`location` varchar(255) DEFAULT '' COMMENT '',
 	`about` text COMMENT '',
 	`keywords` text COMMENT 'public keywords (interests) of the contact',
-	`gender` varchar(32) NOT NULL DEFAULT '' COMMENT 'Deprecated',
-	`xmpp` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`attag` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`avatar` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`photo` varchar(255) DEFAULT '' COMMENT 'Link to the profile photo of the contact',
-	`thumb` varchar(255) DEFAULT '' COMMENT 'Link to the profile photo (thumb size)',
-	`micro` varchar(255) DEFAULT '' COMMENT 'Link to the profile photo (micro size)',
-	`site-pubkey` text COMMENT '',
-	`issued-id` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`dfrn-id` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`url` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`nurl` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`xmpp` varchar(255) NOT NULL DEFAULT '' COMMENT 'XMPP address',
+	`matrix` varchar(255) NOT NULL DEFAULT '' COMMENT 'Matrix address',
+	`avatar` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`blurhash` varbinary(255) COMMENT 'BlurHash representation of the avatar',
+	`header` varbinary(383) COMMENT 'Header picture',
+	`url` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`nurl` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`uri-id` int unsigned COMMENT 'Id of the item-uri table entry that contains the contact url',
 	`addr` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`alias` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`alias` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
 	`pubkey` text COMMENT 'RSA public key 4096 bit',
 	`prvkey` text COMMENT 'RSA private key 4096 bit',
-	`batch` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`request` varchar(255) COMMENT '',
-	`notify` varchar(255) COMMENT '',
-	`poll` varchar(255) COMMENT '',
-	`confirm` varchar(255) COMMENT '',
-	`subscribe` varchar(255) COMMENT '',
-	`poco` varchar(255) COMMENT '',
-	`aes_allow` boolean NOT NULL DEFAULT '0' COMMENT '',
-	`ret-aes` boolean NOT NULL DEFAULT '0' COMMENT '',
-	`usehub` boolean NOT NULL DEFAULT '0' COMMENT '',
-	`subhub` boolean NOT NULL DEFAULT '0' COMMENT '',
-	`hub-verify` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`batch` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`notify` varbinary(383) COMMENT '',
+	`poll` varbinary(383) COMMENT '',
+	`subscribe` varbinary(383) COMMENT '',
 	`last-update` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Date of the last try to update the contact info',
+	`next-update` datetime COMMENT 'Next connection request',
 	`success_update` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Date of the last successful contact update',
 	`failure_update` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Date of the last failed update',
 	`failed` boolean COMMENT 'Connection failed',
-	`name-date` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
-	`uri-date` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
-	`avatar-date` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
 	`term-date` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
 	`last-item` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'date of the last post',
 	`last-discovery` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'date of the last follower discovery',
-	`priority` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '',
+	`local-data` boolean COMMENT 'Is true when there are posts with this contact on the system',
 	`blocked` boolean NOT NULL DEFAULT '1' COMMENT 'Node-wide block status',
 	`block_reason` text COMMENT 'Node-wide block reason',
 	`readonly` boolean NOT NULL DEFAULT '0' COMMENT 'posts of the contact are readonly',
-	`writable` boolean NOT NULL DEFAULT '0' COMMENT '',
-	`forum` boolean NOT NULL DEFAULT '0' COMMENT 'contact is a forum',
-	`prv` boolean NOT NULL DEFAULT '0' COMMENT 'contact is a private group',
-	`contact-type` tinyint NOT NULL DEFAULT 0 COMMENT '',
-	`manually-approve` boolean COMMENT '',
-	`hidden` boolean NOT NULL DEFAULT '0' COMMENT '',
+	`contact-type` tinyint NOT NULL DEFAULT 0 COMMENT 'Person, organisation, news, community, relay',
+	`manually-approve` boolean COMMENT 'Contact requests have to be approved manually',
 	`archive` boolean NOT NULL DEFAULT '0' COMMENT '',
-	`pending` boolean NOT NULL DEFAULT '1' COMMENT '',
-	`deleted` boolean NOT NULL DEFAULT '0' COMMENT 'Contact has been deleted',
-	`rating` tinyint NOT NULL DEFAULT 0 COMMENT '',
 	`unsearchable` boolean NOT NULL DEFAULT '0' COMMENT 'Contact prefers to not be searchable',
 	`sensitive` boolean NOT NULL DEFAULT '0' COMMENT 'Contact posts sensitive content',
-	`baseurl` varchar(255) DEFAULT '' COMMENT 'baseurl of the contact',
+	`baseurl` varbinary(383) DEFAULT '' COMMENT 'baseurl of the contact',
 	`gsid` int unsigned COMMENT 'Global Server ID',
-	`reason` text COMMENT '',
-	`closeness` tinyint unsigned NOT NULL DEFAULT 99 COMMENT '',
-	`info` mediumtext COMMENT '',
-	`profile-id` int unsigned COMMENT 'Deprecated',
-	`bdyear` varchar(4) NOT NULL DEFAULT '' COMMENT '',
 	`bd` date NOT NULL DEFAULT '0001-01-01' COMMENT '',
+	`reason` text COMMENT '',
+	`self` boolean NOT NULL DEFAULT '0' COMMENT '1 if the contact is the user him/her self',
+	`remote_self` boolean NOT NULL DEFAULT '0' COMMENT '',
+	`rel` tinyint unsigned NOT NULL DEFAULT 0 COMMENT 'The kind of the relation between the user and the contact',
+	`protocol` char(4) NOT NULL DEFAULT '' COMMENT 'Protocol of the contact',
+	`subhub` boolean NOT NULL DEFAULT '0' COMMENT '',
+	`hub-verify` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`rating` tinyint NOT NULL DEFAULT 0 COMMENT 'Automatically detected feed poll frequency',
+	`priority` tinyint unsigned NOT NULL DEFAULT 0 COMMENT 'Feed poll priority',
+	`attag` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`hidden` boolean NOT NULL DEFAULT '0' COMMENT '',
+	`pending` boolean NOT NULL DEFAULT '1' COMMENT 'Contact request is pending',
+	`deleted` boolean NOT NULL DEFAULT '0' COMMENT 'Contact has been deleted',
+	`info` mediumtext COMMENT '',
 	`notify_new_posts` boolean NOT NULL DEFAULT '0' COMMENT '',
 	`fetch_further_information` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '',
 	`ffi_keyword_denylist` text COMMENT '',
+	`photo` varbinary(383) DEFAULT '' COMMENT 'Link to the profile photo of the contact',
+	`thumb` varbinary(383) DEFAULT '' COMMENT 'Link to the profile photo (thumb size)',
+	`micro` varbinary(383) DEFAULT '' COMMENT 'Link to the profile photo (micro size)',
+	`name-date` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
+	`uri-date` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
+	`avatar-date` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
+	`request` varbinary(383) COMMENT '',
+	`confirm` varbinary(383) COMMENT '',
+	`poco` varbinary(383) COMMENT '',
+	`writable` boolean NOT NULL DEFAULT '0' COMMENT '',
+	`forum` boolean NOT NULL DEFAULT '0' COMMENT 'contact is a forum. Deprecated, use \'contact-type\' = \'community\' and \'manually-approve\' = false instead',
+	`prv` boolean NOT NULL DEFAULT '0' COMMENT 'contact is a private group. Deprecated, use \'contact-type\' = \'community\' and \'manually-approve\' = true instead',
+	`bdyear` varchar(4) NOT NULL DEFAULT '' COMMENT '',
+	`site-pubkey` text COMMENT 'Deprecated',
+	`gender` varchar(32) NOT NULL DEFAULT '' COMMENT 'Deprecated',
+	`duplex` boolean NOT NULL DEFAULT '0' COMMENT 'Deprecated',
+	`issued-id` varbinary(383) NOT NULL DEFAULT '' COMMENT 'Deprecated',
+	`dfrn-id` varbinary(383) NOT NULL DEFAULT '' COMMENT 'Deprecated',
+	`aes_allow` boolean NOT NULL DEFAULT '0' COMMENT 'Deprecated',
+	`ret-aes` boolean NOT NULL DEFAULT '0' COMMENT 'Deprecated',
+	`usehub` boolean NOT NULL DEFAULT '0' COMMENT 'Deprecated',
+	`closeness` tinyint unsigned NOT NULL DEFAULT 99 COMMENT 'Deprecated',
+	`profile-id` int unsigned COMMENT 'Deprecated',
 	 PRIMARY KEY(`id`),
 	 INDEX `uid_name` (`uid`,`name`(190)),
 	 INDEX `self_uid` (`self`,`uid`),
@@ -191,31 +216,21 @@ CREATE TABLE IF NOT EXISTS `contact` (
 	 INDEX `nurl_uid` (`nurl`(128),`uid`),
 	 INDEX `nick_uid` (`nick`(128),`uid`),
 	 INDEX `attag_uid` (`attag`(96),`uid`),
-	 INDEX `dfrn-id` (`dfrn-id`(64)),
-	 INDEX `issued-id` (`issued-id`(64)),
 	 INDEX `network_uid_lastupdate` (`network`,`uid`,`last-update`),
 	 INDEX `uid_network_self_lastupdate` (`uid`,`network`,`self`,`last-update`),
+	 INDEX `next-update` (`next-update`),
+	 INDEX `local-data-next-update` (`local-data`,`next-update`),
 	 INDEX `uid_lastitem` (`uid`,`last-item`),
 	 INDEX `baseurl` (`baseurl`(64)),
 	 INDEX `uid_contact-type` (`uid`,`contact-type`),
 	 INDEX `uid_self_contact-type` (`uid`,`self`,`contact-type`),
 	 INDEX `self_network_uid` (`self`,`network`,`uid`),
-	 INDEX `gsid` (`gsid`),
+	 INDEX `gsid_uid_failed` (`gsid`,`uid`,`failed`),
+	 INDEX `uri-id` (`uri-id`),
 	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
 	FOREIGN KEY (`gsid`) REFERENCES `gserver` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='contact table';
-
---
--- TABLE item-uri
---
-CREATE TABLE IF NOT EXISTS `item-uri` (
-	`id` int unsigned NOT NULL auto_increment,
-	`uri` varbinary(255) NOT NULL COMMENT 'URI of an item',
-	`guid` varbinary(255) COMMENT 'A unique identifier for an item',
-	 PRIMARY KEY(`id`),
-	 UNIQUE INDEX `uri` (`uri`),
-	 INDEX `guid` (`guid`)
-) DEFAULT COLLATE utf8mb4_general_ci COMMENT='URI and GUID for items';
 
 --
 -- TABLE tag
@@ -223,26 +238,12 @@ CREATE TABLE IF NOT EXISTS `item-uri` (
 CREATE TABLE IF NOT EXISTS `tag` (
 	`id` int unsigned NOT NULL auto_increment COMMENT '',
 	`name` varchar(96) NOT NULL DEFAULT '' COMMENT '',
-	`url` varbinary(255) NOT NULL DEFAULT '' COMMENT '',
+	`url` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`type` tinyint unsigned COMMENT 'Type of the tag (Unknown, General Collection, Follower Collection or Account)',
 	 PRIMARY KEY(`id`),
 	 UNIQUE INDEX `type_name_url` (`name`,`url`),
 	 INDEX `url` (`url`)
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='tags and mentions';
-
---
--- TABLE clients
---
-CREATE TABLE IF NOT EXISTS `clients` (
-	`client_id` varchar(20) NOT NULL COMMENT '',
-	`pw` varchar(20) NOT NULL DEFAULT '' COMMENT '',
-	`redirect_uri` varchar(200) NOT NULL DEFAULT '' COMMENT '',
-	`name` text COMMENT '',
-	`icon` text COMMENT '',
-	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'User id',
-	 PRIMARY KEY(`client_id`),
-	 INDEX `uid` (`uid`),
-	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
-) DEFAULT COLLATE utf8mb4_general_ci COMMENT='OAuth usage';
 
 --
 -- TABLE permissionset
@@ -303,6 +304,7 @@ CREATE TABLE IF NOT EXISTS `2fa_trusted_browser` (
 	`cookie_hash` varchar(80) NOT NULL COMMENT 'Trusted cookie hash',
 	`uid` mediumint unsigned NOT NULL COMMENT 'User ID',
 	`user_agent` text COMMENT 'User agent string',
+	`trusted` boolean NOT NULL DEFAULT '1' COMMENT 'Whenever this browser should be trusted or not',
 	`created` datetime NOT NULL COMMENT 'Datetime the trusted browser was recorded',
 	`last_used` datetime COMMENT 'Datetime the trusted browser was last used',
 	 PRIMARY KEY(`cookie_hash`),
@@ -311,43 +313,63 @@ CREATE TABLE IF NOT EXISTS `2fa_trusted_browser` (
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Two-factor authentication trusted browsers';
 
 --
--- TABLE addon
+-- TABLE account-suggestion
 --
-CREATE TABLE IF NOT EXISTS `addon` (
-	`id` int unsigned NOT NULL auto_increment COMMENT '',
-	`name` varchar(50) NOT NULL DEFAULT '' COMMENT 'addon base (file)name',
-	`version` varchar(50) NOT NULL DEFAULT '' COMMENT 'currently unused',
-	`installed` boolean NOT NULL DEFAULT '0' COMMENT 'currently always 1',
-	`hidden` boolean NOT NULL DEFAULT '0' COMMENT 'currently unused',
-	`timestamp` int unsigned NOT NULL DEFAULT 0 COMMENT 'file timestamp to check for reloads',
-	`plugin_admin` boolean NOT NULL DEFAULT '0' COMMENT '1 = has admin config, 0 = has no admin config',
+CREATE TABLE IF NOT EXISTS `account-suggestion` (
+	`uri-id` int unsigned NOT NULL COMMENT 'Id of the item-uri table entry that contains the account url',
+	`uid` mediumint unsigned NOT NULL COMMENT 'User ID',
+	`level` smallint unsigned COMMENT 'level of closeness',
+	`ignore` boolean NOT NULL DEFAULT '0' COMMENT 'If set, this account will not be suggested again',
+	 PRIMARY KEY(`uid`,`uri-id`),
+	 INDEX `uri-id_uid` (`uri-id`,`uid`),
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Account suggestion';
+
+--
+-- TABLE account-user
+--
+CREATE TABLE IF NOT EXISTS `account-user` (
+	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
+	`uri-id` int unsigned NOT NULL COMMENT 'Id of the item-uri table entry that contains the account url',
+	`uid` mediumint unsigned NOT NULL COMMENT 'User ID',
 	 PRIMARY KEY(`id`),
-	 INDEX `installed_name` (`installed`,`name`),
-	 UNIQUE INDEX `name` (`name`)
-) DEFAULT COLLATE utf8mb4_general_ci COMMENT='registered addons';
+	 UNIQUE INDEX `uri-id_uid` (`uri-id`,`uid`),
+	 INDEX `uid_uri-id` (`uid`,`uri-id`),
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Remote and local accounts';
 
 --
 -- TABLE apcontact
 --
 CREATE TABLE IF NOT EXISTS `apcontact` (
-	`url` varbinary(255) NOT NULL COMMENT 'URL of the contact',
-	`uuid` varchar(255) COMMENT '',
+	`url` varbinary(383) NOT NULL COMMENT 'URL of the contact',
+	`uri-id` int unsigned COMMENT 'Id of the item-uri table entry that contains the apcontact url',
+	`uuid` varbinary(255) COMMENT '',
 	`type` varchar(20) NOT NULL COMMENT '',
-	`following` varchar(255) COMMENT '',
-	`followers` varchar(255) COMMENT '',
-	`inbox` varchar(255) NOT NULL COMMENT '',
-	`outbox` varchar(255) COMMENT '',
-	`sharedinbox` varchar(255) COMMENT '',
+	`following` varbinary(383) COMMENT '',
+	`followers` varbinary(383) COMMENT '',
+	`inbox` varbinary(383) NOT NULL COMMENT '',
+	`outbox` varbinary(383) COMMENT '',
+	`sharedinbox` varbinary(383) COMMENT '',
+	`featured` varbinary(383) COMMENT 'Address for the collection of featured posts',
+	`featured-tags` varbinary(383) COMMENT 'Address for the collection of featured tags',
 	`manually-approve` boolean COMMENT '',
+	`discoverable` boolean COMMENT 'Mastodon extension: true if profile is published in their directory',
+	`suspended` boolean COMMENT 'Mastodon extension: true if profile is suspended',
 	`nick` varchar(255) NOT NULL DEFAULT '' COMMENT '',
 	`name` varchar(255) COMMENT '',
 	`about` text COMMENT '',
-	`photo` varchar(255) COMMENT '',
+	`xmpp` varchar(255) COMMENT 'XMPP address',
+	`matrix` varchar(255) COMMENT 'Matrix address',
+	`photo` varbinary(383) COMMENT '',
+	`header` varbinary(383) COMMENT 'Header picture',
 	`addr` varchar(255) COMMENT '',
-	`alias` varchar(255) COMMENT '',
+	`alias` varbinary(383) COMMENT '',
 	`pubkey` text COMMENT '',
-	`subscribe` varchar(255) COMMENT '',
-	`baseurl` varchar(255) COMMENT 'baseurl of the ap contact',
+	`subscribe` varbinary(383) COMMENT '',
+	`baseurl` varbinary(383) COMMENT 'baseurl of the ap contact',
 	`gsid` int unsigned COMMENT 'Global Server ID',
 	`generator` varchar(255) COMMENT 'Name of the contact\'s system',
 	`following_count` int unsigned DEFAULT 0 COMMENT 'Number of following contacts',
@@ -361,8 +383,65 @@ CREATE TABLE IF NOT EXISTS `apcontact` (
 	 INDEX `baseurl` (`baseurl`(190)),
 	 INDEX `sharedinbox` (`sharedinbox`(190)),
 	 INDEX `gsid` (`gsid`),
+	 UNIQUE INDEX `uri-id` (`uri-id`),
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
 	FOREIGN KEY (`gsid`) REFERENCES `gserver` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='ActivityPub compatible contacts - used in the ActivityPub implementation';
+
+--
+-- TABLE application
+--
+CREATE TABLE IF NOT EXISTS `application` (
+	`id` int unsigned NOT NULL auto_increment COMMENT 'generated index',
+	`client_id` varchar(64) NOT NULL COMMENT '',
+	`client_secret` varchar(64) NOT NULL COMMENT '',
+	`name` varchar(255) NOT NULL COMMENT '',
+	`redirect_uri` varbinary(383) NOT NULL COMMENT '',
+	`website` varbinary(383) COMMENT '',
+	`scopes` varchar(255) COMMENT '',
+	`read` boolean COMMENT 'Read scope',
+	`write` boolean COMMENT 'Write scope',
+	`follow` boolean COMMENT 'Follow scope',
+	`push` boolean COMMENT 'Push scope',
+	 PRIMARY KEY(`id`),
+	 UNIQUE INDEX `client_id` (`client_id`)
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='OAuth application';
+
+--
+-- TABLE application-marker
+--
+CREATE TABLE IF NOT EXISTS `application-marker` (
+	`application-id` int unsigned NOT NULL COMMENT '',
+	`uid` mediumint unsigned NOT NULL COMMENT 'Owner User id',
+	`timeline` varchar(64) NOT NULL COMMENT 'Marker (home, notifications)',
+	`last_read_id` varbinary(383) COMMENT 'Marker id for the timeline',
+	`version` smallint unsigned COMMENT 'Version number',
+	`updated_at` datetime COMMENT 'creation time',
+	 PRIMARY KEY(`application-id`,`uid`,`timeline`),
+	 INDEX `uid_id` (`uid`),
+	FOREIGN KEY (`application-id`) REFERENCES `application` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Timeline marker';
+
+--
+-- TABLE application-token
+--
+CREATE TABLE IF NOT EXISTS `application-token` (
+	`application-id` int unsigned NOT NULL COMMENT '',
+	`uid` mediumint unsigned NOT NULL COMMENT 'Owner User id',
+	`code` varchar(64) NOT NULL COMMENT '',
+	`access_token` varchar(64) NOT NULL COMMENT '',
+	`created_at` datetime NOT NULL COMMENT 'creation time',
+	`scopes` varchar(255) COMMENT '',
+	`read` boolean COMMENT 'Read scope',
+	`write` boolean COMMENT 'Write scope',
+	`follow` boolean COMMENT 'Follow scope',
+	`push` boolean COMMENT 'Push scope',
+	 PRIMARY KEY(`application-id`,`uid`),
+	 INDEX `uid_id` (`uid`,`application-id`),
+	FOREIGN KEY (`application-id`) REFERENCES `application` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='OAuth user token';
 
 --
 -- TABLE attach
@@ -389,20 +468,6 @@ CREATE TABLE IF NOT EXISTS `attach` (
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='file attachments';
 
 --
--- TABLE auth_codes
---
-CREATE TABLE IF NOT EXISTS `auth_codes` (
-	`id` varchar(40) NOT NULL COMMENT '',
-	`client_id` varchar(20) NOT NULL DEFAULT '' COMMENT '',
-	`redirect_uri` varchar(200) NOT NULL DEFAULT '' COMMENT '',
-	`expires` int NOT NULL DEFAULT 0 COMMENT '',
-	`scope` varchar(250) NOT NULL DEFAULT '' COMMENT '',
-	 PRIMARY KEY(`id`),
-	 INDEX `client_id` (`client_id`),
-	FOREIGN KEY (`client_id`) REFERENCES `clients` (`client_id`) ON UPDATE RESTRICT ON DELETE CASCADE
-) DEFAULT COLLATE utf8mb4_general_ci COMMENT='OAuth usage';
-
---
 -- TABLE cache
 --
 CREATE TABLE IF NOT EXISTS `cache` (
@@ -415,26 +480,12 @@ CREATE TABLE IF NOT EXISTS `cache` (
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Stores temporary data';
 
 --
--- TABLE challenge
---
-CREATE TABLE IF NOT EXISTS `challenge` (
-	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
-	`challenge` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`dfrn-id` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`expire` int unsigned NOT NULL DEFAULT 0 COMMENT '',
-	`type` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`last_update` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	 PRIMARY KEY(`id`),
-	 INDEX `expire` (`expire`)
-) DEFAULT COLLATE utf8mb4_general_ci COMMENT='';
-
---
 -- TABLE config
 --
 CREATE TABLE IF NOT EXISTS `config` (
 	`id` int unsigned NOT NULL auto_increment COMMENT '',
-	`cat` varbinary(50) NOT NULL DEFAULT '' COMMENT '',
-	`k` varbinary(50) NOT NULL DEFAULT '' COMMENT '',
+	`cat` varbinary(50) NOT NULL DEFAULT '' COMMENT 'The category of the entry',
+	`k` varbinary(50) NOT NULL DEFAULT '' COMMENT 'The key of the entry',
 	`v` mediumtext COMMENT '',
 	 PRIMARY KEY(`id`),
 	 UNIQUE INDEX `cat_k` (`cat`,`k`)
@@ -460,7 +511,7 @@ CREATE TABLE IF NOT EXISTS `contact-relation` (
 --
 CREATE TABLE IF NOT EXISTS `conv` (
 	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
-	`guid` varchar(255) NOT NULL DEFAULT '' COMMENT 'A unique identifier for this conversation',
+	`guid` varbinary(255) NOT NULL DEFAULT '' COMMENT 'A unique identifier for this conversation',
 	`recips` text COMMENT 'sender_handle;recipient_handle',
 	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'Owner User id',
 	`creator` varchar(255) NOT NULL DEFAULT '' COMMENT 'handle of creator',
@@ -473,34 +524,100 @@ CREATE TABLE IF NOT EXISTS `conv` (
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='private messages';
 
 --
--- TABLE conversation
+-- TABLE workerqueue
 --
-CREATE TABLE IF NOT EXISTS `conversation` (
-	`item-uri` varbinary(255) NOT NULL COMMENT 'Original URI of the item - unrelated to the table with the same name',
-	`reply-to-uri` varbinary(255) NOT NULL DEFAULT '' COMMENT 'URI to which this item is a reply',
-	`conversation-uri` varbinary(255) NOT NULL DEFAULT '' COMMENT 'GNU Social conversation URI',
-	`conversation-href` varbinary(255) NOT NULL DEFAULT '' COMMENT 'GNU Social conversation link',
-	`protocol` tinyint unsigned NOT NULL DEFAULT 255 COMMENT 'The protocol of the item',
-	`direction` tinyint unsigned NOT NULL DEFAULT 0 COMMENT 'How the message arrived here: 1=push, 2=pull',
-	`source` mediumtext COMMENT 'Original source',
-	`received` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Receiving date',
-	 PRIMARY KEY(`item-uri`),
-	 INDEX `conversation-uri` (`conversation-uri`),
-	 INDEX `received` (`received`)
-) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Raw data and structure information for messages';
+CREATE TABLE IF NOT EXISTS `workerqueue` (
+	`id` int unsigned NOT NULL auto_increment COMMENT 'Auto incremented worker task id',
+	`command` varchar(100) COMMENT 'Task command',
+	`parameter` mediumtext COMMENT 'Task parameter',
+	`priority` tinyint unsigned NOT NULL DEFAULT 0 COMMENT 'Task priority',
+	`created` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Creation date',
+	`pid` int unsigned NOT NULL DEFAULT 0 COMMENT 'Process id of the worker',
+	`executed` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Execution date',
+	`next_try` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Next retrial date',
+	`retrial` tinyint NOT NULL DEFAULT 0 COMMENT 'Retrial counter',
+	`done` boolean NOT NULL DEFAULT '0' COMMENT 'Marked 1 when the task was done - will be deleted later',
+	 PRIMARY KEY(`id`),
+	 INDEX `command` (`command`),
+	 INDEX `done_command_parameter` (`done`,`command`,`parameter`(64)),
+	 INDEX `done_executed` (`done`,`executed`),
+	 INDEX `done_priority_retrial_created` (`done`,`priority`,`retrial`,`created`),
+	 INDEX `done_priority_next_try` (`done`,`priority`,`next_try`),
+	 INDEX `done_pid_next_try` (`done`,`pid`,`next_try`),
+	 INDEX `done_pid_retrial` (`done`,`pid`,`retrial`),
+	 INDEX `done_pid_priority_created` (`done`,`pid`,`priority`,`created`)
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Background tasks queue entries';
 
 --
 -- TABLE delayed-post
 --
 CREATE TABLE IF NOT EXISTS `delayed-post` (
 	`id` int unsigned NOT NULL auto_increment,
-	`uri` varchar(255) COMMENT 'URI of the post that will be distributed later',
+	`uri` varbinary(383) COMMENT 'URI of the post that will be distributed later',
 	`uid` mediumint unsigned COMMENT 'Owner User id',
 	`delayed` datetime COMMENT 'delay time',
+	`wid` int unsigned COMMENT 'Workerqueue id',
 	 PRIMARY KEY(`id`),
 	 UNIQUE INDEX `uid_uri` (`uid`,`uri`(190)),
-	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
+	 INDEX `wid` (`wid`),
+	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`wid`) REFERENCES `workerqueue` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Posts that are about to be distributed at a later time';
+
+--
+-- TABLE delivery-queue
+--
+CREATE TABLE IF NOT EXISTS `delivery-queue` (
+	`gsid` int unsigned NOT NULL COMMENT 'Target server',
+	`uri-id` int unsigned NOT NULL COMMENT 'Delivered post',
+	`created` datetime COMMENT '',
+	`command` varbinary(32) COMMENT '',
+	`cid` int unsigned COMMENT 'Target contact',
+	`uid` mediumint unsigned COMMENT 'Delivering user',
+	`failed` tinyint DEFAULT 0 COMMENT 'Number of times the delivery has failed',
+	 PRIMARY KEY(`uri-id`,`gsid`),
+	 INDEX `gsid_created` (`gsid`,`created`),
+	 INDEX `uid` (`uid`),
+	 INDEX `cid` (`cid`),
+	FOREIGN KEY (`gsid`) REFERENCES `gserver` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT,
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`cid`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Delivery data for posts for the batch processing';
+
+--
+-- TABLE diaspora-contact
+--
+CREATE TABLE IF NOT EXISTS `diaspora-contact` (
+	`uri-id` int unsigned NOT NULL COMMENT 'Id of the item-uri table entry that contains the contact URL',
+	`addr` varchar(255) COMMENT '',
+	`alias` varchar(255) COMMENT '',
+	`nick` varchar(255) COMMENT '',
+	`name` varchar(255) COMMENT '',
+	`given-name` varchar(255) COMMENT '',
+	`family-name` varchar(255) COMMENT '',
+	`photo` varchar(255) COMMENT '',
+	`photo-medium` varchar(255) COMMENT '',
+	`photo-small` varchar(255) COMMENT '',
+	`batch` varchar(255) COMMENT '',
+	`notify` varchar(255) COMMENT '',
+	`poll` varchar(255) COMMENT '',
+	`subscribe` varchar(255) COMMENT '',
+	`searchable` boolean COMMENT '',
+	`pubkey` text COMMENT '',
+	`gsid` int unsigned COMMENT 'Global Server ID',
+	`created` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
+	`updated` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
+	`interacting_count` int unsigned DEFAULT 0 COMMENT 'Number of contacts this contact interacts with',
+	`interacted_count` int unsigned DEFAULT 0 COMMENT 'Number of contacts that interacted with this contact',
+	`post_count` int unsigned DEFAULT 0 COMMENT 'Number of posts and comments',
+	 PRIMARY KEY(`uri-id`),
+	 UNIQUE INDEX `addr` (`addr`),
+	 INDEX `alias` (`alias`),
+	 INDEX `gsid` (`gsid`),
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`gsid`) REFERENCES `gserver` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Diaspora compatible contacts - used in the Diaspora implementation';
 
 --
 -- TABLE diaspora-interaction
@@ -513,14 +630,27 @@ CREATE TABLE IF NOT EXISTS `diaspora-interaction` (
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Signed Diaspora Interaction';
 
 --
+-- TABLE endpoint
+--
+CREATE TABLE IF NOT EXISTS `endpoint` (
+	`url` varbinary(383) NOT NULL COMMENT 'URL of the contact',
+	`type` varchar(20) NOT NULL COMMENT '',
+	`owner-uri-id` int unsigned COMMENT 'Id of the item-uri table entry that contains the apcontact url',
+	 PRIMARY KEY(`url`),
+	 UNIQUE INDEX `owner-uri-id_type` (`owner-uri-id`,`type`),
+	FOREIGN KEY (`owner-uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='ActivityPub endpoints - used in the ActivityPub implementation';
+
+--
 -- TABLE event
 --
 CREATE TABLE IF NOT EXISTS `event` (
 	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
-	`guid` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`guid` varbinary(255) NOT NULL DEFAULT '' COMMENT '',
 	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'Owner User id',
 	`cid` int unsigned NOT NULL DEFAULT 0 COMMENT 'contact_id (ID of the contact in contact table)',
-	`uri` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`uri` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`uri-id` int unsigned COMMENT 'Id of the item-uri table entry that contains the event uri',
 	`created` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'creation time',
 	`edited` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'last edit time',
 	`start` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'event start time',
@@ -530,7 +660,6 @@ CREATE TABLE IF NOT EXISTS `event` (
 	`location` text COMMENT 'event location',
 	`type` varchar(20) NOT NULL DEFAULT '' COMMENT 'event or birthday',
 	`nofinish` boolean NOT NULL DEFAULT '0' COMMENT 'if event does have no end this is 1',
-	`adjust` boolean NOT NULL DEFAULT '1' COMMENT 'adjust to timezone of the recipient (0 or 1)',
 	`ignore` boolean NOT NULL DEFAULT '0' COMMENT '0 or 1',
 	`allow_cid` mediumtext COMMENT 'Access Control - list of allowed contact.id \'<19><78>\'',
 	`allow_gid` mediumtext COMMENT 'Access Control - list of allowed groups',
@@ -539,35 +668,26 @@ CREATE TABLE IF NOT EXISTS `event` (
 	 PRIMARY KEY(`id`),
 	 INDEX `uid_start` (`uid`,`start`),
 	 INDEX `cid` (`cid`),
+	 INDEX `uri-id` (`uri-id`),
 	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE,
-	FOREIGN KEY (`cid`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+	FOREIGN KEY (`cid`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Events';
 
 --
--- TABLE fcontact
+-- TABLE fetch-entry
 --
-CREATE TABLE IF NOT EXISTS `fcontact` (
+CREATE TABLE IF NOT EXISTS `fetch-entry` (
 	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
-	`guid` varchar(255) NOT NULL DEFAULT '' COMMENT 'unique id',
-	`url` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`name` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`photo` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`request` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`nick` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`addr` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`batch` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`notify` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`poll` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`confirm` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`priority` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '',
-	`network` char(4) NOT NULL DEFAULT '' COMMENT '',
-	`alias` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`pubkey` text COMMENT '',
-	`updated` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
+	`url` varbinary(383) COMMENT 'url that awaiting to be fetched',
+	`created` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Creation date of the fetch request',
+	`wid` int unsigned COMMENT 'Workerqueue id',
 	 PRIMARY KEY(`id`),
-	 INDEX `addr` (`addr`(32)),
-	 UNIQUE INDEX `url` (`url`(190))
-) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Diaspora compatible contacts - used in the Diaspora implementation';
+	 UNIQUE INDEX `url` (`url`),
+	 INDEX `created` (`created`),
+	 INDEX `wid` (`wid`),
+	FOREIGN KEY (`wid`) REFERENCES `workerqueue` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='';
 
 --
 -- TABLE fsuggest
@@ -577,9 +697,9 @@ CREATE TABLE IF NOT EXISTS `fsuggest` (
 	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'User id',
 	`cid` int unsigned NOT NULL DEFAULT 0 COMMENT '',
 	`name` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`url` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`request` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`photo` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`url` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`request` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`photo` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
 	`note` text COMMENT '',
 	`created` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
 	 PRIMARY KEY(`id`),
@@ -597,10 +717,13 @@ CREATE TABLE IF NOT EXISTS `group` (
 	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'Owner User id',
 	`visible` boolean NOT NULL DEFAULT '0' COMMENT '1 indicates the member list is not private',
 	`deleted` boolean NOT NULL DEFAULT '0' COMMENT '1 indicates the group has been deleted',
+	`cid` int unsigned COMMENT 'Contact id of forum. When this field is filled then the members are synced automatically.',
 	`name` varchar(255) NOT NULL DEFAULT '' COMMENT 'human readable name of group',
 	 PRIMARY KEY(`id`),
 	 INDEX `uid` (`uid`),
-	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
+	 INDEX `cid` (`cid`),
+	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`cid`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='privacy groups, group info';
 
 --
@@ -643,27 +766,61 @@ CREATE TABLE IF NOT EXISTS `hook` (
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='addon hook registry';
 
 --
--- TABLE host
+-- TABLE inbox-entry
 --
-CREATE TABLE IF NOT EXISTS `host` (
-	`id` tinyint unsigned NOT NULL auto_increment COMMENT 'sequential ID',
-	`name` varchar(128) NOT NULL DEFAULT '' COMMENT 'The hostname',
+CREATE TABLE IF NOT EXISTS `inbox-entry` (
+	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
+	`activity-id` varbinary(383) COMMENT 'id of the incoming activity',
+	`object-id` varbinary(383) COMMENT '',
+	`in-reply-to-id` varbinary(383) COMMENT '',
+	`conversation` varbinary(383) COMMENT '',
+	`type` varchar(64) COMMENT 'Type of the activity',
+	`object-type` varchar(64) COMMENT 'Type of the object activity',
+	`object-object-type` varchar(64) COMMENT 'Type of the object\'s object activity',
+	`received` datetime COMMENT 'Receiving date',
+	`activity` mediumtext COMMENT 'The JSON activity',
+	`signer` varchar(255) COMMENT '',
+	`push` boolean COMMENT 'Is the entry pushed or have pulled it?',
+	`trust` boolean COMMENT 'Do we trust this entry?',
+	`wid` int unsigned COMMENT 'Workerqueue id',
 	 PRIMARY KEY(`id`),
-	 UNIQUE INDEX `name` (`name`)
-) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Hostname';
+	 UNIQUE INDEX `activity-id` (`activity-id`),
+	 INDEX `object-id` (`object-id`),
+	 INDEX `received` (`received`),
+	 INDEX `wid` (`wid`),
+	FOREIGN KEY (`wid`) REFERENCES `workerqueue` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Incoming activity';
+
+--
+-- TABLE inbox-entry-receiver
+--
+CREATE TABLE IF NOT EXISTS `inbox-entry-receiver` (
+	`queue-id` int unsigned NOT NULL COMMENT '',
+	`uid` mediumint unsigned NOT NULL COMMENT 'User id',
+	 PRIMARY KEY(`queue-id`,`uid`),
+	 INDEX `uid` (`uid`),
+	FOREIGN KEY (`queue-id`) REFERENCES `inbox-entry` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Receiver for the incoming activity';
 
 --
 -- TABLE inbox-status
 --
 CREATE TABLE IF NOT EXISTS `inbox-status` (
-	`url` varbinary(255) NOT NULL COMMENT 'URL of the inbox',
+	`url` varbinary(383) NOT NULL COMMENT 'URL of the inbox',
+	`uri-id` int unsigned COMMENT 'Item-uri id of inbox url',
+	`gsid` int unsigned COMMENT 'ID of the related server',
 	`created` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Creation date of this entry',
 	`success` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Date of the last successful delivery',
 	`failure` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Date of the last failed delivery',
 	`previous` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Previous delivery date',
 	`archive` boolean NOT NULL DEFAULT '0' COMMENT 'Is the inbox archived?',
 	`shared` boolean NOT NULL DEFAULT '0' COMMENT 'Is it a shared inbox?',
-	 PRIMARY KEY(`url`)
+	 PRIMARY KEY(`url`),
+	 INDEX `uri-id` (`uri-id`),
+	 INDEX `gsid` (`gsid`),
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`gsid`) REFERENCES `gserver` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Status of ActivityPub inboxes';
 
 --
@@ -672,21 +829,34 @@ CREATE TABLE IF NOT EXISTS `inbox-status` (
 CREATE TABLE IF NOT EXISTS `intro` (
 	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
 	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'User id',
-	`fid` int unsigned COMMENT '',
+	`fid` int unsigned COMMENT 'deprecated',
 	`contact-id` int unsigned NOT NULL DEFAULT 0 COMMENT '',
+	`suggest-cid` int unsigned COMMENT 'Suggested contact',
 	`knowyou` boolean NOT NULL DEFAULT '0' COMMENT '',
-	`duplex` boolean NOT NULL DEFAULT '0' COMMENT '',
+	`duplex` boolean NOT NULL DEFAULT '0' COMMENT 'deprecated',
 	`note` text COMMENT '',
-	`hash` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`hash` varbinary(255) NOT NULL DEFAULT '' COMMENT '',
 	`datetime` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
-	`blocked` boolean NOT NULL DEFAULT '1' COMMENT '',
+	`blocked` boolean NOT NULL DEFAULT '0' COMMENT 'deprecated',
 	`ignore` boolean NOT NULL DEFAULT '0' COMMENT '',
 	 PRIMARY KEY(`id`),
 	 INDEX `contact-id` (`contact-id`),
+	 INDEX `suggest-cid` (`suggest-cid`),
 	 INDEX `uid` (`uid`),
 	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE,
-	FOREIGN KEY (`contact-id`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+	FOREIGN KEY (`contact-id`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`suggest-cid`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='';
+
+--
+-- TABLE key-value
+--
+CREATE TABLE IF NOT EXISTS `key-value` (
+	`k` varbinary(50) NOT NULL COMMENT '',
+	`v` mediumtext COMMENT '',
+	`updated_at` int unsigned NOT NULL COMMENT 'timestamp of the last update',
+	 PRIMARY KEY(`k`)
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='A key value storage';
 
 --
 -- TABLE locks
@@ -707,11 +877,12 @@ CREATE TABLE IF NOT EXISTS `locks` (
 CREATE TABLE IF NOT EXISTS `mail` (
 	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
 	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'Owner User id',
-	`guid` varchar(255) NOT NULL DEFAULT '' COMMENT 'A unique identifier for this private message',
+	`guid` varbinary(255) NOT NULL DEFAULT '' COMMENT 'A unique identifier for this private message',
 	`from-name` varchar(255) NOT NULL DEFAULT '' COMMENT 'name of the sender',
-	`from-photo` varchar(255) NOT NULL DEFAULT '' COMMENT 'contact photo link of the sender',
-	`from-url` varchar(255) NOT NULL DEFAULT '' COMMENT 'profile linke of the sender',
-	`contact-id` varchar(255) COMMENT 'contact.id',
+	`from-photo` varbinary(383) NOT NULL DEFAULT '' COMMENT 'contact photo link of the sender',
+	`from-url` varbinary(383) NOT NULL DEFAULT '' COMMENT 'profile link of the sender',
+	`contact-id` varbinary(255) COMMENT 'contact.id',
+	`author-id` int unsigned COMMENT 'Link to the contact table with uid=0 of the author of the mail',
 	`convid` int unsigned COMMENT 'conv.id',
 	`title` varchar(255) NOT NULL DEFAULT '' COMMENT '',
 	`body` mediumtext COMMENT '',
@@ -719,8 +890,12 @@ CREATE TABLE IF NOT EXISTS `mail` (
 	`reply` boolean NOT NULL DEFAULT '0' COMMENT '',
 	`replied` boolean NOT NULL DEFAULT '0' COMMENT '',
 	`unknown` boolean NOT NULL DEFAULT '0' COMMENT 'if sender not in the contact table this is 1',
-	`uri` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`parent-uri` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`uri` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`uri-id` int unsigned COMMENT 'Item-uri id of the related mail',
+	`parent-uri` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`parent-uri-id` int unsigned COMMENT 'Item-uri id of the parent of the related mail',
+	`thr-parent` varbinary(383) COMMENT '',
+	`thr-parent-id` int unsigned COMMENT 'Id of the item-uri table that contains the thread parent uri',
 	`created` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'creation time of the private message',
 	 PRIMARY KEY(`id`),
 	 INDEX `uid_seen` (`uid`,`seen`),
@@ -728,7 +903,15 @@ CREATE TABLE IF NOT EXISTS `mail` (
 	 INDEX `uri` (`uri`(64)),
 	 INDEX `parent-uri` (`parent-uri`(64)),
 	 INDEX `contactid` (`contact-id`(32)),
-	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
+	 INDEX `author-id` (`author-id`),
+	 INDEX `uri-id` (`uri-id`),
+	 INDEX `parent-uri-id` (`parent-uri-id`),
+	 INDEX `thr-parent-id` (`thr-parent-id`),
+	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`author-id`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT,
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`parent-uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`thr-parent-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='private messages';
 
 --
@@ -768,18 +951,47 @@ CREATE TABLE IF NOT EXISTS `manage` (
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='table of accounts that can manage each other';
 
 --
+-- TABLE notification
+--
+CREATE TABLE IF NOT EXISTS `notification` (
+	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
+	`uid` mediumint unsigned COMMENT 'Owner User id',
+	`vid` smallint unsigned COMMENT 'Id of the verb table entry that contains the activity verbs',
+	`type` smallint unsigned COMMENT '',
+	`actor-id` int unsigned COMMENT 'Link to the contact table with uid=0 of the actor that caused the notification',
+	`target-uri-id` int unsigned COMMENT 'Item-uri id of the related post',
+	`parent-uri-id` int unsigned COMMENT 'Item-uri id of the parent of the related post',
+	`created` datetime COMMENT '',
+	`seen` boolean DEFAULT '0' COMMENT 'Seen on the desktop',
+	`dismissed` boolean DEFAULT '0' COMMENT 'Dismissed via the API',
+	 PRIMARY KEY(`id`),
+	 UNIQUE INDEX `uid_vid_type_actor-id_target-uri-id` (`uid`,`vid`,`type`,`actor-id`,`target-uri-id`),
+	 INDEX `vid` (`vid`),
+	 INDEX `actor-id` (`actor-id`),
+	 INDEX `target-uri-id` (`target-uri-id`),
+	 INDEX `parent-uri-id` (`parent-uri-id`),
+	 INDEX `seen_uid` (`seen`,`uid`),
+	 INDEX `uid_type_parent-uri-id_actor-id` (`uid`,`type`,`parent-uri-id`,`actor-id`),
+	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`vid`) REFERENCES `verb` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT,
+	FOREIGN KEY (`actor-id`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`target-uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`parent-uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='notifications';
+
+--
 -- TABLE notify
 --
 CREATE TABLE IF NOT EXISTS `notify` (
 	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
 	`type` smallint unsigned NOT NULL DEFAULT 0 COMMENT '',
 	`name` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`url` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`photo` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`url` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`photo` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
 	`date` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
 	`msg` mediumtext COMMENT '',
 	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'Owner User id',
-	`link` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`link` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
 	`iid` int unsigned COMMENT '',
 	`parent` int unsigned COMMENT '',
 	`uri-id` int unsigned COMMENT 'Item-uri id of the related post',
@@ -798,7 +1010,7 @@ CREATE TABLE IF NOT EXISTS `notify` (
 	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE,
 	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
 	FOREIGN KEY (`parent-uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
-) DEFAULT COLLATE utf8mb4_general_ci COMMENT='notifications';
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='[Deprecated] User notifications';
 
 --
 -- TABLE notify-threads
@@ -823,7 +1035,7 @@ CREATE TABLE IF NOT EXISTS `notify-threads` (
 -- TABLE oembed
 --
 CREATE TABLE IF NOT EXISTS `oembed` (
-	`url` varbinary(255) NOT NULL COMMENT 'page url',
+	`url` varbinary(383) NOT NULL COMMENT 'page url',
 	`maxwidth` mediumint unsigned NOT NULL COMMENT 'Maximum width passed to Oembed',
 	`content` mediumtext COMMENT 'OEmbed data of the page',
 	`created` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'datetime of creation',
@@ -891,11 +1103,13 @@ CREATE TABLE IF NOT EXISTS `photo` (
 	`title` varchar(255) NOT NULL DEFAULT '' COMMENT '',
 	`desc` text COMMENT '',
 	`album` varchar(255) NOT NULL DEFAULT '' COMMENT 'The name of the album to which the photo belongs',
+	`photo-type` tinyint unsigned COMMENT 'User avatar, user banner, contact avatar, contact banner or default',
 	`filename` varchar(255) NOT NULL DEFAULT '' COMMENT '',
 	`type` varchar(30) NOT NULL DEFAULT 'image/jpeg',
 	`height` smallint unsigned NOT NULL DEFAULT 0 COMMENT '',
 	`width` smallint unsigned NOT NULL DEFAULT 0 COMMENT '',
 	`datasize` int unsigned NOT NULL DEFAULT 0 COMMENT '',
+	`blurhash` varbinary(255) COMMENT 'BlurHash representation of the photo',
 	`data` mediumblob NOT NULL COMMENT '',
 	`scale` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '',
 	`profile` boolean NOT NULL DEFAULT '0' COMMENT '',
@@ -914,6 +1128,7 @@ CREATE TABLE IF NOT EXISTS `photo` (
 	 INDEX `uid_album_scale_created` (`uid`,`album`(32),`scale`,`created`),
 	 INDEX `uid_album_resource-id_created` (`uid`,`album`(32),`resource-id`,`created`),
 	 INDEX `resource-id` (`resource-id`),
+	 INDEX `uid_photo-type` (`uid`,`photo-type`),
 	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE RESTRICT,
 	FOREIGN KEY (`contact-id`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='photo storage';
@@ -959,6 +1174,17 @@ CREATE TABLE IF NOT EXISTS `post` (
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Structure for all posts';
 
 --
+-- TABLE post-activity
+--
+CREATE TABLE IF NOT EXISTS `post-activity` (
+	`uri-id` int unsigned NOT NULL COMMENT 'Id of the item-uri table entry that contains the item uri',
+	`activity` mediumtext COMMENT 'Original activity',
+	`received` datetime COMMENT '',
+	 PRIMARY KEY(`uri-id`),
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Original remote activity';
+
+--
 -- TABLE post-category
 --
 CREATE TABLE IF NOT EXISTS `post-category` (
@@ -967,12 +1193,26 @@ CREATE TABLE IF NOT EXISTS `post-category` (
 	`type` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '',
 	`tid` int unsigned NOT NULL DEFAULT 0 COMMENT '',
 	 PRIMARY KEY(`uri-id`,`uid`,`type`,`tid`),
-	 INDEX `uri-id` (`tid`),
-	 INDEX `uid` (`uid`),
+	 INDEX `tid` (`tid`),
+	 INDEX `uid_uri-id` (`uid`,`uri-id`),
 	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
 	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE,
 	FOREIGN KEY (`tid`) REFERENCES `tag` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='post relation to categories';
+
+--
+-- TABLE post-collection
+--
+CREATE TABLE IF NOT EXISTS `post-collection` (
+	`uri-id` int unsigned NOT NULL COMMENT 'Id of the item-uri table entry that contains the item uri',
+	`type` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '0 - Featured',
+	`author-id` int unsigned COMMENT 'Author of the featured post',
+	 PRIMARY KEY(`uri-id`,`type`),
+	 INDEX `type` (`type`),
+	 INDEX `author-id` (`author-id`),
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`author-id`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Collection of posts';
 
 --
 -- TABLE post-content
@@ -983,6 +1223,7 @@ CREATE TABLE IF NOT EXISTS `post-content` (
 	`content-warning` varchar(255) NOT NULL DEFAULT '' COMMENT '',
 	`body` mediumtext COMMENT 'item body content',
 	`raw-body` mediumtext COMMENT 'Body without embedded media links',
+	`quote-uri-id` int unsigned COMMENT 'Id of the item-uri table that contains the quoted uri',
 	`location` varchar(255) NOT NULL DEFAULT '' COMMENT 'text location where this item originated',
 	`coord` varchar(255) NOT NULL DEFAULT '' COMMENT 'longitude/latitude pair representing location where this item originated',
 	`language` text COMMENT 'Language information about this post',
@@ -994,13 +1235,34 @@ CREATE TABLE IF NOT EXISTS `post-content` (
 	`target-type` varchar(100) NOT NULL DEFAULT '' COMMENT 'ActivityStreams target type if applicable (URI)',
 	`target` text COMMENT 'JSON encoded target structure if used',
 	`resource-id` varchar(32) NOT NULL DEFAULT '' COMMENT 'Used to link other tables to items, it identifies the linked resource (e.g. photo) and if set must also set resource_type',
-	`plink` varchar(255) NOT NULL DEFAULT '' COMMENT 'permalink or URL to a displayable copy of the message at its source',
+	`plink` varbinary(383) NOT NULL DEFAULT '' COMMENT 'permalink or URL to a displayable copy of the message at its source',
 	 PRIMARY KEY(`uri-id`),
 	 INDEX `plink` (`plink`(191)),
 	 INDEX `resource-id` (`resource-id`),
 	 FULLTEXT INDEX `title-content-warning-body` (`title`,`content-warning`,`body`),
-	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+	 INDEX `quote-uri-id` (`quote-uri-id`),
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`quote-uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Content for all posts';
+
+--
+-- TABLE post-delivery
+--
+CREATE TABLE IF NOT EXISTS `post-delivery` (
+	`uri-id` int unsigned NOT NULL COMMENT 'Id of the item-uri table entry that contains the item uri',
+	`inbox-id` int unsigned NOT NULL COMMENT 'Item-uri id of inbox url',
+	`uid` mediumint unsigned COMMENT 'Delivering user',
+	`created` datetime DEFAULT '0001-01-01 00:00:00' COMMENT '',
+	`command` varbinary(32) COMMENT '',
+	`failed` tinyint DEFAULT 0 COMMENT 'Number of times the delivery has failed',
+	`receivers` mediumtext COMMENT 'JSON encoded array with the receiving contacts',
+	 PRIMARY KEY(`uri-id`,`inbox-id`),
+	 INDEX `inbox-id_created` (`inbox-id`,`created`),
+	 INDEX `uid` (`uid`),
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`inbox-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Delivery data for posts for the batch processing';
 
 --
 -- TABLE post-delivery-data
@@ -1022,25 +1284,105 @@ CREATE TABLE IF NOT EXISTS `post-delivery-data` (
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Delivery data for items';
 
 --
+-- TABLE post-history
+--
+CREATE TABLE IF NOT EXISTS `post-history` (
+	`uri-id` int unsigned NOT NULL COMMENT 'Id of the item-uri table entry that contains the item uri',
+	`edited` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Date of edit',
+	`title` varchar(255) NOT NULL DEFAULT '' COMMENT 'item title',
+	`content-warning` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`body` mediumtext COMMENT 'item body content',
+	`raw-body` mediumtext COMMENT 'Body without embedded media links',
+	`location` varchar(255) NOT NULL DEFAULT '' COMMENT 'text location where this item originated',
+	`coord` varchar(255) NOT NULL DEFAULT '' COMMENT 'longitude/latitude pair representing location where this item originated',
+	`language` text COMMENT 'Language information about this post',
+	`app` varchar(255) NOT NULL DEFAULT '' COMMENT 'application which generated this item',
+	`rendered-hash` varchar(32) NOT NULL DEFAULT '' COMMENT '',
+	`rendered-html` mediumtext COMMENT 'item.body converted to html',
+	`object-type` varchar(100) NOT NULL DEFAULT '' COMMENT 'ActivityStreams object type',
+	`object` text COMMENT 'JSON encoded object structure unless it is an implied object (normal post)',
+	`target-type` varchar(100) NOT NULL DEFAULT '' COMMENT 'ActivityStreams target type if applicable (URI)',
+	`target` text COMMENT 'JSON encoded target structure if used',
+	`resource-id` varchar(32) NOT NULL DEFAULT '' COMMENT 'Used to link other tables to items, it identifies the linked resource (e.g. photo) and if set must also set resource_type',
+	`plink` varbinary(383) NOT NULL DEFAULT '' COMMENT 'permalink or URL to a displayable copy of the message at its source',
+	 PRIMARY KEY(`uri-id`,`edited`),
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Post history';
+
+--
+-- TABLE post-link
+--
+CREATE TABLE IF NOT EXISTS `post-link` (
+	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
+	`uri-id` int unsigned NOT NULL COMMENT 'Id of the item-uri table entry that contains the item uri',
+	`url` varbinary(511) NOT NULL COMMENT 'External URL',
+	`mimetype` varchar(60) COMMENT '',
+	`height` smallint unsigned COMMENT 'Height of the media',
+	`width` smallint unsigned COMMENT 'Width of the media',
+	`blurhash` varbinary(255) COMMENT 'BlurHash representation of the link',
+	 PRIMARY KEY(`id`),
+	 UNIQUE INDEX `uri-id-url` (`uri-id`,`url`),
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Post related external links';
+
+--
 -- TABLE post-media
 --
 CREATE TABLE IF NOT EXISTS `post-media` (
 	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
 	`uri-id` int unsigned NOT NULL COMMENT 'Id of the item-uri table entry that contains the item uri',
-	`url` varbinary(511) NOT NULL COMMENT 'Media URL',
+	`url` varbinary(1024) NOT NULL COMMENT 'Media URL',
+	`media-uri-id` int unsigned COMMENT 'Id of the item-uri table entry that contains the activities uri-id',
 	`type` tinyint unsigned NOT NULL DEFAULT 0 COMMENT 'Media type',
 	`mimetype` varchar(60) COMMENT '',
 	`height` smallint unsigned COMMENT 'Height of the media',
 	`width` smallint unsigned COMMENT 'Width of the media',
-	`size` int unsigned COMMENT 'Media size',
-	`preview` varbinary(255) COMMENT 'Preview URL',
+	`size` bigint unsigned COMMENT 'Media size',
+	`blurhash` varbinary(255) COMMENT 'BlurHash representation of the image',
+	`preview` varbinary(512) COMMENT 'Preview URL',
 	`preview-height` smallint unsigned COMMENT 'Height of the preview picture',
 	`preview-width` smallint unsigned COMMENT 'Width of the preview picture',
 	`description` text COMMENT '',
+	`name` varchar(255) COMMENT 'Name of the media',
+	`author-url` varbinary(383) COMMENT 'URL of the author of the media',
+	`author-name` varchar(255) COMMENT 'Name of the author of the media',
+	`author-image` varbinary(383) COMMENT 'Image of the author of the media',
+	`publisher-url` varbinary(383) COMMENT 'URL of the publisher of the media',
+	`publisher-name` varchar(255) COMMENT 'Name of the publisher of the media',
+	`publisher-image` varbinary(383) COMMENT 'Image of the publisher of the media',
 	 PRIMARY KEY(`id`),
-	 UNIQUE INDEX `uri-id-url` (`uri-id`,`url`),
-	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+	 UNIQUE INDEX `uri-id-url` (`uri-id`,`url`(512)),
+	 INDEX `uri-id-id` (`uri-id`,`id`),
+	 INDEX `media-uri-id` (`media-uri-id`),
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`media-uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Attached media';
+
+--
+-- TABLE post-question
+--
+CREATE TABLE IF NOT EXISTS `post-question` (
+	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
+	`uri-id` int unsigned NOT NULL COMMENT 'Id of the item-uri table entry that contains the item uri',
+	`multiple` boolean NOT NULL DEFAULT '0' COMMENT 'Multiple choice',
+	`voters` int unsigned COMMENT 'Number of voters for this question',
+	`end-time` datetime DEFAULT '0001-01-01 00:00:00' COMMENT 'Question end time',
+	 PRIMARY KEY(`id`),
+	 UNIQUE INDEX `uri-id` (`uri-id`),
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Question';
+
+--
+-- TABLE post-question-option
+--
+CREATE TABLE IF NOT EXISTS `post-question-option` (
+	`id` int unsigned NOT NULL COMMENT 'Id of the question',
+	`uri-id` int unsigned NOT NULL COMMENT 'Id of the item-uri table entry that contains the item uri',
+	`name` varchar(255) COMMENT 'Name of the option',
+	`replies` int unsigned COMMENT 'Number of replies for this question option',
+	 PRIMARY KEY(`uri-id`,`id`),
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Question option';
 
 --
 -- TABLE post-tag
@@ -1063,6 +1405,7 @@ CREATE TABLE IF NOT EXISTS `post-tag` (
 --
 CREATE TABLE IF NOT EXISTS `post-thread` (
 	`uri-id` int unsigned NOT NULL COMMENT 'Id of the item-uri table entry that contains the item uri',
+	`conversation-id` int unsigned COMMENT 'Id of the item-uri table entry that contains the conversation uri',
 	`owner-id` int unsigned NOT NULL DEFAULT 0 COMMENT 'Item owner',
 	`author-id` int unsigned NOT NULL DEFAULT 0 COMMENT 'Item author',
 	`causer-id` int unsigned COMMENT 'Link to the contact table with uid=0 of the contact that caused the item creation',
@@ -1072,12 +1415,14 @@ CREATE TABLE IF NOT EXISTS `post-thread` (
 	`changed` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Date that something in the conversation changed, indicating clients should fetch the conversation again',
 	`commented` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
 	 PRIMARY KEY(`uri-id`),
+	 INDEX `conversation-id` (`conversation-id`),
 	 INDEX `owner-id` (`owner-id`),
 	 INDEX `author-id` (`author-id`),
 	 INDEX `causer-id` (`causer-id`),
 	 INDEX `received` (`received`),
 	 INDEX `commented` (`commented`),
 	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`conversation-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
 	FOREIGN KEY (`owner-id`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT,
 	FOREIGN KEY (`author-id`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT,
 	FOREIGN KEY (`causer-id`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT
@@ -1113,7 +1458,7 @@ CREATE TABLE IF NOT EXISTS `post-user` (
 	`event-id` int unsigned COMMENT 'Used to link to the event.id',
 	`unseen` boolean NOT NULL DEFAULT '1' COMMENT 'post has not been seen',
 	`hidden` boolean NOT NULL DEFAULT '0' COMMENT 'Marker to hide the post from the user',
-	`notification-type` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '',
+	`notification-type` smallint unsigned NOT NULL DEFAULT 0 COMMENT '',
 	`wall` boolean NOT NULL DEFAULT '0' COMMENT 'This item was posted to the wall of uid',
 	`origin` boolean NOT NULL DEFAULT '0' COMMENT 'item originated at this site',
 	`psid` int unsigned COMMENT 'ID of the permission set of this post',
@@ -1133,6 +1478,7 @@ CREATE TABLE IF NOT EXISTS `post-user` (
 	 INDEX `author-id_uid` (`author-id`,`uid`),
 	 INDEX `author-id_received` (`author-id`,`received`),
 	 INDEX `parent-uri-id_uid` (`parent-uri-id`,`uid`),
+	 INDEX `uid_wall_received` (`uid`,`wall`,`received`),
 	 INDEX `uid_contactid` (`uid`,`contact-id`),
 	 INDEX `uid_unseen_contactid` (`uid`,`unseen`,`contact-id`),
 	 INDEX `uid_unseen` (`uid`,`unseen`),
@@ -1156,6 +1502,7 @@ CREATE TABLE IF NOT EXISTS `post-user` (
 --
 CREATE TABLE IF NOT EXISTS `post-thread-user` (
 	`uri-id` int unsigned NOT NULL COMMENT 'Id of the item-uri table entry that contains the item uri',
+	`conversation-id` int unsigned COMMENT 'Id of the item-uri table entry that contains the conversation uri',
 	`owner-id` int unsigned NOT NULL DEFAULT 0 COMMENT 'Item owner',
 	`author-id` int unsigned NOT NULL DEFAULT 0 COMMENT 'Item author',
 	`causer-id` int unsigned COMMENT 'Link to the contact table with uid=0 of the contact that caused the item creation',
@@ -1165,13 +1512,13 @@ CREATE TABLE IF NOT EXISTS `post-thread-user` (
 	`changed` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Date that something in the conversation changed, indicating clients should fetch the conversation again',
 	`commented` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
 	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'Owner id which owns this copy of the item',
-	`pinned` boolean NOT NULL DEFAULT '0' COMMENT 'The thread is pinned on the profile page',
+	`pinned` boolean NOT NULL DEFAULT '0' COMMENT 'deprecated',
 	`starred` boolean NOT NULL DEFAULT '0' COMMENT '',
 	`ignored` boolean NOT NULL DEFAULT '0' COMMENT 'Ignore updates for this thread',
 	`wall` boolean NOT NULL DEFAULT '0' COMMENT 'This item was posted to the wall of uid',
 	`mention` boolean NOT NULL DEFAULT '0' COMMENT '',
 	`pubmail` boolean NOT NULL DEFAULT '0' COMMENT '',
-	`forum_mode` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '',
+	`forum_mode` tinyint unsigned NOT NULL DEFAULT 0 COMMENT 'Deprecated',
 	`contact-id` int unsigned NOT NULL DEFAULT 0 COMMENT 'contact.id',
 	`unseen` boolean NOT NULL DEFAULT '1' COMMENT 'post has not been seen',
 	`hidden` boolean NOT NULL DEFAULT '0' COMMENT 'Marker to hide the post from the user',
@@ -1180,6 +1527,7 @@ CREATE TABLE IF NOT EXISTS `post-thread-user` (
 	`post-user-id` int unsigned COMMENT 'Id of the post-user table',
 	 PRIMARY KEY(`uid`,`uri-id`),
 	 INDEX `uri-id` (`uri-id`),
+	 INDEX `conversation-id` (`conversation-id`),
 	 INDEX `owner-id` (`owner-id`),
 	 INDEX `author-id` (`author-id`),
 	 INDEX `causer-id` (`causer-id`),
@@ -1189,11 +1537,12 @@ CREATE TABLE IF NOT EXISTS `post-thread-user` (
 	 INDEX `post-user-id` (`post-user-id`),
 	 INDEX `commented` (`commented`),
 	 INDEX `uid_received` (`uid`,`received`),
-	 INDEX `uid_pinned` (`uid`,`pinned`),
+	 INDEX `uid_wall_received` (`uid`,`wall`,`received`),
 	 INDEX `uid_commented` (`uid`,`commented`),
 	 INDEX `uid_starred` (`uid`,`starred`),
 	 INDEX `uid_mention` (`uid`,`mention`),
 	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`conversation-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
 	FOREIGN KEY (`owner-id`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT,
 	FOREIGN KEY (`author-id`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT,
 	FOREIGN KEY (`causer-id`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE RESTRICT,
@@ -1209,7 +1558,7 @@ CREATE TABLE IF NOT EXISTS `post-thread-user` (
 CREATE TABLE IF NOT EXISTS `post-user-notification` (
 	`uri-id` int unsigned NOT NULL COMMENT 'Id of the item-uri table entry that contains the item uri',
 	`uid` mediumint unsigned NOT NULL COMMENT 'Owner id which owns this copy of the item',
-	`notification-type` tinyint unsigned NOT NULL DEFAULT 0 COMMENT '',
+	`notification-type` smallint unsigned NOT NULL DEFAULT 0 COMMENT '',
 	 PRIMARY KEY(`uid`,`uri-id`),
 	 INDEX `uri-id` (`uri-id`),
 	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
@@ -1220,10 +1569,11 @@ CREATE TABLE IF NOT EXISTS `post-user-notification` (
 -- TABLE process
 --
 CREATE TABLE IF NOT EXISTS `process` (
-	`pid` int unsigned NOT NULL COMMENT '',
+	`pid` int unsigned NOT NULL COMMENT 'The ID of the process',
+	`hostname` varchar(255) NOT NULL COMMENT 'The name of the host the process is ran on',
 	`command` varbinary(32) NOT NULL DEFAULT '' COMMENT '',
 	`created` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
-	 PRIMARY KEY(`pid`),
+	 PRIMARY KEY(`pid`,`hostname`),
 	 INDEX `command` (`command`)
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Currently running system processes';
 
@@ -1268,9 +1618,11 @@ CREATE TABLE IF NOT EXISTS `profile` (
 	`education` text COMMENT 'Deprecated',
 	`contact` text COMMENT 'Deprecated',
 	`homepage` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`xmpp` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`photo` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`thumb` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`homepage_verified` boolean NOT NULL DEFAULT '0' COMMENT 'was the homepage verified by a rel-me link back to the profile',
+	`xmpp` varchar(255) NOT NULL DEFAULT '' COMMENT 'XMPP address',
+	`matrix` varchar(255) NOT NULL DEFAULT '' COMMENT 'Matrix address',
+	`photo` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
+	`thumb` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
 	`publish` boolean NOT NULL DEFAULT '0' COMMENT 'publish default profile in local directory',
 	`net-publish` boolean NOT NULL DEFAULT '0' COMMENT 'publish profile in global directory',
 	 PRIMARY KEY(`id`),
@@ -1278,23 +1630,6 @@ CREATE TABLE IF NOT EXISTS `profile` (
 	 FULLTEXT INDEX `pub_keywords` (`pub_keywords`),
 	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='user profiles data';
-
---
--- TABLE profile_check
---
-CREATE TABLE IF NOT EXISTS `profile_check` (
-	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
-	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'User id',
-	`cid` int unsigned NOT NULL DEFAULT 0 COMMENT 'contact.id',
-	`dfrn_id` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`sec` varchar(255) NOT NULL DEFAULT '' COMMENT '',
-	`expire` int unsigned NOT NULL DEFAULT 0 COMMENT '',
-	 PRIMARY KEY(`id`),
-	 INDEX `uid` (`uid`),
-	 INDEX `cid` (`cid`),
-	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE,
-	FOREIGN KEY (`cid`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
-) DEFAULT COLLATE utf8mb4_general_ci COMMENT='DFRN remote auth use';
 
 --
 -- TABLE profile_field
@@ -1322,7 +1657,7 @@ CREATE TABLE IF NOT EXISTS `profile_field` (
 CREATE TABLE IF NOT EXISTS `push_subscriber` (
 	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
 	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'User id',
-	`callback_url` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`callback_url` varbinary(383) NOT NULL DEFAULT '' COMMENT '',
 	`topic` varchar(255) NOT NULL DEFAULT '' COMMENT '',
 	`nickname` varchar(255) NOT NULL DEFAULT '' COMMENT '',
 	`push` tinyint NOT NULL DEFAULT 0 COMMENT 'Retrial counter',
@@ -1341,7 +1676,7 @@ CREATE TABLE IF NOT EXISTS `push_subscriber` (
 --
 CREATE TABLE IF NOT EXISTS `register` (
 	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
-	`hash` varchar(255) NOT NULL DEFAULT '' COMMENT '',
+	`hash` varbinary(255) NOT NULL DEFAULT '' COMMENT '',
 	`created` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
 	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'User id',
 	`password` varchar(255) NOT NULL DEFAULT '' COMMENT '',
@@ -1351,6 +1686,42 @@ CREATE TABLE IF NOT EXISTS `register` (
 	 INDEX `uid` (`uid`),
 	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='registrations requiring admin approval';
+
+--
+-- TABLE report
+--
+CREATE TABLE IF NOT EXISTS `report` (
+	`id` int unsigned NOT NULL auto_increment COMMENT 'sequential ID',
+	`uid` mediumint unsigned COMMENT 'Reporting user',
+	`reporter-id` int unsigned COMMENT 'Reporting contact',
+	`cid` int unsigned NOT NULL COMMENT 'Reported contact',
+	`comment` text COMMENT 'Report',
+	`category` varchar(20) COMMENT 'Category of the report (spam, violation, other)',
+	`rules` text COMMENT 'Violated rules',
+	`forward` boolean COMMENT 'Forward the report to the remote server',
+	`created` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT '',
+	`status` tinyint unsigned COMMENT 'Status of the report',
+	 PRIMARY KEY(`id`),
+	 INDEX `uid` (`uid`),
+	 INDEX `cid` (`cid`),
+	 INDEX `reporter-id` (`reporter-id`),
+	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`reporter-id`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`cid`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='';
+
+--
+-- TABLE report-post
+--
+CREATE TABLE IF NOT EXISTS `report-post` (
+	`rid` int unsigned NOT NULL COMMENT 'Report id',
+	`uri-id` int unsigned NOT NULL COMMENT 'Uri-id of the reported post',
+	`status` tinyint unsigned COMMENT 'Status of the reported post',
+	 PRIMARY KEY(`rid`,`uri-id`),
+	 INDEX `uri-id` (`uri-id`),
+	FOREIGN KEY (`rid`) REFERENCES `report` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='';
 
 --
 -- TABLE search
@@ -1388,21 +1759,28 @@ CREATE TABLE IF NOT EXISTS `storage` (
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Data stored by Database storage backend';
 
 --
--- TABLE tokens
+-- TABLE subscription
 --
-CREATE TABLE IF NOT EXISTS `tokens` (
-	`id` varchar(40) NOT NULL COMMENT '',
-	`secret` text COMMENT '',
-	`client_id` varchar(20) NOT NULL DEFAULT '',
-	`expires` int NOT NULL DEFAULT 0 COMMENT '',
-	`scope` varchar(200) NOT NULL DEFAULT '' COMMENT '',
-	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'User id',
+CREATE TABLE IF NOT EXISTS `subscription` (
+	`id` int unsigned NOT NULL auto_increment COMMENT 'Auto incremented image data id',
+	`application-id` int unsigned NOT NULL COMMENT '',
+	`uid` mediumint unsigned NOT NULL COMMENT 'Owner User id',
+	`endpoint` varchar(511) COMMENT 'Endpoint URL',
+	`pubkey` varchar(127) COMMENT 'User agent public key',
+	`secret` varchar(32) COMMENT 'Auth secret',
+	`follow` boolean COMMENT '',
+	`favourite` boolean COMMENT '',
+	`reblog` boolean COMMENT '',
+	`mention` boolean COMMENT '',
+	`poll` boolean COMMENT '',
+	`follow_request` boolean COMMENT '',
+	`status` boolean COMMENT '',
 	 PRIMARY KEY(`id`),
-	 INDEX `client_id` (`client_id`),
-	 INDEX `uid` (`uid`),
-	FOREIGN KEY (`client_id`) REFERENCES `clients` (`client_id`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	 UNIQUE INDEX `application-id_uid` (`application-id`,`uid`),
+	 INDEX `uid_application-id` (`uid`,`application-id`),
+	FOREIGN KEY (`application-id`) REFERENCES `application` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
 	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
-) DEFAULT COLLATE utf8mb4_general_ci COMMENT='OAuth usage';
+) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Push Subscription for the API';
 
 --
 -- TABLE userd
@@ -1420,14 +1798,49 @@ CREATE TABLE IF NOT EXISTS `userd` (
 CREATE TABLE IF NOT EXISTS `user-contact` (
 	`cid` int unsigned NOT NULL DEFAULT 0 COMMENT 'Contact id of the linked public contact',
 	`uid` mediumint unsigned NOT NULL DEFAULT 0 COMMENT 'User id',
+	`uri-id` int unsigned COMMENT 'Id of the item-uri table entry that contains the contact url',
 	`blocked` boolean COMMENT 'Contact is completely blocked for this user',
 	`ignored` boolean COMMENT 'Posts from this contact are ignored',
 	`collapsed` boolean COMMENT 'Posts from this contact are collapsed',
+	`hidden` boolean COMMENT 'This contact is hidden from the others',
+	`is-blocked` boolean COMMENT 'User is blocked by this contact',
+	`pending` boolean COMMENT '',
+	`rel` tinyint unsigned COMMENT 'The kind of the relation between the user and the contact',
+	`info` mediumtext COMMENT '',
+	`notify_new_posts` boolean COMMENT '',
+	`remote_self` boolean COMMENT '',
+	`fetch_further_information` tinyint unsigned COMMENT '',
+	`ffi_keyword_denylist` text COMMENT '',
+	`subhub` boolean COMMENT '',
+	`hub-verify` varbinary(383) COMMENT '',
+	`protocol` char(4) COMMENT 'Protocol of the contact',
+	`rating` tinyint COMMENT 'Automatically detected feed poll frequency',
+	`priority` tinyint unsigned COMMENT 'Feed poll priority',
 	 PRIMARY KEY(`uid`,`cid`),
 	 INDEX `cid` (`cid`),
+	 UNIQUE INDEX `uri-id_uid` (`uri-id`,`uid`),
 	FOREIGN KEY (`cid`) REFERENCES `contact` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE,
-	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE
+	FOREIGN KEY (`uid`) REFERENCES `user` (`uid`) ON UPDATE RESTRICT ON DELETE CASCADE,
+	FOREIGN KEY (`uri-id`) REFERENCES `item-uri` (`id`) ON UPDATE RESTRICT ON DELETE CASCADE
 ) DEFAULT COLLATE utf8mb4_general_ci COMMENT='User specific public contact data';
+
+--
+-- TABLE arrived-activity
+--
+CREATE TABLE IF NOT EXISTS `arrived-activity` (
+	`object-id` varbinary(383) NOT NULL COMMENT 'object id of the incoming activity',
+	`received` datetime COMMENT 'Receiving date',
+	 PRIMARY KEY(`object-id`)
+) ENGINE=MEMORY DEFAULT COLLATE utf8mb4_general_ci COMMENT='Id of arrived activities';
+
+--
+-- TABLE fetched-activity
+--
+CREATE TABLE IF NOT EXISTS `fetched-activity` (
+	`object-id` varbinary(383) NOT NULL COMMENT 'object id of fetched activity',
+	`received` datetime COMMENT 'Receiving date',
+	 PRIMARY KEY(`object-id`)
+) ENGINE=MEMORY DEFAULT COLLATE utf8mb4_general_ci COMMENT='Id of fetched activities';
 
 --
 -- TABLE worker-ipc
@@ -1439,29 +1852,27 @@ CREATE TABLE IF NOT EXISTS `worker-ipc` (
 ) ENGINE=MEMORY DEFAULT COLLATE utf8mb4_general_ci COMMENT='Inter process communication between the frontend and the worker';
 
 --
--- TABLE workerqueue
+-- VIEW application-view
 --
-CREATE TABLE IF NOT EXISTS `workerqueue` (
-	`id` int unsigned NOT NULL auto_increment COMMENT 'Auto incremented worker task id',
-	`command` varchar(100) COMMENT 'Task command',
-	`parameter` mediumtext COMMENT 'Task parameter',
-	`priority` tinyint unsigned NOT NULL DEFAULT 0 COMMENT 'Task priority',
-	`created` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Creation date',
-	`pid` int unsigned NOT NULL DEFAULT 0 COMMENT 'Process id of the worker',
-	`executed` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Execution date',
-	`next_try` datetime NOT NULL DEFAULT '0001-01-01 00:00:00' COMMENT 'Next retrial date',
-	`retrial` tinyint NOT NULL DEFAULT 0 COMMENT 'Retrial counter',
-	`done` boolean NOT NULL DEFAULT '0' COMMENT 'Marked 1 when the task was done - will be deleted later',
-	 PRIMARY KEY(`id`),
-	 INDEX `command` (`command`),
-	 INDEX `done_command_parameter` (`done`,`command`,`parameter`(64)),
-	 INDEX `done_executed` (`done`,`executed`),
-	 INDEX `done_priority_retrial_created` (`done`,`priority`,`retrial`,`created`),
-	 INDEX `done_priority_next_try` (`done`,`priority`,`next_try`),
-	 INDEX `done_pid_next_try` (`done`,`pid`,`next_try`),
-	 INDEX `done_pid_retrial` (`done`,`pid`,`retrial`),
-	 INDEX `done_pid_priority_created` (`done`,`pid`,`priority`,`created`)
-) DEFAULT COLLATE utf8mb4_general_ci COMMENT='Background tasks queue entries';
+DROP VIEW IF EXISTS `application-view`;
+CREATE VIEW `application-view` AS SELECT 
+	`application`.`id` AS `id`,
+	`application-token`.`uid` AS `uid`,
+	`application`.`name` AS `name`,
+	`application`.`redirect_uri` AS `redirect_uri`,
+	`application`.`website` AS `website`,
+	`application`.`client_id` AS `client_id`,
+	`application`.`client_secret` AS `client_secret`,
+	`application-token`.`code` AS `code`,
+	`application-token`.`access_token` AS `access_token`,
+	`application-token`.`created_at` AS `created_at`,
+	`application-token`.`scopes` AS `scopes`,
+	`application-token`.`read` AS `read`,
+	`application-token`.`write` AS `write`,
+	`application-token`.`follow` AS `follow`,
+	`application-token`.`push` AS `push`
+	FROM `application-token`
+			INNER JOIN `application` ON `application-token`.`application-id` = `application`.`id`;
 
 --
 -- VIEW post-user-view
@@ -1478,6 +1889,10 @@ CREATE VIEW `post-user-view` AS SELECT
 	`post-user`.`parent-uri-id` AS `parent-uri-id`,
 	`thr-parent-item-uri`.`uri` AS `thr-parent`,
 	`post-user`.`thr-parent-id` AS `thr-parent-id`,
+	`conversation-item-uri`.`uri` AS `conversation`,
+	`post-thread-user`.`conversation-id` AS `conversation-id`,
+	`quote-item-uri`.`uri` AS `quote-uri`,
+	`post-content`.`quote-uri-id` AS `quote-uri-id`,
 	`item-uri`.`guid` AS `guid`,
 	`post-user`.`wall` AS `wall`,
 	`post-user`.`gravity` AS `gravity`,
@@ -1494,22 +1909,22 @@ CREATE VIEW `post-user-view` AS SELECT
 	`post-thread-user`.`pubmail` AS `pubmail`,
 	`post-user`.`visible` AS `visible`,
 	`post-thread-user`.`starred` AS `starred`,
-	`post-thread-user`.`pinned` AS `pinned`,
 	`post-user`.`unseen` AS `unseen`,
 	`post-user`.`deleted` AS `deleted`,
 	`post-user`.`origin` AS `origin`,
 	`post-thread-user`.`origin` AS `parent-origin`,
-	`post-thread-user`.`forum_mode` AS `forum_mode`,
 	`post-thread-user`.`mention` AS `mention`,
 	`post-user`.`global` AS `global`,
+	EXISTS(SELECT `type` FROM `post-collection` WHERE `type` = 0 AND `uri-id` = `post-user`.`uri-id`) AS `featured`,
 	`post-user`.`network` AS `network`,
+	`post-user`.`protocol` AS `protocol`,
 	`post-user`.`vid` AS `vid`,
 	`post-user`.`psid` AS `psid`,
 	IF (`post-user`.`vid` IS NULL, '', `verb`.`name`) AS `verb`,
 	`post-content`.`title` AS `title`,
 	`post-content`.`content-warning` AS `content-warning`,
 	`post-content`.`raw-body` AS `raw-body`,
-	`post-content`.`body` AS `body`,
+	IFNULL (`post-content`.`body`, '') AS `body`,
 	`post-content`.`rendered-hash` AS `rendered-hash`,
 	`post-content`.`rendered-html` AS `rendered-html`,
 	`post-content`.`language` AS `language`,
@@ -1523,6 +1938,7 @@ CREATE VIEW `post-user-view` AS SELECT
 	`post-content`.`target` AS `target`,
 	`post-content`.`resource-id` AS `resource-id`,
 	`post-user`.`contact-id` AS `contact-id`,
+	`contact`.`uri-id` AS `contact-uri-id`,
 	`contact`.`url` AS `contact-link`,
 	`contact`.`addr` AS `contact-addr`,
 	`contact`.`name` AS `contact-name`,
@@ -1546,8 +1962,8 @@ CREATE VIEW `post-user-view` AS SELECT
 	`contact`.`uri-date` AS `uri-date`,
 	`contact`.`avatar-date` AS `avatar-date`,
 	`contact`.`thumb` AS `thumb`,
-	`contact`.`dfrn-id` AS `dfrn-id`,
 	`post-user`.`author-id` AS `author-id`,
+	`author`.`uri-id` AS `author-uri-id`,
 	`author`.`url` AS `author-link`,
 	`author`.`addr` AS `author-addr`,
 	IF (`contact`.`url` = `author`.`url` AND `contact`.`name` != '', `contact`.`name`, `author`.`name`) AS `author-name`,
@@ -1556,7 +1972,10 @@ CREATE VIEW `post-user-view` AS SELECT
 	`author`.`network` AS `author-network`,
 	`author`.`blocked` AS `author-blocked`,
 	`author`.`hidden` AS `author-hidden`,
+	`author`.`updated` AS `author-updated`,
+	`author`.`gsid` AS `author-gsid`,
 	`post-user`.`owner-id` AS `owner-id`,
+	`owner`.`uri-id` AS `owner-uri-id`,
 	`owner`.`url` AS `owner-link`,
 	`owner`.`addr` AS `owner-addr`,
 	IF (`contact`.`url` = `owner`.`url` AND `contact`.`name` != '', `contact`.`name`, `owner`.`name`) AS `owner-name`,
@@ -1565,8 +1984,10 @@ CREATE VIEW `post-user-view` AS SELECT
 	`owner`.`network` AS `owner-network`,
 	`owner`.`blocked` AS `owner-blocked`,
 	`owner`.`hidden` AS `owner-hidden`,
+	`owner`.`updated` AS `owner-updated`,
 	`owner`.`contact-type` AS `owner-contact-type`,
 	`post-user`.`causer-id` AS `causer-id`,
+	`causer`.`uri-id` AS `causer-uri-id`,
 	`causer`.`url` AS `causer-link`,
 	`causer`.`addr` AS `causer-addr`,
 	`causer`.`name` AS `causer-name`,
@@ -1595,14 +2016,20 @@ CREATE VIEW `post-user-view` AS SELECT
 	`event`.`location` AS `event-location`,
 	`event`.`type` AS `event-type`,
 	`event`.`nofinish` AS `event-nofinish`,
-	`event`.`adjust` AS `event-adjust`,
 	`event`.`ignore` AS `event-ignore`,
+	`post-question`.`id` AS `question-id`,
+	`post-question`.`multiple` AS `question-multiple`,
+	`post-question`.`voters` AS `question-voters`,
+	`post-question`.`end-time` AS `question-end-time`,
+	EXISTS(SELECT `uri-id` FROM `post-category` WHERE `post-category`.`uri-id` = `post-user`.`uri-id` AND `post-category`.`uid` = `post-user`.`uid`) AS `has-categories`,
+	EXISTS(SELECT `id` FROM `post-media` WHERE `post-media`.`uri-id` = `post-user`.`uri-id`) AS `has-media`,
 	`diaspora-interaction`.`interaction` AS `signed_text`,
 	`parent-item-uri`.`guid` AS `parent-guid`,
 	`parent-post`.`network` AS `parent-network`,
 	`parent-post`.`author-id` AS `parent-author-id`,
 	`parent-post-author`.`url` AS `parent-author-link`,
 	`parent-post-author`.`name` AS `parent-author-name`,
+	`parent-post-author`.`nick` AS `parent-author-nick`,
 	`parent-post-author`.`network` AS `parent-author-network`
 	FROM `post-user`
 			STRAIGHT_JOIN `post-thread-user` ON `post-thread-user`.`uri-id` = `post-user`.`parent-uri-id` AND `post-thread-user`.`uid` = `post-user`.`uid`
@@ -1613,12 +2040,15 @@ CREATE VIEW `post-user-view` AS SELECT
 			LEFT JOIN `item-uri` ON `item-uri`.`id` = `post-user`.`uri-id`
 			LEFT JOIN `item-uri` AS `thr-parent-item-uri` ON `thr-parent-item-uri`.`id` = `post-user`.`thr-parent-id`
 			LEFT JOIN `item-uri` AS `parent-item-uri` ON `parent-item-uri`.`id` = `post-user`.`parent-uri-id`
+			LEFT JOIN `item-uri` AS `conversation-item-uri` ON `conversation-item-uri`.`id` = `post-thread-user`.`conversation-id`
 			LEFT JOIN `item-uri` AS `external-item-uri` ON `external-item-uri`.`id` = `post-user`.`external-id`
 			LEFT JOIN `verb` ON `verb`.`id` = `post-user`.`vid`
 			LEFT JOIN `event` ON `event`.`id` = `post-user`.`event-id`
 			LEFT JOIN `diaspora-interaction` ON `diaspora-interaction`.`uri-id` = `post-user`.`uri-id`
 			LEFT JOIN `post-content` ON `post-content`.`uri-id` = `post-user`.`uri-id`
+			LEFT JOIN `item-uri` AS `quote-item-uri` ON `quote-item-uri`.`id` = `post-content`.`quote-uri-id`
 			LEFT JOIN `post-delivery-data` ON `post-delivery-data`.`uri-id` = `post-user`.`uri-id` AND `post-user`.`origin`
+			LEFT JOIN `post-question` ON `post-question`.`uri-id` = `post-user`.`uri-id`
 			LEFT JOIN `permissionset` ON `permissionset`.`id` = `post-user`.`psid`
 			LEFT JOIN `post-user` AS `parent-post` ON `parent-post`.`uri-id` = `post-user`.`parent-uri-id` AND `parent-post`.`uid` = `post-user`.`uid`
 			LEFT JOIN `contact` AS `parent-post-author` ON `parent-post-author`.`id` = `parent-post`.`author-id`;
@@ -1638,6 +2068,10 @@ CREATE VIEW `post-thread-user-view` AS SELECT
 	`post-user`.`parent-uri-id` AS `parent-uri-id`,
 	`thr-parent-item-uri`.`uri` AS `thr-parent`,
 	`post-user`.`thr-parent-id` AS `thr-parent-id`,
+	`conversation-item-uri`.`uri` AS `conversation`,
+	`post-thread-user`.`conversation-id` AS `conversation-id`,
+	`quote-item-uri`.`uri` AS `quote-uri`,
+	`post-content`.`quote-uri-id` AS `quote-uri-id`,
 	`item-uri`.`guid` AS `guid`,
 	`post-thread-user`.`wall` AS `wall`,
 	`post-user`.`gravity` AS `gravity`,
@@ -1655,13 +2089,12 @@ CREATE VIEW `post-thread-user-view` AS SELECT
 	`post-thread-user`.`ignored` AS `ignored`,
 	`post-user`.`visible` AS `visible`,
 	`post-thread-user`.`starred` AS `starred`,
-	`post-thread-user`.`pinned` AS `pinned`,
 	`post-thread-user`.`unseen` AS `unseen`,
 	`post-user`.`deleted` AS `deleted`,
 	`post-thread-user`.`origin` AS `origin`,
-	`post-thread-user`.`forum_mode` AS `forum_mode`,
 	`post-thread-user`.`mention` AS `mention`,
 	`post-user`.`global` AS `global`,
+	EXISTS(SELECT `type` FROM `post-collection` WHERE `type` = 0 AND `uri-id` = `post-thread-user`.`uri-id`) AS `featured`,
 	`post-thread-user`.`network` AS `network`,
 	`post-user`.`vid` AS `vid`,
 	`post-thread-user`.`psid` AS `psid`,
@@ -1683,6 +2116,7 @@ CREATE VIEW `post-thread-user-view` AS SELECT
 	`post-content`.`target` AS `target`,
 	`post-content`.`resource-id` AS `resource-id`,
 	`post-thread-user`.`contact-id` AS `contact-id`,
+	`contact`.`uri-id` AS `contact-uri-id`,
 	`contact`.`url` AS `contact-link`,
 	`contact`.`addr` AS `contact-addr`,
 	`contact`.`name` AS `contact-name`,
@@ -1706,8 +2140,8 @@ CREATE VIEW `post-thread-user-view` AS SELECT
 	`contact`.`uri-date` AS `uri-date`,
 	`contact`.`avatar-date` AS `avatar-date`,
 	`contact`.`thumb` AS `thumb`,
-	`contact`.`dfrn-id` AS `dfrn-id`,
 	`post-thread-user`.`author-id` AS `author-id`,
+	`author`.`uri-id` AS `author-uri-id`,
 	`author`.`url` AS `author-link`,
 	`author`.`addr` AS `author-addr`,
 	IF (`contact`.`url` = `author`.`url` AND `contact`.`name` != '', `contact`.`name`, `author`.`name`) AS `author-name`,
@@ -1716,7 +2150,10 @@ CREATE VIEW `post-thread-user-view` AS SELECT
 	`author`.`network` AS `author-network`,
 	`author`.`blocked` AS `author-blocked`,
 	`author`.`hidden` AS `author-hidden`,
+	`author`.`updated` AS `author-updated`,
+	`author`.`gsid` AS `author-gsid`,
 	`post-thread-user`.`owner-id` AS `owner-id`,
+	`owner`.`uri-id` AS `owner-uri-id`,
 	`owner`.`url` AS `owner-link`,
 	`owner`.`addr` AS `owner-addr`,
 	IF (`contact`.`url` = `owner`.`url` AND `contact`.`name` != '', `contact`.`name`, `owner`.`name`) AS `owner-name`,
@@ -1725,8 +2162,10 @@ CREATE VIEW `post-thread-user-view` AS SELECT
 	`owner`.`network` AS `owner-network`,
 	`owner`.`blocked` AS `owner-blocked`,
 	`owner`.`hidden` AS `owner-hidden`,
+	`owner`.`updated` AS `owner-updated`,
 	`owner`.`contact-type` AS `owner-contact-type`,
 	`post-thread-user`.`causer-id` AS `causer-id`,
+	`causer`.`uri-id` AS `causer-uri-id`,
 	`causer`.`url` AS `causer-link`,
 	`causer`.`addr` AS `causer-addr`,
 	`causer`.`name` AS `causer-name`,
@@ -1755,8 +2194,13 @@ CREATE VIEW `post-thread-user-view` AS SELECT
 	`event`.`location` AS `event-location`,
 	`event`.`type` AS `event-type`,
 	`event`.`nofinish` AS `event-nofinish`,
-	`event`.`adjust` AS `event-adjust`,
 	`event`.`ignore` AS `event-ignore`,
+	`post-question`.`id` AS `question-id`,
+	`post-question`.`multiple` AS `question-multiple`,
+	`post-question`.`voters` AS `question-voters`,
+	`post-question`.`end-time` AS `question-end-time`,
+	EXISTS(SELECT `uri-id` FROM `post-category` WHERE `post-category`.`uri-id` = `post-thread-user`.`uri-id` AND `post-category`.`uid` = `post-thread-user`.`uid`) AS `has-categories`,
+	EXISTS(SELECT `id` FROM `post-media` WHERE `post-media`.`uri-id` = `post-thread-user`.`uri-id`) AS `has-media`,
 	`diaspora-interaction`.`interaction` AS `signed_text`,
 	`parent-item-uri`.`guid` AS `parent-guid`,
 	`parent-post`.`network` AS `parent-network`,
@@ -1773,12 +2217,15 @@ CREATE VIEW `post-thread-user-view` AS SELECT
 			LEFT JOIN `item-uri` ON `item-uri`.`id` = `post-thread-user`.`uri-id`
 			LEFT JOIN `item-uri` AS `thr-parent-item-uri` ON `thr-parent-item-uri`.`id` = `post-user`.`thr-parent-id`
 			LEFT JOIN `item-uri` AS `parent-item-uri` ON `parent-item-uri`.`id` = `post-user`.`parent-uri-id`
+			LEFT JOIN `item-uri` AS `conversation-item-uri` ON `conversation-item-uri`.`id` = `post-thread-user`.`conversation-id`
 			LEFT JOIN `item-uri` AS `external-item-uri` ON `external-item-uri`.`id` = `post-user`.`external-id`
 			LEFT JOIN `verb` ON `verb`.`id` = `post-user`.`vid`
 			LEFT JOIN `event` ON `event`.`id` = `post-user`.`event-id`
 			LEFT JOIN `diaspora-interaction` ON `diaspora-interaction`.`uri-id` = `post-thread-user`.`uri-id`
 			LEFT JOIN `post-content` ON `post-content`.`uri-id` = `post-thread-user`.`uri-id`
+			LEFT JOIN `item-uri` AS `quote-item-uri` ON `quote-item-uri`.`id` = `post-content`.`quote-uri-id`
 			LEFT JOIN `post-delivery-data` ON `post-delivery-data`.`uri-id` = `post-thread-user`.`uri-id` AND `post-thread-user`.`origin`
+			LEFT JOIN `post-question` ON `post-question`.`uri-id` = `post-thread-user`.`uri-id`
 			LEFT JOIN `permissionset` ON `permissionset`.`id` = `post-thread-user`.`psid`
 			LEFT JOIN `post-user` AS `parent-post` ON `parent-post`.`uri-id` = `post-user`.`parent-uri-id` AND `parent-post`.`uid` = `post-thread-user`.`uid`
 			LEFT JOIN `contact` AS `parent-post-author` ON `parent-post-author`.`id` = `parent-post`.`author-id`;
@@ -1794,6 +2241,10 @@ CREATE VIEW `post-view` AS SELECT
 	`post`.`parent-uri-id` AS `parent-uri-id`,
 	`thr-parent-item-uri`.`uri` AS `thr-parent`,
 	`post`.`thr-parent-id` AS `thr-parent-id`,
+	`conversation-item-uri`.`uri` AS `conversation`,
+	`post-thread`.`conversation-id` AS `conversation-id`,
+	`quote-item-uri`.`uri` AS `quote-uri`,
+	`post-content`.`quote-uri-id` AS `quote-uri-id`,
 	`item-uri`.`guid` AS `guid`,
 	`post`.`gravity` AS `gravity`,
 	`external-item-uri`.`uri` AS `extid`,
@@ -1808,6 +2259,7 @@ CREATE VIEW `post-view` AS SELECT
 	`post`.`visible` AS `visible`,
 	`post`.`deleted` AS `deleted`,
 	`post`.`global` AS `global`,
+	EXISTS(SELECT `type` FROM `post-collection` WHERE `type` = 0 AND `uri-id` = `post`.`uri-id`) AS `featured`,
 	`post`.`network` AS `network`,
 	`post`.`vid` AS `vid`,
 	IF (`post`.`vid` IS NULL, '', `verb`.`name`) AS `verb`,
@@ -1827,7 +2279,33 @@ CREATE VIEW `post-view` AS SELECT
 	`post-content`.`target-type` AS `target-type`,
 	`post-content`.`target` AS `target`,
 	`post-content`.`resource-id` AS `resource-id`,
+	`post`.`author-id` AS `contact-id`,
+	`author`.`uri-id` AS `contact-uri-id`,
+	`author`.`url` AS `contact-link`,
+	`author`.`addr` AS `contact-addr`,
+	`author`.`name` AS `contact-name`,
+	`author`.`nick` AS `contact-nick`,
+	`author`.`thumb` AS `contact-avatar`,
+	`author`.`network` AS `contact-network`,
+	`author`.`blocked` AS `contact-blocked`,
+	`author`.`hidden` AS `contact-hidden`,
+	`author`.`readonly` AS `contact-readonly`,
+	`author`.`archive` AS `contact-archive`,
+	`author`.`pending` AS `contact-pending`,
+	`author`.`rel` AS `contact-rel`,
+	`author`.`uid` AS `contact-uid`,
+	`author`.`contact-type` AS `contact-contact-type`,
+	IF (`post`.`network` IN ('apub', 'dfrn', 'dspr', 'stat'), true, `author`.`writable`) AS `writable`,
+	false AS `self`,
+	`author`.`id` AS `cid`,
+	`author`.`alias` AS `alias`,
+	`author`.`photo` AS `photo`,
+	`author`.`name-date` AS `name-date`,
+	`author`.`uri-date` AS `uri-date`,
+	`author`.`avatar-date` AS `avatar-date`,
+	`author`.`thumb` AS `thumb`,
 	`post`.`author-id` AS `author-id`,
+	`author`.`uri-id` AS `author-uri-id`,
 	`author`.`url` AS `author-link`,
 	`author`.`addr` AS `author-addr`,
 	`author`.`name` AS `author-name`,
@@ -1836,7 +2314,10 @@ CREATE VIEW `post-view` AS SELECT
 	`author`.`network` AS `author-network`,
 	`author`.`blocked` AS `author-blocked`,
 	`author`.`hidden` AS `author-hidden`,
+	`author`.`updated` AS `author-updated`,
+	`author`.`gsid` AS `author-gsid`,
 	`post`.`owner-id` AS `owner-id`,
+	`owner`.`uri-id` AS `owner-uri-id`,
 	`owner`.`url` AS `owner-link`,
 	`owner`.`addr` AS `owner-addr`,
 	`owner`.`name` AS `owner-name`,
@@ -1845,8 +2326,10 @@ CREATE VIEW `post-view` AS SELECT
 	`owner`.`network` AS `owner-network`,
 	`owner`.`blocked` AS `owner-blocked`,
 	`owner`.`hidden` AS `owner-hidden`,
+	`owner`.`updated` AS `owner-updated`,
 	`owner`.`contact-type` AS `owner-contact-type`,
 	`post`.`causer-id` AS `causer-id`,
+	`causer`.`uri-id` AS `causer-uri-id`,
 	`causer`.`url` AS `causer-link`,
 	`causer`.`addr` AS `causer-addr`,
 	`causer`.`name` AS `causer-name`,
@@ -1856,6 +2339,12 @@ CREATE VIEW `post-view` AS SELECT
 	`causer`.`blocked` AS `causer-blocked`,
 	`causer`.`hidden` AS `causer-hidden`,
 	`causer`.`contact-type` AS `causer-contact-type`,
+	`post-question`.`id` AS `question-id`,
+	`post-question`.`multiple` AS `question-multiple`,
+	`post-question`.`voters` AS `question-voters`,
+	`post-question`.`end-time` AS `question-end-time`,
+	0 AS `has-categories`,
+	EXISTS(SELECT `id` FROM `post-media` WHERE `post-media`.`uri-id` = `post`.`uri-id`) AS `has-media`,
 	`diaspora-interaction`.`interaction` AS `signed_text`,
 	`parent-item-uri`.`guid` AS `parent-guid`,
 	`parent-post`.`network` AS `parent-network`,
@@ -1871,10 +2360,13 @@ CREATE VIEW `post-view` AS SELECT
 			LEFT JOIN `item-uri` ON `item-uri`.`id` = `post`.`uri-id`
 			LEFT JOIN `item-uri` AS `thr-parent-item-uri` ON `thr-parent-item-uri`.`id` = `post`.`thr-parent-id`
 			LEFT JOIN `item-uri` AS `parent-item-uri` ON `parent-item-uri`.`id` = `post`.`parent-uri-id`
+			LEFT JOIN `item-uri` AS `conversation-item-uri` ON `conversation-item-uri`.`id` = `post-thread`.`conversation-id`
 			LEFT JOIN `item-uri` AS `external-item-uri` ON `external-item-uri`.`id` = `post`.`external-id`
 			LEFT JOIN `verb` ON `verb`.`id` = `post`.`vid`
 			LEFT JOIN `diaspora-interaction` ON `diaspora-interaction`.`uri-id` = `post`.`uri-id`
 			LEFT JOIN `post-content` ON `post-content`.`uri-id` = `post`.`uri-id`
+			LEFT JOIN `item-uri` AS `quote-item-uri` ON `quote-item-uri`.`id` = `post-content`.`quote-uri-id`
+			LEFT JOIN `post-question` ON `post-question`.`uri-id` = `post`.`uri-id`
 			LEFT JOIN `post` AS `parent-post` ON `parent-post`.`uri-id` = `post`.`parent-uri-id`
 			LEFT JOIN `contact` AS `parent-post-author` ON `parent-post-author`.`id` = `parent-post`.`author-id`;
 
@@ -1889,6 +2381,10 @@ CREATE VIEW `post-thread-view` AS SELECT
 	`post`.`parent-uri-id` AS `parent-uri-id`,
 	`thr-parent-item-uri`.`uri` AS `thr-parent`,
 	`post`.`thr-parent-id` AS `thr-parent-id`,
+	`conversation-item-uri`.`uri` AS `conversation`,
+	`post-thread`.`conversation-id` AS `conversation-id`,
+	`quote-item-uri`.`uri` AS `quote-uri`,
+	`post-content`.`quote-uri-id` AS `quote-uri-id`,
 	`item-uri`.`guid` AS `guid`,
 	`post`.`gravity` AS `gravity`,
 	`external-item-uri`.`uri` AS `extid`,
@@ -1903,6 +2399,7 @@ CREATE VIEW `post-thread-view` AS SELECT
 	`post`.`visible` AS `visible`,
 	`post`.`deleted` AS `deleted`,
 	`post`.`global` AS `global`,
+	EXISTS(SELECT `type` FROM `post-collection` WHERE `type` = 0 AND `uri-id` = `post-thread`.`uri-id`) AS `featured`,
 	`post-thread`.`network` AS `network`,
 	`post`.`vid` AS `vid`,
 	IF (`post`.`vid` IS NULL, '', `verb`.`name`) AS `verb`,
@@ -1922,7 +2419,33 @@ CREATE VIEW `post-thread-view` AS SELECT
 	`post-content`.`target-type` AS `target-type`,
 	`post-content`.`target` AS `target`,
 	`post-content`.`resource-id` AS `resource-id`,
+	`post-thread`.`author-id` AS `contact-id`,
+	`author`.`uri-id` AS `contact-uri-id`,
+	`author`.`url` AS `contact-link`,
+	`author`.`addr` AS `contact-addr`,
+	`author`.`name` AS `contact-name`,
+	`author`.`nick` AS `contact-nick`,
+	`author`.`thumb` AS `contact-avatar`,
+	`author`.`network` AS `contact-network`,
+	`author`.`blocked` AS `contact-blocked`,
+	`author`.`hidden` AS `contact-hidden`,
+	`author`.`readonly` AS `contact-readonly`,
+	`author`.`archive` AS `contact-archive`,
+	`author`.`pending` AS `contact-pending`,
+	`author`.`rel` AS `contact-rel`,
+	`author`.`uid` AS `contact-uid`,
+	`author`.`contact-type` AS `contact-contact-type`,
+	IF (`post`.`network` IN ('apub', 'dfrn', 'dspr', 'stat'), true, `author`.`writable`) AS `writable`,
+	false AS `self`,
+	`author`.`id` AS `cid`,
+	`author`.`alias` AS `alias`,
+	`author`.`photo` AS `photo`,
+	`author`.`name-date` AS `name-date`,
+	`author`.`uri-date` AS `uri-date`,
+	`author`.`avatar-date` AS `avatar-date`,
+	`author`.`thumb` AS `thumb`,
 	`post-thread`.`author-id` AS `author-id`,
+	`author`.`uri-id` AS `author-uri-id`,
 	`author`.`url` AS `author-link`,
 	`author`.`addr` AS `author-addr`,
 	`author`.`name` AS `author-name`,
@@ -1931,7 +2454,10 @@ CREATE VIEW `post-thread-view` AS SELECT
 	`author`.`network` AS `author-network`,
 	`author`.`blocked` AS `author-blocked`,
 	`author`.`hidden` AS `author-hidden`,
+	`author`.`updated` AS `author-updated`,
+	`author`.`gsid` AS `author-gsid`,
 	`post-thread`.`owner-id` AS `owner-id`,
+	`owner`.`uri-id` AS `owner-uri-id`,
 	`owner`.`url` AS `owner-link`,
 	`owner`.`addr` AS `owner-addr`,
 	`owner`.`name` AS `owner-name`,
@@ -1940,8 +2466,10 @@ CREATE VIEW `post-thread-view` AS SELECT
 	`owner`.`network` AS `owner-network`,
 	`owner`.`blocked` AS `owner-blocked`,
 	`owner`.`hidden` AS `owner-hidden`,
+	`owner`.`updated` AS `owner-updated`,
 	`owner`.`contact-type` AS `owner-contact-type`,
 	`post-thread`.`causer-id` AS `causer-id`,
+	`causer`.`uri-id` AS `causer-uri-id`,
 	`causer`.`url` AS `causer-link`,
 	`causer`.`addr` AS `causer-addr`,
 	`causer`.`name` AS `causer-name`,
@@ -1951,6 +2479,14 @@ CREATE VIEW `post-thread-view` AS SELECT
 	`causer`.`blocked` AS `causer-blocked`,
 	`causer`.`hidden` AS `causer-hidden`,
 	`causer`.`contact-type` AS `causer-contact-type`,
+	`post-question`.`id` AS `question-id`,
+	`post-question`.`multiple` AS `question-multiple`,
+	`post-question`.`voters` AS `question-voters`,
+	`post-question`.`end-time` AS `question-end-time`,
+	0 AS `has-categories`,
+	EXISTS(SELECT `id` FROM `post-media` WHERE `post-media`.`uri-id` = `post-thread`.`uri-id`) AS `has-media`,
+	(SELECT COUNT(*) FROM `post` WHERE `parent-uri-id` = `post-thread`.`uri-id` AND `gravity` = 6) AS `total-comments`,
+	(SELECT COUNT(DISTINCT(`author-id`)) FROM `post` WHERE `parent-uri-id` = `post-thread`.`uri-id` AND `gravity` = 6) AS `total-actors`,
 	`diaspora-interaction`.`interaction` AS `signed_text`,
 	`parent-item-uri`.`guid` AS `parent-guid`,
 	`parent-post`.`network` AS `parent-network`,
@@ -1966,10 +2502,13 @@ CREATE VIEW `post-thread-view` AS SELECT
 			LEFT JOIN `item-uri` ON `item-uri`.`id` = `post-thread`.`uri-id`
 			LEFT JOIN `item-uri` AS `thr-parent-item-uri` ON `thr-parent-item-uri`.`id` = `post`.`thr-parent-id`
 			LEFT JOIN `item-uri` AS `parent-item-uri` ON `parent-item-uri`.`id` = `post`.`parent-uri-id`
+			LEFT JOIN `item-uri` AS `conversation-item-uri` ON `conversation-item-uri`.`id` = `post-thread`.`conversation-id`
 			LEFT JOIN `item-uri` AS `external-item-uri` ON `external-item-uri`.`id` = `post`.`external-id`
 			LEFT JOIN `verb` ON `verb`.`id` = `post`.`vid`
 			LEFT JOIN `diaspora-interaction` ON `diaspora-interaction`.`uri-id` = `post-thread`.`uri-id`
 			LEFT JOIN `post-content` ON `post-content`.`uri-id` = `post-thread`.`uri-id`
+			LEFT JOIN `item-uri` AS `quote-item-uri` ON `quote-item-uri`.`id` = `post-content`.`quote-uri-id`
+			LEFT JOIN `post-question` ON `post-question`.`uri-id` = `post-thread`.`uri-id`
 			LEFT JOIN `post` AS `parent-post` ON `parent-post`.`uri-id` = `post`.`parent-uri-id`
 			LEFT JOIN `contact` AS `parent-post-author` ON `parent-post-author`.`id` = `parent-post`.`author-id`;
 
@@ -1988,6 +2527,45 @@ CREATE VIEW `category-view` AS SELECT
 			LEFT JOIN `tag` ON `post-category`.`tid` = `tag`.`id`;
 
 --
+-- VIEW collection-view
+--
+DROP VIEW IF EXISTS `collection-view`;
+CREATE VIEW `collection-view` AS SELECT 
+	`post-collection`.`uri-id` AS `uri-id`,
+	`post-collection`.`type` AS `type`,
+	`post-collection`.`author-id` AS `cid`,
+	`post`.`received` AS `received`,
+	`post`.`created` AS `created`,
+	`post-thread`.`commented` AS `commented`,
+	`post`.`private` AS `private`,
+	`post`.`visible` AS `visible`,
+	`post`.`deleted` AS `deleted`,
+	`post`.`thr-parent-id` AS `thr-parent-id`,
+	`post-collection`.`author-id` AS `author-id`,
+	`post`.`gravity` AS `gravity`
+	FROM `post-collection`
+			INNER JOIN `post` ON `post-collection`.`uri-id` = `post`.`uri-id`
+			INNER JOIN `post-thread` ON `post-thread`.`uri-id` = `post`.`parent-uri-id`;
+
+--
+-- VIEW media-view
+--
+DROP VIEW IF EXISTS `media-view`;
+CREATE VIEW `media-view` AS SELECT 
+	`post-media`.`uri-id` AS `uri-id`,
+	`post-media`.`type` AS `type`,
+	`post`.`received` AS `received`,
+	`post`.`created` AS `created`,
+	`post`.`private` AS `private`,
+	`post`.`visible` AS `visible`,
+	`post`.`deleted` AS `deleted`,
+	`post`.`thr-parent-id` AS `thr-parent-id`,
+	`post`.`author-id` AS `author-id`,
+	`post`.`gravity` AS `gravity`
+	FROM `post-media`
+			INNER JOIN `post` ON `post-media`.`uri-id` = `post`.`uri-id`;
+
+--
 -- VIEW tag-view
 --
 DROP VIEW IF EXISTS `tag-view`;
@@ -1997,7 +2575,8 @@ CREATE VIEW `tag-view` AS SELECT
 	`post-tag`.`tid` AS `tid`,
 	`post-tag`.`cid` AS `cid`,
 	CASE `cid` WHEN 0 THEN `tag`.`name` ELSE `contact`.`name` END AS `name`,
-	CASE `cid` WHEN 0 THEN `tag`.`url` ELSE `contact`.`url` END AS `url`
+	CASE `cid` WHEN 0 THEN `tag`.`url` ELSE `contact`.`url` END AS `url`,
+	CASE `cid` WHEN 0 THEN `tag`.`type` ELSE 1 END AS `tag-type`
 	FROM `post-tag`
 			LEFT JOIN `tag` ON `post-tag`.`tid` = `tag`.`id`
 			LEFT JOIN `contact` ON `post-tag`.`cid` = `contact`.`id`;
@@ -2074,7 +2653,6 @@ CREATE VIEW `owner-view` AS SELECT
 	`contact`.`self` AS `self`,
 	`contact`.`remote_self` AS `remote_self`,
 	`contact`.`rel` AS `rel`,
-	`contact`.`duplex` AS `duplex`,
 	`contact`.`network` AS `network`,
 	`contact`.`protocol` AS `protocol`,
 	`contact`.`name` AS `name`,
@@ -2082,18 +2660,17 @@ CREATE VIEW `owner-view` AS SELECT
 	`contact`.`location` AS `location`,
 	`contact`.`about` AS `about`,
 	`contact`.`keywords` AS `keywords`,
-	`contact`.`gender` AS `gender`,
 	`contact`.`xmpp` AS `xmpp`,
+	`contact`.`matrix` AS `matrix`,
 	`contact`.`attag` AS `attag`,
 	`contact`.`avatar` AS `avatar`,
 	`contact`.`photo` AS `photo`,
 	`contact`.`thumb` AS `thumb`,
 	`contact`.`micro` AS `micro`,
-	`contact`.`site-pubkey` AS `site-pubkey`,
-	`contact`.`issued-id` AS `issued-id`,
-	`contact`.`dfrn-id` AS `dfrn-id`,
+	`contact`.`header` AS `header`,
 	`contact`.`url` AS `url`,
 	`contact`.`nurl` AS `nurl`,
+	`contact`.`uri-id` AS `uri-id`,
 	`contact`.`addr` AS `addr`,
 	`contact`.`alias` AS `alias`,
 	`contact`.`pubkey` AS `pubkey`,
@@ -2104,9 +2681,6 @@ CREATE VIEW `owner-view` AS SELECT
 	`contact`.`poll` AS `poll`,
 	`contact`.`confirm` AS `confirm`,
 	`contact`.`poco` AS `poco`,
-	`contact`.`aes_allow` AS `aes_allow`,
-	`contact`.`ret-aes` AS `ret-aes`,
-	`contact`.`usehub` AS `usehub`,
 	`contact`.`subhub` AS `subhub`,
 	`contact`.`hub-verify` AS `hub-verify`,
 	`contact`.`last-update` AS `last-update`,
@@ -2135,9 +2709,7 @@ CREATE VIEW `owner-view` AS SELECT
 	`contact`.`sensitive` AS `sensitive`,
 	`contact`.`baseurl` AS `baseurl`,
 	`contact`.`reason` AS `reason`,
-	`contact`.`closeness` AS `closeness`,
 	`contact`.`info` AS `info`,
-	`contact`.`profile-id` AS `profile-id`,
 	`contact`.`bdyear` AS `bdyear`,
 	`contact`.`bd` AS `bd`,
 	`contact`.`notify_new_posts` AS `notify_new_posts`,
@@ -2152,6 +2724,7 @@ CREATE VIEW `owner-view` AS SELECT
 	`user`.`language` AS `language`,
 	`user`.`register_date` AS `register_date`,
 	`user`.`login_date` AS `login_date`,
+	`user`.`last-activity` AS `last-activity`,
 	`user`.`default-location` AS `default-location`,
 	`user`.`allow_location` AS `allow_location`,
 	`user`.`theme` AS `theme`,
@@ -2192,10 +2765,205 @@ CREATE VIEW `owner-view` AS SELECT
 	`profile`.`postal-code` AS `postal-code`,
 	`profile`.`country-name` AS `country-name`,
 	`profile`.`homepage` AS `homepage`,
+	`profile`.`homepage_verified` AS `homepage_verified`,
 	`profile`.`dob` AS `dob`
 	FROM `user`
 			INNER JOIN `contact` ON `contact`.`uid` = `user`.`uid` AND `contact`.`self`
 			INNER JOIN `profile` ON `profile`.`uid` = `user`.`uid`;
+
+--
+-- VIEW account-view
+--
+DROP VIEW IF EXISTS `account-view`;
+CREATE VIEW `account-view` AS SELECT 
+	`contact`.`id` AS `id`,
+	`contact`.`url` AS `url`,
+	`contact`.`nurl` AS `nurl`,
+	`contact`.`uri-id` AS `uri-id`,
+	`item-uri`.`guid` AS `guid`,
+	`contact`.`addr` AS `addr`,
+	`contact`.`alias` AS `alias`,
+	`contact`.`name` AS `name`,
+	`contact`.`nick` AS `nick`,
+	`contact`.`about` AS `about`,
+	`contact`.`keywords` AS `keywords`,
+	`contact`.`xmpp` AS `xmpp`,
+	`contact`.`matrix` AS `matrix`,
+	`contact`.`avatar` AS `avatar`,
+	`contact`.`photo` AS `photo`,
+	`contact`.`thumb` AS `thumb`,
+	`contact`.`micro` AS `micro`,
+	`contact`.`header` AS `header`,
+	`contact`.`created` AS `created`,
+	`contact`.`updated` AS `updated`,
+	`contact`.`network` AS `network`,
+	`contact`.`protocol` AS `protocol`,
+	`contact`.`location` AS `location`,
+	`contact`.`attag` AS `attag`,
+	`contact`.`pubkey` AS `pubkey`,
+	`contact`.`prvkey` AS `prvkey`,
+	`contact`.`subscribe` AS `subscribe`,
+	`contact`.`last-update` AS `last-update`,
+	`contact`.`success_update` AS `success_update`,
+	`contact`.`failure_update` AS `failure_update`,
+	`contact`.`failed` AS `failed`,
+	`contact`.`last-item` AS `last-item`,
+	`contact`.`last-discovery` AS `last-discovery`,
+	`contact`.`contact-type` AS `contact-type`,
+	`contact`.`manually-approve` AS `manually-approve`,
+	`contact`.`unsearchable` AS `unsearchable`,
+	`contact`.`sensitive` AS `sensitive`,
+	`contact`.`baseurl` AS `baseurl`,
+	`contact`.`gsid` AS `gsid`,
+	`contact`.`info` AS `info`,
+	`contact`.`bdyear` AS `bdyear`,
+	`contact`.`bd` AS `bd`,
+	`contact`.`poco` AS `poco`,
+	`contact`.`name-date` AS `name-date`,
+	`contact`.`uri-date` AS `uri-date`,
+	`contact`.`avatar-date` AS `avatar-date`,
+	`contact`.`term-date` AS `term-date`,
+	`contact`.`hidden` AS `global-ignored`,
+	`contact`.`blocked` AS `global-blocked`,
+	`contact`.`hidden` AS `hidden`,
+	`contact`.`archive` AS `archive`,
+	`contact`.`deleted` AS `deleted`,
+	`contact`.`blocked` AS `blocked`,
+	`contact`.`notify` AS `dfrn-notify`,
+	`contact`.`poll` AS `dfrn-poll`,
+	`item-uri`.`guid` AS `diaspora-guid`,
+	`diaspora-contact`.`batch` AS `diaspora-batch`,
+	`diaspora-contact`.`notify` AS `diaspora-notify`,
+	`diaspora-contact`.`poll` AS `diaspora-poll`,
+	`diaspora-contact`.`alias` AS `diaspora-alias`,
+	`apcontact`.`uuid` AS `ap-uuid`,
+	`apcontact`.`type` AS `ap-type`,
+	`apcontact`.`following` AS `ap-following`,
+	`apcontact`.`followers` AS `ap-followers`,
+	`apcontact`.`inbox` AS `ap-inbox`,
+	`apcontact`.`outbox` AS `ap-outbox`,
+	`apcontact`.`sharedinbox` AS `ap-sharedinbox`,
+	`apcontact`.`generator` AS `ap-generator`,
+	`apcontact`.`following_count` AS `ap-following_count`,
+	`apcontact`.`followers_count` AS `ap-followers_count`,
+	`apcontact`.`statuses_count` AS `ap-statuses_count`,
+	`gserver`.`site_name` AS `site_name`,
+	`gserver`.`platform` AS `platform`,
+	`gserver`.`version` AS `version`,
+	`gserver`.`blocked` AS `server-blocked`,
+	`gserver`.`failed` AS `server-failed`
+	FROM `contact`
+			LEFT JOIN `item-uri` ON `item-uri`.`id` = `contact`.`uri-id`
+			LEFT JOIN `apcontact` ON `apcontact`.`uri-id` = `contact`.`uri-id`
+			LEFT JOIN `diaspora-contact` ON `diaspora-contact`.`uri-id` = contact.`uri-id`
+			LEFT JOIN `gserver` ON `gserver`.`id` = contact.`gsid`
+			WHERE `contact`.`uid` = 0;
+
+--
+-- VIEW account-user-view
+--
+DROP VIEW IF EXISTS `account-user-view`;
+CREATE VIEW `account-user-view` AS SELECT 
+	`ucontact`.`id` AS `id`,
+	`contact`.`id` AS `pid`,
+	`ucontact`.`uid` AS `uid`,
+	`contact`.`url` AS `url`,
+	`contact`.`nurl` AS `nurl`,
+	`contact`.`uri-id` AS `uri-id`,
+	`item-uri`.`guid` AS `guid`,
+	`contact`.`addr` AS `addr`,
+	`contact`.`alias` AS `alias`,
+	`contact`.`name` AS `name`,
+	`contact`.`nick` AS `nick`,
+	`contact`.`about` AS `about`,
+	`contact`.`keywords` AS `keywords`,
+	`contact`.`xmpp` AS `xmpp`,
+	`contact`.`matrix` AS `matrix`,
+	`contact`.`avatar` AS `avatar`,
+	`contact`.`photo` AS `photo`,
+	`contact`.`thumb` AS `thumb`,
+	`contact`.`micro` AS `micro`,
+	`contact`.`header` AS `header`,
+	`contact`.`created` AS `created`,
+	`contact`.`updated` AS `updated`,
+	`ucontact`.`self` AS `self`,
+	`ucontact`.`remote_self` AS `remote_self`,
+	`ucontact`.`rel` AS `rel`,
+	`contact`.`network` AS `network`,
+	`ucontact`.`protocol` AS `protocol`,
+	`contact`.`location` AS `location`,
+	`ucontact`.`attag` AS `attag`,
+	`contact`.`pubkey` AS `pubkey`,
+	`contact`.`prvkey` AS `prvkey`,
+	`contact`.`subscribe` AS `subscribe`,
+	`contact`.`last-update` AS `last-update`,
+	`contact`.`success_update` AS `success_update`,
+	`contact`.`failure_update` AS `failure_update`,
+	`contact`.`failed` AS `failed`,
+	`contact`.`last-item` AS `last-item`,
+	`contact`.`last-discovery` AS `last-discovery`,
+	`contact`.`contact-type` AS `contact-type`,
+	`contact`.`manually-approve` AS `manually-approve`,
+	`contact`.`unsearchable` AS `unsearchable`,
+	`contact`.`sensitive` AS `sensitive`,
+	`contact`.`baseurl` AS `baseurl`,
+	`contact`.`gsid` AS `gsid`,
+	`ucontact`.`info` AS `info`,
+	`contact`.`bdyear` AS `bdyear`,
+	`contact`.`bd` AS `bd`,
+	`contact`.`poco` AS `poco`,
+	`contact`.`name-date` AS `name-date`,
+	`contact`.`uri-date` AS `uri-date`,
+	`contact`.`avatar-date` AS `avatar-date`,
+	`contact`.`term-date` AS `term-date`,
+	`contact`.`hidden` AS `global-ignored`,
+	`contact`.`blocked` AS `global-blocked`,
+	`ucontact`.`hidden` AS `hidden`,
+	`ucontact`.`archive` AS `archive`,
+	`ucontact`.`pending` AS `pending`,
+	`ucontact`.`deleted` AS `deleted`,
+	`ucontact`.`notify_new_posts` AS `notify_new_posts`,
+	`ucontact`.`fetch_further_information` AS `fetch_further_information`,
+	`ucontact`.`ffi_keyword_denylist` AS `ffi_keyword_denylist`,
+	`ucontact`.`rating` AS `rating`,
+	`ucontact`.`readonly` AS `readonly`,
+	`ucontact`.`blocked` AS `blocked`,
+	`ucontact`.`block_reason` AS `block_reason`,
+	`ucontact`.`subhub` AS `subhub`,
+	`ucontact`.`hub-verify` AS `hub-verify`,
+	`ucontact`.`reason` AS `reason`,
+	`contact`.`notify` AS `dfrn-notify`,
+	`contact`.`poll` AS `dfrn-poll`,
+	`item-uri`.`guid` AS `diaspora-guid`,
+	`diaspora-contact`.`batch` AS `diaspora-batch`,
+	`diaspora-contact`.`notify` AS `diaspora-notify`,
+	`diaspora-contact`.`poll` AS `diaspora-poll`,
+	`diaspora-contact`.`alias` AS `diaspora-alias`,
+	`diaspora-contact`.`interacting_count` AS `diaspora-interacting_count`,
+	`diaspora-contact`.`interacted_count` AS `diaspora-interacted_count`,
+	`diaspora-contact`.`post_count` AS `diaspora-post_count`,
+	`apcontact`.`uuid` AS `ap-uuid`,
+	`apcontact`.`type` AS `ap-type`,
+	`apcontact`.`following` AS `ap-following`,
+	`apcontact`.`followers` AS `ap-followers`,
+	`apcontact`.`inbox` AS `ap-inbox`,
+	`apcontact`.`outbox` AS `ap-outbox`,
+	`apcontact`.`sharedinbox` AS `ap-sharedinbox`,
+	`apcontact`.`generator` AS `ap-generator`,
+	`apcontact`.`following_count` AS `ap-following_count`,
+	`apcontact`.`followers_count` AS `ap-followers_count`,
+	`apcontact`.`statuses_count` AS `ap-statuses_count`,
+	`gserver`.`site_name` AS `site_name`,
+	`gserver`.`platform` AS `platform`,
+	`gserver`.`version` AS `version`,
+	`gserver`.`blocked` AS `server-blocked`,
+	`gserver`.`failed` AS `server-failed`
+	FROM `contact` AS `ucontact`
+			INNER JOIN `contact` ON `contact`.`uri-id` = `ucontact`.`uri-id` AND `contact`.`uid` = 0
+			LEFT JOIN `item-uri` ON `item-uri`.`id` = `ucontact`.`uri-id`
+			LEFT JOIN `apcontact` ON `apcontact`.`uri-id` = `ucontact`.`uri-id`
+			LEFT JOIN `diaspora-contact` ON `diaspora-contact`.`uri-id` = `ucontact`.`uri-id`
+			LEFT JOIN `gserver` ON `gserver`.`id` = contact.`gsid`;
 
 --
 -- VIEW pending-view
@@ -2251,3 +3019,57 @@ CREATE VIEW `workerqueue-view` AS SELECT
 	FROM `process`
 			INNER JOIN `workerqueue` ON `workerqueue`.`pid` = `process`.`pid`
 			WHERE NOT `workerqueue`.`done`;
+
+--
+-- VIEW profile_field-view
+--
+DROP VIEW IF EXISTS `profile_field-view`;
+CREATE VIEW `profile_field-view` AS SELECT 
+	`profile_field`.`id` AS `id`,
+	`profile_field`.`uid` AS `uid`,
+	`profile_field`.`label` AS `label`,
+	`profile_field`.`value` AS `value`,
+	`profile_field`.`order` AS `order`,
+	`profile_field`.`psid` AS `psid`,
+	`permissionset`.`allow_cid` AS `allow_cid`,
+	`permissionset`.`allow_gid` AS `allow_gid`,
+	`permissionset`.`deny_cid` AS `deny_cid`,
+	`permissionset`.`deny_gid` AS `deny_gid`,
+	`profile_field`.`created` AS `created`,
+	`profile_field`.`edited` AS `edited`
+	FROM `profile_field`
+			INNER JOIN `permissionset` ON `permissionset`.`id` = `profile_field`.`psid`;
+
+--
+-- VIEW diaspora-contact-view
+--
+DROP VIEW IF EXISTS `diaspora-contact-view`;
+CREATE VIEW `diaspora-contact-view` AS SELECT 
+	`diaspora-contact`.`uri-id` AS `uri-id`,
+	`item-uri`.`uri` AS `url`,
+	`item-uri`.`guid` AS `guid`,
+	`diaspora-contact`.`addr` AS `addr`,
+	`diaspora-contact`.`alias` AS `alias`,
+	`diaspora-contact`.`nick` AS `nick`,
+	`diaspora-contact`.`name` AS `name`,
+	`diaspora-contact`.`given-name` AS `given-name`,
+	`diaspora-contact`.`family-name` AS `family-name`,
+	`diaspora-contact`.`photo` AS `photo`,
+	`diaspora-contact`.`photo-medium` AS `photo-medium`,
+	`diaspora-contact`.`photo-small` AS `photo-small`,
+	`diaspora-contact`.`batch` AS `batch`,
+	`diaspora-contact`.`notify` AS `notify`,
+	`diaspora-contact`.`poll` AS `poll`,
+	`diaspora-contact`.`subscribe` AS `subscribe`,
+	`diaspora-contact`.`searchable` AS `searchable`,
+	`diaspora-contact`.`pubkey` AS `pubkey`,
+	`gserver`.`url` AS `baseurl`,
+	`diaspora-contact`.`gsid` AS `gsid`,
+	`diaspora-contact`.`created` AS `created`,
+	`diaspora-contact`.`updated` AS `updated`,
+	`diaspora-contact`.`interacting_count` AS `interacting_count`,
+	`diaspora-contact`.`interacted_count` AS `interacted_count`,
+	`diaspora-contact`.`post_count` AS `post_count`
+	FROM `diaspora-contact`
+			INNER JOIN `item-uri` ON `item-uri`.`id` = `diaspora-contact`.`uri-id`
+			LEFT JOIN `gserver` ON `gserver`.`id` = `diaspora-contact`.`gsid`;

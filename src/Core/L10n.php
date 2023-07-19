@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,11 +21,10 @@
 
 namespace Friendica\Core;
 
-use Friendica\Core\Config\IConfig;
-use Friendica\Core\Session\ISession;
+use Friendica\Core\Config\Capability\IManageConfigValues;
+use Friendica\Core\Session\Capability\IHandleSessions;
 use Friendica\Database\Database;
 use Friendica\Util\Strings;
-use Psr\Log\LoggerInterface;
 
 /**
  * Provide Language, Translation, and Localization functions to the application
@@ -35,6 +34,36 @@ class L10n
 {
 	/** @var string The default language */
 	const DEFAULT = 'en';
+	/** @var string[] The language names in their language */
+	const LANG_NAMES = [
+		'ar'    => 'العربية',
+		'bg'    => 'Български',
+		'ca'    => 'Català',
+		'cs'    => 'Česky',
+		'da-dk' => 'Dansk (Danmark)',
+		'de'    => 'Deutsch',
+		'en-gb' => 'English (United Kingdom)',
+		'en-us' => 'English (United States)',
+		'en'    => 'English (Default)',
+		'eo'    => 'Esperanto',
+		'es'    => 'Español',
+		'et'    => 'Eesti',
+		'fi-fi' => 'Suomi',
+		'fr'    => 'Français',
+		'gd'    => 'Gàidhlig',
+		'hu'    => 'Magyar',
+		'is'    => 'Íslenska',
+		'it'    => 'Italiano',
+		'ja'    => '日本語',
+		'nb-no' => 'Norsk bokmål',
+		'nl'    => 'Nederlands',
+		'pl'    => 'Polski',
+		'pt-br' => 'Português Brasileiro',
+		'ro'    => 'Română',
+		'ru'    => 'Русский',
+		'sv'    => 'Svenska',
+		'zh-cn' => '简体中文',
+	];
 
 	/**
 	 * A string indicating the current language used for translation:
@@ -56,16 +85,15 @@ class L10n
 	 * @var Database
 	 */
 	private $dba;
-
 	/**
-	 * @var LoggerInterface
+	 * @var IManageConfigValues
 	 */
-	private $logger;
+	private $config;
 
-	public function __construct(IConfig $config, Database $dba, LoggerInterface $logger, ISession $session, array $server, array $get)
+	public function __construct(IManageConfigValues $config, Database $dba, IHandleSessions $session, array $server, array $get)
 	{
 		$this->dba    = $dba;
-		$this->logger = $logger;
+		$this->config = $config;
 
 		$this->loadTranslationTable(L10n::detectLanguage($server, $get, $config->get('system', 'language', self::DEFAULT)));
 		$this->setSessionVariable($session);
@@ -85,7 +113,7 @@ class L10n
 	/**
 	 * Sets the language session variable
 	 */
-	private function setSessionVariable(ISession $session)
+	private function setSessionVariable(IHandleSessions $session)
 	{
 		if ($session->get('authenticated') && !$session->get('language')) {
 			$session->set('language', $this->lang);
@@ -103,10 +131,10 @@ class L10n
 		}
 	}
 
-	private function setLangFromSession(ISession $session)
+	private function setLangFromSession(IHandleSessions $session)
 	{
 		if ($session->get('language') !== $this->lang) {
-			$this->loadTranslationTable($session->get('language'));
+			$this->loadTranslationTable($session->get('language') ?? $this->lang);
 		}
 	}
 
@@ -118,10 +146,10 @@ class L10n
 	 * Uses an App object shim since all the strings files refer to $a->strings
 	 *
 	 * @param string $lang language code to load
-	 *
+	 * @return void
 	 * @throws \Exception
 	 */
-	private function loadTranslationTable($lang)
+	private function loadTranslationTable(string $lang)
 	{
 		$lang = Strings::sanitizeFilePathItem($lang);
 
@@ -134,9 +162,9 @@ class L10n
 		$a->strings = [];
 
 		// load enabled addons strings
-		$addons = $this->dba->select('addon', ['name'], ['installed' => true]);
-		while ($p = $this->dba->fetch($addons)) {
-			$name = Strings::sanitizeFilePathItem($p['name']);
+		$addons = array_keys($this->config->get('addons') ?? []);
+		foreach ($addons as $addon) {
+			$name = Strings::sanitizeFilePathItem($addon);
 			if (file_exists(__DIR__ . "/../../addon/$name/lang/$lang/strings.php")) {
 				include __DIR__ . "/../../addon/$name/lang/$lang/strings.php";
 			}
@@ -161,14 +189,14 @@ class L10n
 	 *
 	 * @return string The two-letter language code
 	 */
-	public static function detectLanguage(array $server, array $get, string $sysLang = self::DEFAULT)
+	public static function detectLanguage(array $server, array $get, string $sysLang = self::DEFAULT): string
 	{
 		$lang_variable = $server['HTTP_ACCEPT_LANGUAGE'] ?? null;
 
-		$acceptedLanguages = preg_split('/,\s*/', $lang_variable);
-
-		if (empty($acceptedLanguages)) {
+		if (empty($lang_variable)) {
 			$acceptedLanguages = [];
+		} else {
+			$acceptedLanguages = preg_split('/,\s*/', $lang_variable);
 		}
 
 		// Add get as absolute quality accepted language (except this language isn't valid)
@@ -247,7 +275,7 @@ class L10n
 	 *
 	 * @return string
 	 */
-	public function t($s, ...$vars)
+	public function t(string $s, ...$vars): string
 	{
 		if (empty($s)) {
 			return '';
@@ -281,11 +309,12 @@ class L10n
 	 * @param string $singular
 	 * @param string $plural
 	 * @param int    $count
+	 * @param array  $vars Variables to interpolate in the translation string
 	 *
 	 * @return string
 	 * @throws \Exception
 	 */
-	public function tt(string $singular, string $plural, int $count)
+	public function tt(string $singular, string $plural, int $count, ...$vars): string
 	{
 		$s = null;
 
@@ -305,7 +334,7 @@ class L10n
 					// for some languages there is only a single array item
 					$s = $t[0];
 				}
-				// if $t is empty, skip it, because empty strings array are indended
+				// if $t is empty, skip it, because empty strings array are intended
 				// to make string file smaller when there's no translation
 			} else {
 				$s = $t;
@@ -314,11 +343,13 @@ class L10n
 
 		if (is_null($s) && $this->stringPluralSelectDefault($count)) {
 			$s = $plural;
-		} else {
+		} elseif (is_null($s)) {
 			$s = $singular;
 		}
 
-		$s = @sprintf($s, $count);
+		// We mute errors here because the translation strings may not be referencing the count at all,
+		// but we still have to try the interpolation just in case it is indeed referenced.
+		$s = @sprintf($s, $count, ...$vars);
 
 		return $s;
 	}
@@ -330,7 +361,7 @@ class L10n
 	 *
 	 * @return bool
 	 */
-	private function stringPluralSelectDefault($n)
+	private function stringPluralSelectDefault(int $n): bool
 	{
 		return $n != 1;
 	}
@@ -340,13 +371,14 @@ class L10n
 	 *
 	 * Scans the view/lang directory for the existence of "strings.php" files, and
 	 * returns an alphabetical list of their folder names (@-char language codes).
-	 * Adds the english language if it's missing from the list.
+	 * Adds the english language if it's missing from the list. Folder names are
+	 * replaced by nativ language names.
 	 *
-	 * Ex: array('de' => 'de', 'en' => 'en', 'fr' => 'fr', ...)
+	 * Ex: array('de' => 'Deutsch', 'en' => 'English', 'fr' => 'Français', ...)
 	 *
 	 * @return array
 	 */
-	public static function getAvailableLanguages()
+	public static function getAvailableLanguages(): array
 	{
 		$langs              = [];
 		$strings_file_paths = glob('view/lang/*/strings.php');
@@ -358,7 +390,7 @@ class L10n
 			asort($strings_file_paths);
 			foreach ($strings_file_paths as $strings_file_path) {
 				$path_array            = explode('/', $strings_file_path);
-				$langs[$path_array[2]] = $path_array[2];
+				$langs[$path_array[2]] = self::LANG_NAMES[$path_array[2]] ?? $path_array[2];
 			}
 		}
 		return $langs;
@@ -368,10 +400,9 @@ class L10n
 	 * Translate days and months names.
 	 *
 	 * @param string $s String with day or month name.
-	 *
 	 * @return string Translated string.
 	 */
-	public function getDay($s)
+	public function getDay(string $s): string
 	{
 		$ret = str_replace(['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
 			[$this->t('Monday'), $this->t('Tuesday'), $this->t('Wednesday'), $this->t('Thursday'), $this->t('Friday'), $this->t('Saturday'), $this->t('Sunday')],
@@ -388,10 +419,9 @@ class L10n
 	 * Translate short days and months names.
 	 *
 	 * @param string $s String with short day or month name.
-	 *
 	 * @return string Translated string.
 	 */
-	public function getDayShort($s)
+	public function getDayShort(string $s): string
 	{
 		$ret = str_replace(['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
 			[$this->t('Mon'), $this->t('Tue'), $this->t('Wed'), $this->t('Thu'), $this->t('Fri'), $this->t('Sat'), $this->t('Sun')],
@@ -405,32 +435,6 @@ class L10n
 	}
 
 	/**
-	 * Load poke verbs
-	 *
-	 * @return array index is present tense verb
-	 *                 value is array containing past tense verb, translation of present, translation of past
-	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
-	 * @hook poke_verbs pokes array
-	 */
-	public function getPokeVerbs()
-	{
-		// index is present tense verb
-		// value is array containing past tense verb, translation of present, translation of past
-		$arr = [
-			'poke'   => ['poked', $this->t('poke'), $this->t('poked')],
-			'ping'   => ['pinged', $this->t('ping'), $this->t('pinged')],
-			'prod'   => ['prodded', $this->t('prod'), $this->t('prodded')],
-			'slap'   => ['slapped', $this->t('slap'), $this->t('slapped')],
-			'finger' => ['fingered', $this->t('finger'), $this->t('fingered')],
-			'rebuff' => ['rebuffed', $this->t('rebuff'), $this->t('rebuffed')],
-		];
-
-		Hook::callAll('poke_verbs', $arr);
-
-		return $arr;
-	}
-
-	/**
 	 * Creates a new L10n instance based on the given langauge
 	 *
 	 * @param string $lang The new language
@@ -438,7 +442,7 @@ class L10n
 	 * @return static A new L10n instance
 	 * @throws \Exception
 	 */
-	public function withLang(string $lang)
+	public function withLang(string $lang): L10n
 	{
 		// Don't create a new instance for same language
 		if ($lang === $this->lang) {

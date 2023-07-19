@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,21 +25,20 @@ use Friendica\Content\Widget;
 use Friendica\DI;
 use Friendica\Module\BaseSearch;
 use Friendica\Module\Security\Login;
-use Friendica\Util\Strings;
 
 /**
  * Directory search module
  */
 class Directory extends BaseSearch
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		if (!local_user()) {
-			notice(DI::l10n()->t('Permission denied.'));
+		if (!DI::userSession()->getLocalUserId()) {
+			DI::sysmsg()->addNotice(DI::l10n()->t('Permission denied.'));
 			return Login::form();
 		}
 
-		$search = Strings::escapeTags(trim(rawurldecode($_REQUEST['search'] ?? '')));
+		$search = trim(rawurldecode($_REQUEST['search'] ?? ''));
 
 		if (empty(DI::page()['aside'])) {
 			DI::page()['aside'] = '';

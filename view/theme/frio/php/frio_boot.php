@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -68,20 +68,20 @@ function is_modal() {
 }
 
 /**
- * Array with modalpages
+ * Array with modal pages
  *
  * The array contains the page names of the pages
  * which should displayed as modals
  *
- * @return array Pagenames as path
+ * @return array Page names as path
  */
 function get_modalpage_list() {
-	//Arry of pages wich getting bootstrap modal dialogs
-	$modalpages = ['poke/',
-			'message/new',
-			'settings/oauth/add',
-			'events/new',
-//			'fbrowser/image/'
+	//Array of pages which getting bootstrap modal dialogs
+	$modalpages = [
+		'message/new',
+		'settings/oauth/add',
+		'calendar/event/new',
+//		'fbrowser/image/'
 	];
 
 	return $modalpages;

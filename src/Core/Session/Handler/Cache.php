@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,48 +21,46 @@
 
 namespace Friendica\Core\Session\Handler;
 
-use Friendica\Core\Cache\ICache;
-use Friendica\Core\Session;
+use Friendica\Core\Cache\Capability\ICanCache;
+use Friendica\Core\Cache\Exception\CachePersistenceException;
 use Psr\Log\LoggerInterface;
-use SessionHandlerInterface;
 
 /**
  * SessionHandler using Friendica Cache
  */
-class Cache implements SessionHandlerInterface
+class Cache extends AbstractSessionHandler
 {
-	/** @var ICache */
+	/** @var ICanCache */
 	private $cache;
 	/** @var LoggerInterface */
 	private $logger;
-	/** @var array The $_SERVER array */
-	private $server;
 
-	public function __construct(ICache $cache, LoggerInterface $logger, array $server)
+	public function __construct(ICanCache $cache, LoggerInterface $logger)
 	{
 		$this->cache  = $cache;
 		$this->logger = $logger;
-		$this->server = $server;
 	}
 
-	public function open($save_path, $session_name)
+	public function open($path, $name): bool
 	{
 		return true;
 	}
 
-	public function read($session_id)
+	public function read($id)
 	{
-		if (empty($session_id)) {
+		if (empty($id)) {
 			return '';
 		}
 
-		$data = $this->cache->get('session:' . $session_id);
-		if (!empty($data)) {
-			Session::$exists = true;
-			return $data;
+		try {
+			$data = $this->cache->get('session:' . $id);
+			if (!empty($data)) {
+				return $data;
+			}
+		} catch (CachePersistenceException $exception) {
+			$this->logger->warning('Cannot read session.', ['id' => $id, 'exception' => $exception]);
+			return '';
 		}
-
-		$this->logger->notice('no data for session', ['session_id' => $session_id, 'uri' => $this->server['REQUEST_URI'] ?? '']);
 
 		return '';
 	}
@@ -74,36 +72,45 @@ class Cache implements SessionHandlerInterface
 	 * on the case. Uses the Session::expire for existing session, 5 minutes
 	 * for newly created session.
 	 *
-	 * @param string $session_id   Session ID with format: [a-z0-9]{26}
-	 * @param string $session_data Serialized session data
+	 * @param string $id   Session ID with format: [a-z0-9]{26}
+	 * @param string $data Serialized session data
 	 *
-	 * @return boolean Returns false if parameters are missing, true otherwise
-	 * @throws \Exception
+	 * @return bool Returns false if parameters are missing, true otherwise
 	 */
-	public function write($session_id, $session_data)
+	public function write($id, $data): bool
 	{
-		if (!$session_id) {
+		if (!$id) {
 			return false;
 		}
 
-		if (!$session_data) {
-			return $this->destroy($session_id);
+		if (!$data) {
+			return $this->destroy($id);
 		}
 
-		return $this->cache->set('session:' . $session_id, $session_data, Session::$expire);
+		try {
+			return $this->cache->set('session:' . $id, $data, static::EXPIRE);
+		} catch (CachePersistenceException $exception) {
+			$this->logger->warning('Cannot write session', ['id' => $id, 'exception' => $exception]);
+			return false;
+		}
 	}
 
-	public function close()
+	public function close(): bool
 	{
 		return true;
 	}
 
-	public function destroy($id)
+	public function destroy($id): bool
 	{
-		return $this->cache->delete('session:' . $id);
+		try {
+			return $this->cache->delete('session:' . $id);
+		} catch (CachePersistenceException $exception) {
+			$this->logger->warning('Cannot destroy session', ['id' => $id, 'exception' => $exception]);
+			return false;
+		}
 	}
 
-	public function gc($maxlifetime)
+	public function gc($max_lifetime): bool
 	{
 		return true;
 	}

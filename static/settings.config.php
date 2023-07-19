@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2021, the Friendica project
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -48,13 +48,9 @@ return [
 	],
 	'system' => [
 		// account_abandon_days (Integer)
-		// Will not waste system resources polling external sites for abandonded accounts.
+		// Will not waste system resources polling external sites for abandoned accounts.
 		// Enter 0 for no time limit.
 		'account_abandon_days' => 0,
-
-		// addon (Comma-separated list)
-		// Manual list of addons which are enabled on this system.
-		'addon' => '',
 
 		// add_missing_posts (boolean)
 		// Checks for missing entries in "post", "post-thread" or "post-thread-user" and creates them
@@ -62,7 +58,15 @@ return [
 
 		// allowed_themes (Comma-separated list)
 		// Themes users can change to in their settings.
-		'allowed_themes' => 'frio,quattro,vier,duepuntozero,smoothly',
+		'allowed_themes' => 'frio,vier',
+
+		// banner (HTML string)
+		// HTML snippet of the top navigation banner. Not supported by frio.
+		'banner' => '<a href="https://friendi.ca"><img id="logo-img" width="32" height="32" src="images/friendica.svg" alt="logo" /></a><span id="logo-text"><a href="https://friendi.ca">Friendica</a></span>',
+
+		// cache_contact_avatar (Boolean)
+		// Cache versions of the contact avatars. Uses a lot of storage space
+		'cache_contact_avatar' => true,
 
 		// curl_timeout (Integer)
 		// Value is in seconds. Set to 0 for unlimited (not recommended).
@@ -110,12 +114,16 @@ return [
 		// Default value comprises classic role names from RFC 2142.
 		'forbidden_nicknames' => 'info, marketing, sales, support, abuse, noc, security, postmaster, hostmaster, usenet, news, webmaster, www, uucp, ftp, root, sysop',
 
+		// compute_group_counts (Boolean)
+		// Compute contact group level when counting unseen network posts.
+		'compute_group_counts' => true,
+
 		// jpeg_quality (Integer)
 		// Sets the ImageMagick quality level for JPEG images. Values ranges from 50 (awful) to 100 (near perfect).
 		'jpeg_quality' => 100,
 
 		// language (String)
-		// System default languague, inluding admin-created user default language.
+		// System default language, including admin-created user default language.
 		// Two-letters ISO 639-1 code.
 		'language' => 'en',
 
@@ -136,6 +144,10 @@ return [
 		// If you don't want to set a maximum length, set to -1.
 		'max_image_length' => -1,
 
+		// max_receivers (Integer)
+		// The maximum number of displayed receivers of posts
+		'max_receivers' => 10,
+
 		// maximagesize (Integer)
 		// Maximum size in bytes of an uploaded photo.
 		'maximagesize' => 800000,
@@ -143,10 +155,6 @@ return [
 		// maxloadavg (Integer)
 		// Maximum system load before delivery and poll processes are deferred.
 		'maxloadavg' => 20,
-
-		// maxloadavg_frontend (Integer)
-		// Maximum system load before the frontend quits service - default 50.
-		'maxloadavg_frontend' => 50,
 
 		// min_memory (Integer)
 		// Minimal free memory in MB for the worker. Needs access to /proc/meminfo - default 0 (deactivated).
@@ -160,13 +168,25 @@ return [
 		// Periodically (once an hour) run an "optimize table" command for cache tables
 		'optimize_tables' => false,
 
+		// register_notification (Boolean)
+		// Send a notification mail to the admin for each new registration.
+		'register_notification' => true,
+
 		// relay_deny_tags (String)
 		// Comma separated list of tags that are rejected.
 		'relay_deny_tags' => '',
 
-		// relay_server (String)
-		// Address of the relay server where public posts should be send to.
-		'relay_server' => 'https://social-relay.isurf.ca',
+		// proxify_content (Boolean)
+		// Use the proxy functionality for fetching external content
+		'proxify_content' => true,
+
+		// relay_directly (Boolean)
+		// Directly transmit content to relay subscribers without using a relay server
+		'relay_directly' => false,
+
+		// relay_scope (Relay::SCOPE_NONE, Relay::SCOPE_TAGS or Relay::SCOPE_ALL)
+		// Defines the scope of accepted posts from the relay servers
+		'relay_scope' => '',
 
 		// relay_server_tags (String)
 		// Comma separated list of tags for the "tags" subscription.
@@ -175,12 +195,6 @@ return [
 		// relay_user_tags (Boolean)
 		// If enabled, the tags from the saved searches will used for the "tags" subscription in addition to the "relay_server_tags".
 		'relay_user_tags' => true,
-
-		// rino_encrypt (Integer)
-		// Server-to-server private message encryption (RINO).
-		// Encryption will only be provided if this setting is set to a non zero value on both servers.
-		// Set to 0 to disable, 2 to enable, 1 is deprecated but won't need mcrypt.
-		'rino_encrypt' => 2,
 
 		// temppath (String)
 		// Custom temporary file directory
@@ -198,5 +212,12 @@ return [
 
 	// Used in the admin settings to lock certain features
 	'featurelock' => [
+	],
+
+	// Storage backend configuration
+	'storage' => [
+		// name (String)
+		// The name of the current used backend (default is Database)
+		'name' => 'Database',
 	],
 ];
