@@ -31,7 +31,7 @@ $a->config['sitename'] = "Friendica My Network";
 // and/or approve/deny the request.
 // In order to perform system administration via the admin panel, admin_email
 // must precisely match the email address of the person logged in.
-$a->config['register_policy'] = REGISTER_OPEN;
+$a->config['register_policy'] = Friendica\Module\Register::OPEN;
 $a->config['register_text'] = 'A register text';
 $a->config['admin_email'] = 'admin@test.it';
 $a->config['admin_nickname'] = 'Friendly admin';
@@ -49,7 +49,7 @@ $a->config['php_path'] = '/another/php';
 $a->config['system']['huburl'] = '[internal]';
 
 // allowed themes (change this from admin panel after installation)
-$a->config['system']['allowed_themes'] = 'quattro,vier,duepuntozero';
+$a->config['system']['allowed_themes'] = 'frio,vier';
 
 // default system theme
 $a->config['system']['theme'] = 'frio';

@@ -1,4 +1,4 @@
-{{* Template for singele photo view *}}
+{{* Template for single photo view *}}
 
 {{* "live-photos" is needed for js autoupdate *}}
 <div id="live-photos"></div>
@@ -63,7 +63,7 @@
 
 		<div id="photo-photo-end"></div>
 		{{* The photo description *}}
-		<div id="photo-caption">{{$desc nofilter}}</div>
+		<div id="photo-caption">{{$desc}}</div>
 
 		{{* Tags and mentions *}}
 		{{if $tags}}

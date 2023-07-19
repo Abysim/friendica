@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -30,17 +30,19 @@ use Friendica\Model\Contact;
  */
 class RandomProfile extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
 		$a = DI::app();
 
-		$contactUrl = Contact::getRandomUrl();
+		$contact = Contact::getRandomContact();
 
-		if ($contactUrl) {
-			$link = Contact::magicLink($contactUrl);
+		if (!empty($contact)) {
+			$link = Contact::magicLinkByContact($contact);
 			$a->redirect($link);
 		}
 
 		DI::baseUrl()->redirect('profile');
+
+		return '';
 	}
 }

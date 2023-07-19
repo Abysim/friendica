@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,8 +23,8 @@ namespace Friendica\Console;
 
 use Asika\SimpleConsole\CommandArgsException;
 use Friendica\App;
-use Friendica\Core\Cache\Duration;
-use Friendica\Core\Cache\ICache;
+use Friendica\Core\Cache\Enum\Duration;
+use Friendica\Core\Cache\Capability\ICanCache;
 use RuntimeException;
 
 /**
@@ -44,7 +44,7 @@ class Cache extends \Asika\SimpleConsole\Console
 	private $appMode;
 
 	/**
-	 * @var ICache
+	 * @var ICanCache
 	 */
 	private $cache;
 
@@ -82,7 +82,7 @@ HELP;
 		return $help;
 	}
 
-	public function __construct(App\Mode $appMode, ICache $cache, array $argv = null)
+	public function __construct(App\Mode $appMode, ICanCache $cache, array $argv = null)
 	{
 		parent::__construct($argv);
 
@@ -90,7 +90,7 @@ HELP;
 		$this->cache   = $cache;
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		if ($this->getOption('v')) {
 			$this->out('Executable: ' . $this->executable);
@@ -99,7 +99,7 @@ HELP;
 			$this->out('Options: ' . var_export($this->options, true));
 		}
 
-		if (!$this->appMode->has(App\Mode::DBCONFIGAVAILABLE)) {
+		if (!$this->appMode->has(App\Mode::DBAVAILABLE)) {
 			$this->out('Database isn\'t ready or populated yet, database cache won\'t be available');
 		}
 

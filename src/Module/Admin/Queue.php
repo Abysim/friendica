@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -38,11 +38,11 @@ use Friendica\Util\DateTimeFormat;
  */
 class Queue extends BaseAdmin
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		parent::content($parameters);
+		parent::content();
 
-		$status = $parameters['status'] ?? '';
+		$status = $this->parameters['status'] ?? '';
 
 		// get jobs from the workerqueue table
 		if ($status == 'deferred') {
@@ -56,7 +56,7 @@ class Queue extends BaseAdmin
 		}
 
 		// @TODO Move to Model\WorkerQueue::getEntries()
-		$entries = DBA::select('workerqueue', ['id', 'parameter', 'created', 'priority'], $condition, ['limit' => 999, 'order' => ['created']]);
+		$entries = DBA::select('workerqueue', ['id', 'parameter', 'created', 'priority', 'command'], $condition, ['limit' => 999, 'order' => ['created']]);
 
 		$r = [];
 		while ($entry = DBA::fetch($entries)) {
@@ -73,6 +73,7 @@ class Queue extends BaseAdmin
 			'$page' => $sub_title,
 			'$count' => count($r),
 			'$id_header' => DI::l10n()->t('ID'),
+			'$command_header' => DI::l10n()->t('Command'),
 			'$param_header' => DI::l10n()->t('Job Parameters'),
 			'$created_header' => DI::l10n()->t('Created'),
 			'$prio_header' => DI::l10n()->t('Priority'),

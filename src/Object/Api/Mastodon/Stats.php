@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,9 +21,10 @@
 
 namespace Friendica\Object\Api\Mastodon;
 
-use Friendica\BaseEntity;
+use Friendica\BaseDataTransferObject;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\Core\Protocol;
-use Friendica\Database\DBA;
+use Friendica\Database\Database;
 use Friendica\DI;
 
 /**
@@ -31,7 +32,7 @@ use Friendica\DI;
  *
  * @see https://docs.joinmastodon.org/api/entities/#stats
  */
-class Stats extends BaseEntity
+class Stats extends BaseDataTransferObject
 {
 	/** @var int */
 	protected $user_count = 0;
@@ -40,19 +41,12 @@ class Stats extends BaseEntity
 	/** @var int */
 	protected $domain_count = 0;
 
-	/**
-	 * Creates a stats record
-	 *
-	 * @return Stats
-	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
-	 */
-	public static function get() {
-		$stats = new Stats();
-		if (!empty(DI::config()->get('system', 'nodeinfo'))) {
-			$stats->user_count = intval(DI::config()->get('nodeinfo', 'total_users'));
-			$stats->status_count = DI::config()->get('nodeinfo', 'local_posts') + DI::config()->get('nodeinfo', 'local_comments');
-			$stats->domain_count = DBA::count('gserver', ["`network` in (?, ?) AND NOT `failed`", Protocol::DFRN, Protocol::ACTIVITYPUB]);
+	public function __construct(IManageConfigValues $config, Database $database)
+	{
+		if (!empty($config->get('system', 'nodeinfo'))) {
+			$this->user_count   = intval(DI::keyValue()->get('nodeinfo_total_users'));
+			$this->status_count = (int)DI::keyValue()->get('nodeinfo_local_posts') + (int)DI::keyValue()->get('nodeinfo_local_comments');
+			$this->domain_count = $database->count('gserver', ["`network` in (?, ?) AND NOT `failed` AND NOT `blocked`", Protocol::DFRN, Protocol::ACTIVITYPUB]);
 		}
-		return $stats;
 	}
 }

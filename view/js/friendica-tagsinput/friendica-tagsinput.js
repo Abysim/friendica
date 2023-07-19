@@ -96,7 +96,7 @@
       if (typeof item === "object" && !self.objectItems)
         throw("Can't add objects when itemValue option is not set");
 
-      // Ignore strings only containg whitespace
+      // Ignore strings only containing whitespace
       if (item.toString().match(/^\s*$/))
         return;
 
@@ -124,7 +124,7 @@
           itemTitle = self.options.itemTitle(item),
           itemThumb = self.options.itemThumb(item);
 
-      // Ignore items allready added
+      // Ignore items already added
       var existing = $.grep(self.itemsArray, function(item) { return self.options.itemValue(item) === itemValue; } )[0];
       if (existing && !self.options.allowDuplicates) {
         // Invoke onTagExists
@@ -165,7 +165,7 @@
 
       // add <option /> if item represents a value not present in one of the <select />'s options
       if (self.isSelect && !optionExists) {
-        var $option = $('<option selected>' + htmlEncode(itemText) + '</option>');
+        var $option = $('<option>' + htmlEncode(itemText) + '</option>');
         $option.data('item', item);
         $option.attr('value', itemValue);
         self.$element.append($option);
@@ -522,7 +522,7 @@
     },
 
     /**
-     * Removes all tagsinput behaviour and unregsiter all event handlers
+     * Removes all tagsinput behaviour and unregister all event handlers
      */
     destroy: function() {
       var self = this;
@@ -577,11 +577,6 @@
         tagsinput = new TagsInput(this, arg1);
         $(this).data('tagsinput', tagsinput);
         results.push(tagsinput);
-
-        if (this.tagName === 'SELECT') {
-          $('option', $(this)).attr('selected', 'selected');
-        }
-
         // Init tags from $(this).val()
         $(this).val($(this).val());
       } else if (!arg1 && !arg2) {

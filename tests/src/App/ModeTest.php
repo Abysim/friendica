@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,12 +22,11 @@
 namespace Friendica\Test\src\App;
 
 use Detection\MobileDetect;
+use Friendica\App\Arguments;
 use Friendica\App\Mode;
-use Friendica\App\Module;
-use Friendica\Core\Config\Cache;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\Database\Database;
 use Friendica\Test\MockedTest;
-use Friendica\Test\Util\DBAMockTrait;
 use Friendica\Test\Util\VFSTrait;
 use Friendica\Util\BasePath;
 use Mockery;
@@ -36,7 +35,6 @@ use Mockery\MockInterface;
 class ModeTest extends MockedTest
 {
 	use VFSTrait;
-	use DBAMockTrait;
 
 	/**
 	 * @var BasePath|MockInterface
@@ -49,19 +47,18 @@ class ModeTest extends MockedTest
 	private $databaseMock;
 
 	/**
-	 * @var Cache|MockInterface
+	 * @var IManageConfigValues|MockInterface
 	 */
-	private $configCacheMock;
+	private $configMock;
 
-	protected function setUp()
+	protected function setUp(): void
 	{
 		parent::setUp();
 
 		$this->setUpVfsDir();
 
-		$this->basePathMock = Mockery::mock(BasePath::class);
 		$this->databaseMock = Mockery::mock(Database::class);
-		$this->configCacheMock = Mockery::mock(Cache::class);
+		$this->configMock   = Mockery::mock(IManageConfigValues::class);
 	}
 
 	public function testItEmpty()
@@ -73,15 +70,13 @@ class ModeTest extends MockedTest
 
 	public function testWithoutConfig()
 	{
-		$this->basePathMock->shouldReceive('getPath')->andReturn($this->root->url())->once();
-
 		self::assertTrue($this->root->hasChild('config/local.config.php'));
 
 		$this->delConfigFile('local.config.php');
 
 		self::assertFalse($this->root->hasChild('config/local.config.php'));
 
-		$mode = (new Mode())->determine($this->basePathMock, $this->databaseMock, $this->configCacheMock);
+		$mode = (new Mode())->determine($this->root->url(), $this->databaseMock, $this->configMock);
 
 		self::assertTrue($mode->isInstall());
 		self::assertFalse($mode->isNormal());
@@ -91,11 +86,9 @@ class ModeTest extends MockedTest
 
 	public function testWithoutDatabase()
 	{
-		$this->basePathMock->shouldReceive('getPath')->andReturn($this->root->url())->once();
-
 		$this->databaseMock->shouldReceive('connected')->andReturn(false)->once();
 
-		$mode = (new Mode())->determine($this->basePathMock, $this->databaseMock, $this->configCacheMock);
+		$mode = (new Mode())->determine($this->root->url(), $this->databaseMock, $this->configMock);
 
 		self::assertFalse($mode->isNormal());
 		self::assertTrue($mode->isInstall());
@@ -104,60 +97,31 @@ class ModeTest extends MockedTest
 		self::assertFalse($mode->has(Mode::DBAVAILABLE));
 	}
 
-	public function testWithoutDatabaseSetup()
-	{
-		$this->basePathMock->shouldReceive('getPath')->andReturn($this->root->url())->once();
-
-		$this->databaseMock->shouldReceive('connected')->andReturn(true)->once();
-		$this->databaseMock->shouldReceive('fetchFirst')
-		                   ->with('SHOW TABLES LIKE \'config\'')->andReturn(false)->once();
-
-		$mode = (new Mode())->determine($this->basePathMock, $this->databaseMock, $this->configCacheMock);
-
-		self::assertFalse($mode->isNormal());
-		self::assertTrue($mode->isInstall());
-
-		self::assertTrue($mode->has(Mode::LOCALCONFIGPRESENT));
-	}
-
 	public function testWithMaintenanceMode()
 	{
-		$this->basePathMock->shouldReceive('getPath')->andReturn($this->root->url())->once();
-
 		$this->databaseMock->shouldReceive('connected')->andReturn(true)->once();
-		$this->databaseMock->shouldReceive('fetchFirst')
-		                   ->with('SHOW TABLES LIKE \'config\'')->andReturn(true)->once();
-		$this->configCacheMock->shouldReceive('get')->with('system', 'maintenance')
-		                      ->andReturn(true)->once();
+		$this->configMock->shouldReceive('get')->with('system', 'maintenance')
+							  ->andReturn(true)->once();
 
-		$mode = (new Mode())->determine($this->basePathMock, $this->databaseMock, $this->configCacheMock);
+		$mode = (new Mode())->determine($this->root->url(), $this->databaseMock, $this->configMock);
 
 		self::assertFalse($mode->isNormal());
 		self::assertFalse($mode->isInstall());
 
-		self::assertTrue($mode->has(Mode::DBCONFIGAVAILABLE));
 		self::assertFalse($mode->has(Mode::MAINTENANCEDISABLED));
 	}
 
 	public function testNormalMode()
 	{
-		$this->basePathMock->shouldReceive('getPath')->andReturn($this->root->url())->once();
-
 		$this->databaseMock->shouldReceive('connected')->andReturn(true)->once();
-		$this->databaseMock->shouldReceive('fetchFirst')
-		                   ->with('SHOW TABLES LIKE \'config\'')->andReturn(true)->once();
-		$this->configCacheMock->shouldReceive('get')->with('system', 'maintenance')
-		                      ->andReturn(false)->once();
-		$this->databaseMock->shouldReceive('selectFirst')
-		                   ->with('config', ['v'], ['cat' => 'system', 'k' => 'maintenance'])
-		                   ->andReturn(['v' => null])->once();
+		$this->configMock->shouldReceive('get')->with('system', 'maintenance')
+							  ->andReturn(false)->once();
 
-		$mode = (new Mode())->determine($this->basePathMock, $this->databaseMock, $this->configCacheMock);
+		$mode = (new Mode())->determine($this->root->url(), $this->databaseMock, $this->configMock);
 
 		self::assertTrue($mode->isNormal());
 		self::assertFalse($mode->isInstall());
 
-		self::assertTrue($mode->has(Mode::DBCONFIGAVAILABLE));
 		self::assertTrue($mode->has(Mode::MAINTENANCEDISABLED));
 	}
 
@@ -166,23 +130,15 @@ class ModeTest extends MockedTest
 	 */
 	public function testDisabledMaintenance()
 	{
-		$this->basePathMock->shouldReceive('getPath')->andReturn($this->root->url())->once();
-
 		$this->databaseMock->shouldReceive('connected')->andReturn(true)->once();
-		$this->databaseMock->shouldReceive('fetchFirst')
-		                   ->with('SHOW TABLES LIKE \'config\'')->andReturn(true)->once();
-		$this->configCacheMock->shouldReceive('get')->with('system', 'maintenance')
-		                      ->andReturn(false)->once();
-		$this->databaseMock->shouldReceive('selectFirst')
-		                   ->with('config', ['v'], ['cat' => 'system', 'k' => 'maintenance'])
-		                   ->andReturn(['v' => '0'])->once();
+		$this->configMock->shouldReceive('get')->with('system', 'maintenance')
+							  ->andReturn(false)->once();
 
-		$mode = (new Mode())->determine($this->basePathMock, $this->databaseMock, $this->configCacheMock);
+		$mode = (new Mode())->determine($this->root->url(), $this->databaseMock, $this->configMock);
 
 		self::assertTrue($mode->isNormal());
 		self::assertFalse($mode->isInstall());
 
-		self::assertTrue($mode->has(Mode::DBCONFIGAVAILABLE));
 		self::assertTrue($mode->has(Mode::MAINTENANCEDISABLED));
 	}
 
@@ -191,11 +147,9 @@ class ModeTest extends MockedTest
 	 */
 	public function testImmutable()
 	{
-		$this->basePathMock->shouldReceive('getPath')->andReturn(null)->once();
-
 		$mode = new Mode();
 
-		$modeNew = $mode->determine($this->basePathMock, $this->databaseMock, $this->configCacheMock);
+		$modeNew = $mode->determine('', $this->databaseMock, $this->configMock);
 
 		self::assertNotSame($modeNew, $mode);
 	}
@@ -205,11 +159,11 @@ class ModeTest extends MockedTest
 	 */
 	public function testIsBackendNotIsBackend()
 	{
-		$server = [];
-		$module = new Module();
+		$server       = [];
+		$args         = new Arguments();
 		$mobileDetect = new MobileDetect();
 
-		$mode = (new Mode())->determineRunMode(true, $module, $server, $mobileDetect);
+		$mode = (new Mode())->determineRunMode(true, $server, $args, $mobileDetect);
 
 		self::assertTrue($mode->isBackend());
 	}
@@ -219,11 +173,11 @@ class ModeTest extends MockedTest
 	 */
 	public function testIsBackendButIndex()
 	{
-		$server = [];
-		$module = new Module(Module::DEFAULT, Module::DEFAULT_CLASS, [], true);
+		$server       = [];
+		$args         = new Arguments('', '', Mode::BACKEND_MODULES[0]);
 		$mobileDetect = new MobileDetect();
 
-		$mode = (new Mode())->determineRunMode(false, $module, $server, $mobileDetect);
+		$mode = (new Mode())->determineRunMode(false, $server, $args, $mobileDetect);
 
 		self::assertTrue($mode->isBackend());
 	}
@@ -233,11 +187,11 @@ class ModeTest extends MockedTest
 	 */
 	public function testIsNotBackend()
 	{
-		$server = [];
-		$module = new Module(Module::DEFAULT, Module::DEFAULT_CLASS, [], false);
+		$server       = [];
+		$args         = new Arguments('', '', Arguments::DEFAULT_MODULE);
 		$mobileDetect = new MobileDetect();
 
-		$mode = (new Mode())->determineRunMode(false, $module, $server, $mobileDetect);
+		$mode = (new Mode())->determineRunMode(false, $server, $args, $mobileDetect);
 
 		self::assertFalse($mode->isBackend());
 	}
@@ -252,10 +206,10 @@ class ModeTest extends MockedTest
 			'HTTP_X_REQUESTED_WITH' => 'xmlhttprequest',
 		];
 
-		$module = new Module(Module::DEFAULT, Module::DEFAULT_CLASS, [], false);
+		$args         = new Arguments('', '', Arguments::DEFAULT_MODULE);
 		$mobileDetect = new MobileDetect();
 
-		$mode = (new Mode())->determineRunMode(true, $module, $server, $mobileDetect);
+		$mode = (new Mode())->determineRunMode(true, $server, $args, $mobileDetect);
 
 		self::assertTrue($mode->isAjax());
 	}
@@ -265,11 +219,11 @@ class ModeTest extends MockedTest
 	 */
 	public function testIsNotAjax()
 	{
-		$server = [];
-		$module = new Module(Module::DEFAULT, Module::DEFAULT_CLASS, [], false);
+		$server       = [];
+		$args         = new Arguments('', '', Arguments::DEFAULT_MODULE);
 		$mobileDetect = new MobileDetect();
 
-		$mode = (new Mode())->determineRunMode(true, $module, $server, $mobileDetect);
+		$mode = (new Mode())->determineRunMode(true, $server, $args, $mobileDetect);
 
 		self::assertFalse($mode->isAjax());
 	}
@@ -279,13 +233,13 @@ class ModeTest extends MockedTest
 	 */
 	public function testIsMobileIsTablet()
 	{
-		$server = [];
-		$module = new Module(Module::DEFAULT, Module::DEFAULT_CLASS, [], false);
+		$server       = [];
+		$args         = new Arguments('', '', Arguments::DEFAULT_MODULE);
 		$mobileDetect = Mockery::mock(MobileDetect::class);
 		$mobileDetect->shouldReceive('isMobile')->andReturn(true);
 		$mobileDetect->shouldReceive('isTablet')->andReturn(true);
 
-		$mode = (new Mode())->determineRunMode(true, $module, $server, $mobileDetect);
+		$mode = (new Mode())->determineRunMode(true, $server, $args, $mobileDetect);
 
 		self::assertTrue($mode->isMobile());
 		self::assertTrue($mode->isTablet());
@@ -297,13 +251,13 @@ class ModeTest extends MockedTest
 	 */
 	public function testIsNotMobileIsNotTablet()
 	{
-		$server = [];
-		$module = new Module(Module::DEFAULT, Module::DEFAULT_CLASS, [], false);
+		$server       = [];
+		$args         = new Arguments('', '', Arguments::DEFAULT_MODULE);
 		$mobileDetect = Mockery::mock(MobileDetect::class);
 		$mobileDetect->shouldReceive('isMobile')->andReturn(false);
 		$mobileDetect->shouldReceive('isTablet')->andReturn(false);
 
-		$mode = (new Mode())->determineRunMode(true, $module, $server, $mobileDetect);
+		$mode = (new Mode())->determineRunMode(true, $server, $args, $mobileDetect);
 
 		self::assertFalse($mode->isMobile());
 		self::assertFalse($mode->isTablet());

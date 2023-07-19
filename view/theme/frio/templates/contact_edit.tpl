@@ -2,23 +2,25 @@
 <div class="generic-page-wrapper">
 	{{if $header}}<h3>{{$header}}:&nbsp;{{$name}}{{if $account_type}}&nbsp;<small>({{$account_type}})</small>{{/if}}</h3>{{/if}}
 
-	<div id="contact-edit-wrapper" >
+	<div id="contact-edit-wrapper">
 
 		{{* Insert Tab-Nav *}}
 		{{$tab_str nofilter}}
 
 
 		<div id="contact-edit-content-wrapper">
-			<form action="contact/{{$contact_id}}" method="post" >
+			<form action="contact/{{$contact_id}}" method="post">
 
 				{{* This is the Action menu where contact related actions like 'ignore', 'hide' can be performed *}}
 				<ul id="contact-edit-actions" class="nav nav-pills preferences">
 					<li class="dropdown pull-right">
-						<button type="button" class="btn btn-link btn-sm dropdown-toggle" id="contact-edit-actions-button" data-toggle="dropdown" aria-expanded="false">
+						<button type="button" class="btn btn-link dropdown-toggle" id="contact-edit-actions-button" data-toggle="dropdown" aria-expanded="false">
 							<i class="fa fa-angle-down" aria-hidden="true"></i>&nbsp;{{$contact_action_button}}
 						</button>
 
-						<ul class="dropdown-menu pull-right" role="menu" aria-labelledby="contact-edit-actions-button" aria-haspopup="true" id="contact-actions-menu" >
+						<ul class="dropdown-menu pull-right" role="menu" aria-labelledby="contact-edit-actions-button" aria-haspopup="true" id="contact-actions-menu">
+							{{if $contact_actions.follow}}<li role="presentation"><a role="menuitem" href="{{$contact_actions.follow.url}}" title="{{$contact_actions.follow.title}}">{{$contact_actions.follow.label}}</a></li>{{/if}}
+							{{if $contact_actions.unfollow}}<li role="presentation"><a role="menuitem" href="{{$contact_actions.unfollow.url}}" title="{{$contact_actions.unfollow.title}}">{{$contact_actions.unfollow.label}}</a></li>{{/if}}
 							{{if $lblsuggest}}<li role="presentation"><a role="menuitem" href="{{$contact_actions.suggest.url}}" title="{{$contact_actions.suggest.title}}">{{$contact_actions.suggest.label}}</a></li>{{/if}}
 							{{if $poll_enabled}}<li role="presentation"><a role="menuitem" href="{{$contact_actions.update.url}}" title="{{$contact_actions.update.title}}">{{$contact_actions.update.label}}</a></li>{{/if}}
 							{{if $contact_actions.updateprofile}}<li role="presentation"><a role="menuitem" href="{{$contact_actions.updateprofile.url}}" title="{{$contact_actions.updateprofile.title}}">{{$contact_actions.updateprofile.label}}</a></li>{{/if}}
@@ -27,8 +29,8 @@
 							{{/if}}
 							<li role="presentation"><a role="menuitem" href="{{$contact_actions.block.url}}" title="{{$contact_actions.block.title}}">{{$contact_actions.block.label}}</a></li>
 							<li role="presentation"><a role="menuitem" href="{{$contact_actions.ignore.url}}" title="{{$contact_actions.ignore.title}}">{{$contact_actions.ignore.label}}</a></li>
-							{{if $contact_actions.archive.url}}<li role="presentation"><a role="menuitem" href="{{$contact_actions.archive.url}}" title="{{$contact_actions.archive.title}}">{{$contact_actions.archive.label}}</a></li>{{/if}}
-							{{if $contact_actions.delete.url}}<li role="presentation"><button role="menuitem" type="button" class="btn-link" title="{{$contact_actions.delete.title}}" onclick="addToModal('{{$contact_actions.delete.url}}?confirm=1');">{{$contact_actions.delete.label}}</button></li>{{/if}}
+							<li role="presentation"><a role="menuitem" href="{{$contact_actions.collapse.url}}" title="{{$contact_actions.collapse.title}}">{{$contact_actions.collapse.label}}</a></li>
+							{{if $contact_actions.revoke_follow.url}}<li role="presentation"><button role="menuitem" type="button" class="btn-link" title="{{$contact_actions.revoke_follow.title}}" onclick="addToModal('{{$contact_actions.revoke_follow.url}}');">{{$contact_actions.revoke_follow.label}}</button></li>{{/if}}
 						</ul>
 					</li>
 				</ul>
@@ -57,6 +59,7 @@
 						{{if $blocked && !$pending}}<li><div id="block-message">{{$blocked}}</div></li>{{/if}}
 						{{if $pending}}<li><div id="pending-message">{{$pending}}</div></li>{{/if}}
 						{{if $ignored}}<li><div id="ignore-message">{{$ignored}}</div></li>{{/if}}
+						{{if $collapsed}}<li><div id="collapse-message">{{$collapsed}}</div></li>{{/if}}
 						{{if $archived}}<li><div id="archive-message">{{$archived}}</div></li>{{/if}}
 					</ul>
 				</div> {{* End of contact-edit-status-wrapper *}}
@@ -69,15 +72,15 @@
 					<div class="panel">
 						<div class="section-subtitle-wrapper panel-heading" role="tab" id="contact-edit-profile">
 							<h4>
-								<a class="accordion-toggle" data-toggle="collapse" data-parent="#contact-edit-tools" href="#contact-edit-profile-collapse" aria-expanded="true" aria-controls="contact-edit-profile-collapse">
+								<button class="btn-link accordion-toggle" data-toggle="collapse" data-parent="#contact-edit-tools" href="#contact-edit-profile-collapse" aria-expanded="true" aria-controls="contact-edit-profile-collapse">
 									{{$contact_profile_label}}
-								</a>
+								</button>
 							</h4>
 						</div>
 						<div id="contact-edit-profile-collapse" class="panel-body panel-collapse collapse in" role="tabpanel" aria-labelledby="contact-edit-profile">
 							<div class="section-content-tools-wrapper">
 								<div class="col-lg-12 col-md-12 col-sm-12 col-xs-12">
-									<div class="col-lg-4 col-md-4 col-sm-4 col-xs-12 text-muted">{{$profileurllabel}}</div><a target="blank" href="{{$url}}">{{$profileurl}}</a>
+									<div class="col-lg-4 col-md-4 col-sm-4 col-xs-12 text-muted">{{$profileurllabel}}</div><a target="blank" href="{{$profileurl}}">{{$profileurl}}</a>
 								</div>
 
 								{{if $location}}
@@ -93,6 +96,14 @@
 									<hr class="profile-separator">
 									<div class="col-lg-4 col-md-4 col-sm-4 col-xs-12 text-muted">{{$xmpp_label}}</div>
 									<div class="col-lg-8 col-md-8 col-sm-8 col-xs-12">{{$xmpp}}</div>
+								</div>
+								{{/if}}
+
+								{{if $matrix}}
+								<div class="col-lg-12 col-md-12 col-sm-12 col-xs-12">
+									<hr class="profile-separator">
+									<div class="col-lg-4 col-md-4 col-sm-4 col-xs-12 text-muted">{{$matrix_label}}</div>
+									<div class="col-lg-8 col-md-8 col-sm-8 col-xs-12">{{$matrix}}</div>
 								</div>
 								{{/if}}
 
@@ -120,9 +131,9 @@
 					<div class="panel">
 						<div class="section-subtitle-wrapper panel-heading" role="tab" id="contact-edit-settings">
 							<h4>
-								<a class="accordion-toggle collapsed" data-toggle="collapse" data-parent="#contact-edit-tools" href="#contact-edit-settings-collapse" aria-expanded="false" aria-controls="contact-edit-settings-collapse">
+								<button class="btn-link accordion-toggle collapsed" data-toggle="collapse" data-parent="#contact-edit-tools" href="#contact-edit-settings-collapse" aria-expanded="false" aria-controls="contact-edit-settings-collapse">
 									{{$contact_settings_label}}
-								</a>
+								</button>
 							</h4>
 						</div>
 						<div id="contact-edit-settings-collapse" class="panel-body panel-collapse collapse" role="tabpanel" aria-labelledby="contact-edit-settings">
@@ -130,7 +141,7 @@
 
 								<input type="hidden" name="contact_id" value="{{$contact_id}}">
 
-								{{include file="field_checkbox.tpl" field=$notify}}
+								{{include file="field_checkbox.tpl" field=$notify_new_posts}}
 								{{if $fetch_further_information}}
 									{{include file="field_select.tpl" field=$fetch_further_information}}
 									{{if $fetch_further_information.2 == 2 || $fetch_further_information.2 == 3}} {{include file="field_textarea.tpl" field=$ffi_keyword_denylist}} {{/if}}
@@ -141,7 +152,7 @@
 
 								{{include file="field_checkbox.tpl" field=$hidden}}
 
-								<div class="pull-right settings-submit-wrapper" >
+								<div class="pull-right settings-submit-wrapper">
 									<button type="submit" name="submit" class="btn btn-primary" value="{{$submit}}">{{$submit}}</button>
 								</div>
 								<div class="clear"></div>
@@ -154,9 +165,9 @@
 					<div class="panel">
 						<div class="section-subtitle-wrapper panel-heading" role="tab" id="contact-edit-info">
 							<h4>
-								<a class="accordion-toggle collapsed" data-toggle="collapse" data-parent="#contact-edit-tools" href="#contact-edit-info-collapse" aria-expanded="false" aria-controls="contact-edit-info-collapse">
+								<button class="btn-link accordion-toggle collapsed" data-toggle="collapse" data-parent="#contact-edit-tools" href="#contact-edit-info-collapse" aria-expanded="false" aria-controls="contact-edit-info-collapse">
 									{{$lbl_info1}}
-								</a>
+								</button>
 							</h4>
 						</div>
 						<div id="contact-edit-info-collapse" class="panel-body panel-collapse collapse" role="tabpanel" aria-labelledby="contact-edit-info">
@@ -164,7 +175,7 @@
 
 								{{include file="field_textarea.tpl" field=$cinfo}}
 
-								<div class="pull-right settings-submit-wrapper" >
+								<div class="pull-right settings-submit-wrapper">
 									<button type="submit" name="submit" class="btn btn-primary" value="{{$submit}}">{{$submit}}</button>
 								</div>
 								<div class="clear"></div>

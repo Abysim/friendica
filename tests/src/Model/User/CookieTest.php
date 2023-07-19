@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,7 +22,8 @@
 namespace Friendica\Test\src\Model\User;
 
 use Friendica\App\BaseURL;
-use Friendica\Core\Config\IConfig;
+use Friendica\App\Request;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\Model\User\Cookie;
 use Friendica\Test\MockedTest;
 use Friendica\Test\Util\StaticCookie;
@@ -30,22 +31,24 @@ use Mockery\MockInterface;
 
 class CookieTest extends MockedTest
 {
-	/** @var MockInterface|IConfig */
+	/** @var MockInterface|IManageConfigValues */
 	private $config;
 	/** @var MockInterface|BaseURL */
 	private $baseUrl;
 
-	protected function setUp()
+	const SERVER_ARRAY = ['REMOTE_ADDR' => '1.2.3.4'];
+
+	protected function setUp(): void
 	{
 		StaticCookie::clearStatic();
 
 		parent::setUp();
 
-		$this->config = \Mockery::mock(IConfig::class);
+		$this->config  = \Mockery::mock(IManageConfigValues::class);
 		$this->baseUrl = \Mockery::mock(BaseURL::class);
 	}
 
-	protected function tearDown()
+	protected function tearDown(): void
 	{
 		StaticCookie::clearStatic();
 
@@ -57,11 +60,14 @@ class CookieTest extends MockedTest
 	 */
 	public function testInstance()
 	{
-		$this->baseUrl->shouldReceive('getSSLPolicy')->andReturn(true)->once();
+		$this->baseUrl->shouldReceive('getScheme')->andReturn('https')->once();
 		$this->config->shouldReceive('get')->with('system', 'site_prvkey')->andReturn('1235')->once();
 		$this->config->shouldReceive('get')->with('system', 'auth_cookie_lifetime', Cookie::DEFAULT_EXPIRE)->andReturn('7')->once();
+		$this->config->shouldReceive('get')->with('proxy', 'trusted_proxies', '')->andReturn('')->once();
 
-		$cookie = new Cookie($this->config, $this->baseUrl);
+		$request = new Request($this->config,static::SERVER_ARRAY);
+
+		$cookie = new Cookie($request, $this->config, $this->baseUrl);
 		self::assertInstanceOf(Cookie::class, $cookie);
 	}
 
@@ -121,37 +127,30 @@ class CookieTest extends MockedTest
 	 */
 	public function testGet(array $cookieData, bool $hasValues, $uid, $hash, $ip)
 	{
-		$this->baseUrl->shouldReceive('getSSLPolicy')->andReturn(true)->once();
+		$this->baseUrl->shouldReceive('getScheme')->andReturn('https')->once();
 		$this->config->shouldReceive('get')->with('system', 'site_prvkey')->andReturn('1235')->once();
 		$this->config->shouldReceive('get')->with('system', 'auth_cookie_lifetime', Cookie::DEFAULT_EXPIRE)->andReturn('7')->once();
+		$this->config->shouldReceive('get')->with('proxy', 'trusted_proxies', '')->andReturn('')->once();
 
-		$cookie = new Cookie($this->config, $this->baseUrl, [], $cookieData);
+		$request = new Request($this->config, static::SERVER_ARRAY);
+
+		$cookie = new Cookie($request, $this->config, $this->baseUrl, $cookieData);
 		self::assertInstanceOf(Cookie::class, $cookie);
 
-		$assertData = $cookie->getData();
-
-		if (!$hasValues) {
-			self::assertEmpty($assertData);
+		if (isset($uid)) {
+			self::assertEquals($uid, $cookie->get('uid'));
 		} else {
-			self::assertNotEmpty($assertData);
-			if (isset($uid)) {
-				self::assertObjectHasAttribute('uid', $assertData);
-				self::assertEquals($uid, $assertData->uid);
-			} else {
-				self::assertObjectNotHasAttribute('uid', $assertData);
-			}
-			if (isset($hash)) {
-				self::assertObjectHasAttribute('hash', $assertData);
-				self::assertEquals($hash, $assertData->hash);
-			} else {
-				self::assertObjectNotHasAttribute('hash', $assertData);
-			}
-			if (isset($ip)) {
-				self::assertObjectHasAttribute('ip', $assertData);
-				self::assertEquals($ip, $assertData->ip);
-			} else {
-				self::assertObjectNotHasAttribute('ip', $assertData);
-			}
+			self::assertNull($cookie->get('uid'));
+		}
+		if (isset($hash)) {
+			self::assertEquals($hash, $cookie->get('hash'));
+		} else {
+			self::assertNull($cookie->get('hash'));
+		}
+		if (isset($ip)) {
+			self::assertEquals($ip, $cookie->get('ip'));
+		} else {
+			self::assertNull($cookie->get('ip'));
 		}
 	}
 
@@ -189,14 +188,17 @@ class CookieTest extends MockedTest
 	 */
 	public function testCheck(string $serverPrivateKey, string $userPrivateKey, string $password, string $assertHash, bool $assertTrue)
 	{
-		$this->baseUrl->shouldReceive('getSSLPolicy')->andReturn(true)->once();
+		$this->baseUrl->shouldReceive('getScheme')->andReturn('https')->once();
 		$this->config->shouldReceive('get')->with('system', 'site_prvkey')->andReturn($serverPrivateKey)->once();
 		$this->config->shouldReceive('get')->with('system', 'auth_cookie_lifetime', Cookie::DEFAULT_EXPIRE)->andReturn('7')->once();
+		$this->config->shouldReceive('get')->with('proxy', 'trusted_proxies', '')->andReturn('')->once();
 
-		$cookie = new Cookie($this->config, $this->baseUrl);
+		$request = new Request($this->config, static::SERVER_ARRAY);
+
+		$cookie = new Cookie($request, $this->config, $this->baseUrl);
 		self::assertInstanceOf(Cookie::class, $cookie);
 
-		self::assertEquals($assertTrue, $cookie->check($assertHash, $password, $userPrivateKey));
+		self::assertEquals($assertTrue, $cookie->comparePrivateDataHash($assertHash, $password, $userPrivateKey));
 	}
 
 	public function dataSet()
@@ -210,7 +212,6 @@ class CookieTest extends MockedTest
 				'assertHash'  => 'b657a15cfe7ed1f7289c9aa51af14a9a26c966f4ddd74e495fba103d8e872a39',
 				'remoteIp'    => '0.0.0.0',
 				'serverArray' => [],
-				'lifetime'    => null,
 			],
 			'withServerArray' => [
 				'serverKey'   => 23,
@@ -220,32 +221,11 @@ class CookieTest extends MockedTest
 				'assertHash'  => 'b657a15cfe7ed1f7289c9aa51af14a9a26c966f4ddd74e495fba103d8e872a39',
 				'remoteIp'    => '1.2.3.4',
 				'serverArray' => ['REMOTE_ADDR' => '1.2.3.4',],
-				'lifetime'    => null,
-			],
-			'withLifetime0'   => [
-				'serverKey'   => 23,
-				'uid'         => 0,
-				'password'    => '234',
-				'privateKey'  => '124',
-				'assertHash'  => 'b657a15cfe7ed1f7289c9aa51af14a9a26c966f4ddd74e495fba103d8e872a39',
-				'remoteIp'    => '1.2.3.4',
-				'serverArray' => ['REMOTE_ADDR' => '1.2.3.4',],
-				'lifetime'    => 0,
-			],
-			'withLifetime'     => [
-				'serverKey'   => 23,
-				'uid'         => 0,
-				'password'    => '234',
-				'privateKey'  => '124',
-				'assertHash'  => 'b657a15cfe7ed1f7289c9aa51af14a9a26c966f4ddd74e495fba103d8e872a39',
-				'remoteIp'    => '1.2.3.4',
-				'serverArray' => ['REMOTE_ADDR' => '1.2.3.4',],
-				'lifetime'    => 2 * 24 * 60 * 60,
 			],
 		];
 	}
 
-	public function assertCookie($uid, $hash, $remoteIp, $lifetime)
+	public function assertCookie($uid, $hash, $remoteIp)
 	{
 		self::assertArrayHasKey(Cookie::NAME, StaticCookie::$_COOKIE);
 
@@ -258,11 +238,7 @@ class CookieTest extends MockedTest
 		self::assertObjectHasAttribute('ip', $data);
 		self::assertEquals($remoteIp, $data->ip);
 
-		if (isset($lifetime) && $lifetime !== 0) {
-			self::assertLessThanOrEqual(time() + $lifetime, StaticCookie::$_EXPIRE);
-		} else {
-			self::assertLessThanOrEqual(time() + Cookie::DEFAULT_EXPIRE * 24 * 60 * 60, StaticCookie::$_EXPIRE);
-		}
+		self::assertLessThanOrEqual(time() + Cookie::DEFAULT_EXPIRE * 24 * 60 * 60, StaticCookie::$_EXPIRE);
 	}
 
 	/**
@@ -270,40 +246,50 @@ class CookieTest extends MockedTest
 	 *
 	 * @dataProvider dataSet
 	 */
-	public function testSet($serverKey, $uid, $password, $privateKey, $assertHash, $remoteIp, $serverArray, $lifetime)
+	public function testSet($serverKey, $uid, $password, $privateKey, $assertHash, $remoteIp, $serverArray)
 	{
-		$this->baseUrl->shouldReceive('getSSLPolicy')->andReturn(true)->once();
+		$this->baseUrl->shouldReceive('getScheme')->andReturn('https')->once();
 		$this->config->shouldReceive('get')->with('system', 'site_prvkey')->andReturn($serverKey)->once();
 		$this->config->shouldReceive('get')->with('system', 'auth_cookie_lifetime', Cookie::DEFAULT_EXPIRE)->andReturn(Cookie::DEFAULT_EXPIRE)->once();
+		$this->config->shouldReceive('get')->with('proxy', 'trusted_proxies', '')->andReturn('')->once();
+		$this->config->shouldReceive('get')->with('proxy', 'forwarded_for_headers')->andReturn(Request::DEFAULT_FORWARD_FOR_HEADER);
 
-		$cookie = new StaticCookie($this->config, $this->baseUrl, $serverArray);
+
+		$request = new Request($this->config, $serverArray);
+
+		$cookie = new StaticCookie($request, $this->config, $this->baseUrl);
 		self::assertInstanceOf(Cookie::class, $cookie);
 
-		$cookie->set($uid, $password, $privateKey, $lifetime);
+		$cookie->setMultiple([
+			'uid' => $uid,
+			'hash' => $assertHash,
+		]);
 
-		self::assertCookie($uid, $assertHash, $remoteIp, $lifetime);
+		self::assertCookie($uid, $assertHash, $remoteIp);
 	}
 
 	/**
-	 * Test two different set() of the cookie class (first set is invalid)
+	 * Test the set() method of the cookie class
 	 *
 	 * @dataProvider dataSet
 	 */
-	public function testDoubleSet($serverKey, $uid, $password, $privateKey, $assertHash, $remoteIp, $serverArray, $lifetime)
+	public function testDoubleSet($serverKey, $uid, $password, $privateKey, $assertHash, $remoteIp, $serverArray)
 	{
-		$this->baseUrl->shouldReceive('getSSLPolicy')->andReturn(true)->once();
+		$this->baseUrl->shouldReceive('getScheme')->andReturn('https')->once();
 		$this->config->shouldReceive('get')->with('system', 'site_prvkey')->andReturn($serverKey)->once();
 		$this->config->shouldReceive('get')->with('system', 'auth_cookie_lifetime', Cookie::DEFAULT_EXPIRE)->andReturn(Cookie::DEFAULT_EXPIRE)->once();
+		$this->config->shouldReceive('get')->with('proxy', 'trusted_proxies', '')->andReturn('')->once();
+		$this->config->shouldReceive('get')->with('proxy', 'forwarded_for_headers')->andReturn(Request::DEFAULT_FORWARD_FOR_HEADER);
 
-		$cookie = new StaticCookie($this->config, $this->baseUrl, $serverArray);
+		$request = new Request($this->config, $serverArray);
+
+		$cookie = new StaticCookie($request, $this->config, $this->baseUrl, $serverArray);
 		self::assertInstanceOf(Cookie::class, $cookie);
 
-		// Invalid set, should get overwritten
-		$cookie->set(-1, 'invalid', 'nothing', -234);
+		$cookie->set('uid', $uid);
+		$cookie->set('hash', $assertHash);
 
-		$cookie->set($uid, $password, $privateKey, $lifetime);
-
-		self::assertCookie($uid, $assertHash, $remoteIp, $lifetime);
+		self::assertCookie($uid, $assertHash, $remoteIp);
 	}
 
 	/**
@@ -315,11 +301,14 @@ class CookieTest extends MockedTest
 			Cookie::NAME => 'test'
 		];
 
-		$this->baseUrl->shouldReceive('getSSLPolicy')->andReturn(true)->once();
+		$this->baseUrl->shouldReceive('getScheme')->andReturn('https')->once();
 		$this->config->shouldReceive('get')->with('system', 'site_prvkey')->andReturn(24)->once();
 		$this->config->shouldReceive('get')->with('system', 'auth_cookie_lifetime', Cookie::DEFAULT_EXPIRE)->andReturn(Cookie::DEFAULT_EXPIRE)->once();
+		$this->config->shouldReceive('get')->with('proxy', 'trusted_proxies', '')->andReturn('')->once();
 
-		$cookie = new StaticCookie($this->config, $this->baseUrl);
+		$request = new Request($this->config, static::SERVER_ARRAY);
+
+		$cookie = new StaticCookie($request, $this->config, $this->baseUrl);
 		self::assertInstanceOf(Cookie::class, $cookie);
 
 		self::assertEquals('test', StaticCookie::$_COOKIE[Cookie::NAME]);

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,8 +22,9 @@
 namespace Friendica\Module\Debug;
 
 use Friendica\BaseModule;
+use Friendica\Core\System;
 use Friendica\DI;
-use Friendica\Model\Item;
+use Friendica\Model\Post;
 use Friendica\Network\HTTPException;
 
 /**
@@ -31,27 +32,24 @@ use Friendica\Network\HTTPException;
  */
 class ItemBody extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		if (!local_user()) {
+		if (!DI::userSession()->getLocalUserId()) {
 			throw new HTTPException\UnauthorizedException(DI::l10n()->t('Access denied.'));
 		}
 
-		$app = DI::app();
-
-		// @TODO: Replace with parameter from router
-		$itemId = (($app->argc > 1) ? intval($app->argv[1]) : 0);
-
-		if (!$itemId) {
+		if (empty($this->parameters['item'])) {
 			throw new HTTPException\NotFoundException(DI::l10n()->t('Item not found.'));
 		}
 
-		$item = Item::selectFirst(['body'], ['uid' => local_user(), 'id' => $itemId]);
+		$itemId = intval($this->parameters['item']);
+
+		$item = Post::selectFirst(['body'], ['uid' => [0, DI::userSession()->getLocalUserId()], 'uri-id' => $itemId]);
 
 		if (!empty($item)) {
 			if (DI::mode()->isAjax()) {
 				echo str_replace("\n", '<br />', $item['body']);
-				exit();
+				System::exit();
 			} else {
 				return str_replace("\n", '<br />', $item['body']);
 			}

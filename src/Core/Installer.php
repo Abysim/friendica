@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,7 +23,7 @@ namespace Friendica\Core;
 
 use DOMDocument;
 use Exception;
-use Friendica\Core\Config\Cache;
+use Friendica\Core\Config\ValueObject\Cache;
 use Friendica\Database\Database;
 use Friendica\Database\DBStructure;
 use Friendica\DI;
@@ -98,17 +98,17 @@ class Installer
 	 * Checks the current installation environment. There are optional and mandatory checks.
 	 *
 	 * @param string $baseurl The baseurl of Friendica
-	 * @param string $phpath  Optional path to the PHP binary
+	 * @param string $phppath Optional path to the PHP binary
 	 *
 	 * @return bool if the check succeed
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public function checkEnvironment($baseurl, $phpath = null)
+	public function checkEnvironment($baseurl, $phppath = null)
 	{
 		$returnVal = true;
 
-		if (isset($phpath)) {
-			if (!$this->checkPHP($phpath)) {
+		if (isset($phppath)) {
+			if (!$this->checkPHP($phppath)) {
 				$returnVal = false;
 			}
 		}
@@ -129,13 +129,17 @@ class Installer
 			$returnVal = false;
 		}
 
+		if (!$this->checkTLS()) {
+			$returnVal = false;
+		}
+
 		if (!$this->checkKeys()) {
 			$returnVal = false;
 		}
 
-		if (!$this->checkHtAccess($baseurl)) {
-			$returnVal = false;
-		}
+		/// @TODO This check should not block installations because of containerization issues
+		/// @see https://github.com/friendica/docker/issues/134
+		$this->checkHtAccess($baseurl);
 
 		return $returnVal;
 	}
@@ -154,23 +158,20 @@ class Installer
 	{
 		$basepath = $configCache->get('system', 'basepath');
 
-		$tpl = Renderer::getMarkupTemplate('local.config.tpl');
+		$tpl = Renderer::getMarkupTemplate('install/local.config.tpl');
 		$txt = Renderer::replaceMacros($tpl, [
-			'$dbhost'    => $configCache->get('database', 'hostname'),
-			'$dbuser'    => $configCache->get('database', 'username'),
-			'$dbpass'    => $configCache->get('database', 'password'),
-			'$dbdata'    => $configCache->get('database', 'database'),
+			'$dbhost'     => $configCache->get('database', 'hostname'),
+			'$dbuser'     => $configCache->get('database', 'username'),
+			'$dbpass'     => $configCache->get('database', 'password'),
+			'$dbdata'     => $configCache->get('database', 'database'),
 
-			'$phpath'    => $configCache->get('config', 'php_path'),
-			'$adminmail' => $configCache->get('config', 'admin_email'),
-			'$hostname'  => $configCache->get('config', 'hostname'),
+			'$phppath'    => $configCache->get('config', 'php_path'),
+			'$adminmail'  => $configCache->get('config', 'admin_email'),
 
-			'$urlpath'   => $configCache->get('system', 'urlpath'),
-			'$baseurl'   => $configCache->get('system', 'url'),
-			'$sslpolicy' => $configCache->get('system', 'ssl_policy'),
-			'$basepath'  => $basepath,
-			'$timezone'  => $configCache->get('system', 'default_timezone'),
-			'$language'  => $configCache->get('system', 'language'),
+			'$system_url' => $configCache->get('system', 'url'),
+			'$basepath'   => $basepath,
+			'$timezone'   => $configCache->get('system', 'default_timezone'),
+			'$language'   => $configCache->get('system', 'language'),
 		]);
 
 		$result = file_put_contents($basepath . DIRECTORY_SEPARATOR . 'config' . DIRECTORY_SEPARATOR . 'local.config.php', $txt);
@@ -185,17 +186,15 @@ class Installer
 	/***
 	 * Installs the DB-Scheme for Friendica
 	 *
-	 * @param string $basePath The base path of this application
-	 *
 	 * @return bool true if the installation was successful, otherwise false
 	 * @throws Exception
 	 */
-	public function installDatabase($basePath)
+	public function installDatabase(): bool
 	{
-		$result = DBStructure::update($basePath, false, true, true);
+		$result = DBStructure::install();
 
 		if ($result) {
-			$txt = DI::l10n()->t('You may need to import the file "database.sql" manually using phpmyadmin or mysql.') . EOL;
+			$txt = DI::l10n()->t('You may need to import the file "database.sql" manually using phpmyadmin or mysql.') . '<br />';
 			$txt .= DI::l10n()->t('Please see the file "doc/INSTALL.md".');
 
 			$this->addCheck($txt, false, true, htmlentities($result, ENT_COMPAT, 'UTF-8'));
@@ -257,9 +256,9 @@ class Installer
 
 		$help = "";
 		if (!$passed) {
-			$help .= DI::l10n()->t('Could not find a command line version of PHP in the web server PATH.') . EOL;
-			$help .= DI::l10n()->t("If you don't have a command line version of PHP installed on your server, you will not be able to run the background processing. See <a href='https://github.com/friendica/friendica/blob/stable/doc/Install.md#set-up-the-worker'>'Setup the worker'</a>") . EOL;
-			$help .= EOL . EOL;
+			$help .= DI::l10n()->t('Could not find a command line version of PHP in the web server PATH.') . '<br />';
+			$help .= DI::l10n()->t("If you don't have a command line version of PHP installed on your server, you will not be able to run the background processing. See <a href='https://github.com/friendica/friendica/blob/stable/doc/Install.md#set-up-the-worker'>'Setup the worker'</a>") . '<br />';
+			$help .= '<br /><br />';
 			$tpl = Renderer::getMarkupTemplate('field_input.tpl');
 			/// @todo Separate backend Installer class and presentation layer/view
 			$help .= Renderer::replaceMacros($tpl, [
@@ -274,10 +273,10 @@ class Installer
 			$cmd = "$phppath -v";
 			$result = trim(shell_exec($cmd));
 			$passed2 = (strpos($result, "(cli)") !== false);
-			list($result) = explode("\n", $result);
+			[$result] = explode("\n", $result);
 			$help = "";
 			if (!$passed2) {
-				$help .= DI::l10n()->t("PHP executable is not the php cli binary \x28could be cgi-fgci version\x29") . EOL;
+				$help .= DI::l10n()->t("PHP executable is not the php cli binary \x28could be cgi-fgci version\x29") . '<br />';
 				$help .= DI::l10n()->t('Found PHP version: ') . "<tt>$result</tt>";
 			}
 			$this->addCheck(DI::l10n()->t('PHP cli binary'), $passed2, true, $help);
@@ -293,7 +292,7 @@ class Installer
 			$passed3 = $result == $str;
 			$help = "";
 			if (!$passed3) {
-				$help .= DI::l10n()->t('The command line version of PHP on your system does not have "register_argc_argv" enabled.') . EOL;
+				$help .= DI::l10n()->t('The command line version of PHP on your system does not have "register_argc_argv" enabled.') . '<br />';
 				$help .= DI::l10n()->t('This is required for message delivery to work.');
 			} else {
 				$this->phppath = $phppath;
@@ -331,7 +330,7 @@ class Installer
 
 		// Get private key
 		if (!$res) {
-			$help .= DI::l10n()->t('Error: the "openssl_pkey_new" function on this system is not able to generate encryption keys') . EOL;
+			$help .= DI::l10n()->t('Error: the "openssl_pkey_new" function on this system is not able to generate encryption keys') . '<br />';
 			$help .= DI::l10n()->t('If running under Windows, please see "http://www.php.net/manual/en/openssl.installation.php".');
 			$status = false;
 		}
@@ -463,6 +462,13 @@ class Installer
 		);
 		$returnVal = $returnVal ? $status : false;
 
+		$status = $this->checkFunction('proc_open',
+			DI::l10n()->t('Program execution functions'),
+			DI::l10n()->t('Error: Program execution functions (proc_open) required but not enabled.'),
+			true
+		);
+		$returnVal = $returnVal ? $status : false;
+
 		$status = $this->checkFunction('json_encode',
 			DI::l10n()->t('JSON PHP module'),
 			DI::l10n()->t('Error: JSON PHP module required but not installed.'),
@@ -473,6 +479,13 @@ class Installer
 		$status = $this->checkFunction('finfo_open',
 			DI::l10n()->t('File Information PHP module'),
 			DI::l10n()->t('Error: File Information PHP module required but not installed.'),
+			true
+		);
+		$returnVal = $returnVal ? $status : false;
+
+		$status = $this->checkFunction('gmp_strval',
+			DI::l10n()->t('GNU Multiple Precision PHP module'),
+			DI::l10n()->t('Error: GNU Multiple Precision PHP module required but not installed.'),
 			true
 		);
 		$returnVal = $returnVal ? $status : false;
@@ -495,10 +508,10 @@ class Installer
 			(!file_exists('config/local.config.php') && !is_writable('.'))) {
 
 			$status = false;
-			$help = DI::l10n()->t('The web installer needs to be able to create a file called "local.config.php" in the "config" folder of your web server and it is unable to do so.') . EOL;
-			$help .= DI::l10n()->t('This is most often a permission setting, as the web server may not be able to write files in your folder - even if you can.') . EOL;
-			$help .= DI::l10n()->t('At the end of this procedure, we will give you a text to save in a file named local.config.php in your Friendica "config" folder.') . EOL;
-			$help .= DI::l10n()->t('You can alternatively skip this procedure and perform a manual installation. Please see the file "INSTALL.txt" for instructions.') . EOL;
+			$help = DI::l10n()->t('The web installer needs to be able to create a file called "local.config.php" in the "config" folder of your web server and it is unable to do so.') . '<br />';
+			$help .= DI::l10n()->t('This is most often a permission setting, as the web server may not be able to write files in your folder - even if you can.') . '<br />';
+			$help .= DI::l10n()->t('At the end of this procedure, we will give you a text to save in a file named local.config.php in your Friendica "config" folder.') . '<br />';
+			$help .= DI::l10n()->t('You can alternatively skip this procedure and perform a manual installation. Please see the file "doc/INSTALL.md" for instructions.') . '<br />';
 		}
 
 		$this->addCheck(DI::l10n()->t('config/local.config.php is writable'), $status, false, $help);
@@ -521,10 +534,10 @@ class Installer
 		if (!is_writable('view/smarty3')) {
 
 			$status = false;
-			$help = DI::l10n()->t('Friendica uses the Smarty3 template engine to render its web views. Smarty3 compiles templates to PHP to speed up rendering.') . EOL;
-			$help .= DI::l10n()->t('In order to store these compiled templates, the web server needs to have write access to the directory view/smarty3/ under the Friendica top level folder.') . EOL;
-			$help .= DI::l10n()->t("Please ensure that the user that your web server runs as \x28e.g. www-data\x29 has write access to this folder.") . EOL;
-			$help .= DI::l10n()->t("Note: as a security measure, you should give the web server write access to view/smarty3/ only--not the template files \x28.tpl\x29 that it contains.") . EOL;
+			$help = DI::l10n()->t('Friendica uses the Smarty3 template engine to render its web views. Smarty3 compiles templates to PHP to speed up rendering.') . '<br />';
+			$help .= DI::l10n()->t('In order to store these compiled templates, the web server needs to have write access to the directory view/smarty3/ under the Friendica top level folder.') . '<br />';
+			$help .= DI::l10n()->t("Please ensure that the user that your web server runs as \x28e.g. www-data\x29 has write access to this folder.") . '<br />';
+			$help .= DI::l10n()->t("Note: as a security measure, you should give the web server write access to view/smarty3/ only--not the template files \x28.tpl\x29 that it contains.") . '<br />';
 		}
 
 		$this->addCheck(DI::l10n()->t('view/smarty3 is writable'), $status, true, $help);
@@ -539,7 +552,6 @@ class Installer
 	 *
 	 * @param string $baseurl The baseurl of the app
 	 * @return bool false if something required failed
-	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
 	public function checkHtAccess($baseurl)
 	{
@@ -547,29 +559,63 @@ class Installer
 		$help = "";
 		$error_msg = "";
 		if (function_exists('curl_init')) {
-			$fetchResult = DI::httpRequest()->fetchFull($baseurl . "/install/testrewrite");
+			$fetchResult = DI::httpClient()->fetchFull($baseurl . "/install/testrewrite");
 
 			$url = Strings::normaliseLink($baseurl . "/install/testrewrite");
 			if ($fetchResult->getReturnCode() != 204) {
-				$fetchResult = DI::httpRequest()->fetchFull($url);
+				$fetchResult = DI::httpClient()->fetchFull($url);
 			}
 
 			if ($fetchResult->getReturnCode() != 204) {
 				$status = false;
-				$help = DI::l10n()->t('Url rewrite in .htaccess is not working. Make sure you copied .htaccess-dist to .htaccess.');
+				$help = DI::l10n()->t('Url rewrite in .htaccess seems not working. Make sure you copied .htaccess-dist to .htaccess.') . '<br />';
+				$help .= DI::l10n()->t('In some circumstances (like running inside containers), you can skip this error.');
 				$error_msg = [];
 				$error_msg['head'] = DI::l10n()->t('Error message from Curl when fetching');
 				$error_msg['url'] = $fetchResult->getRedirectUrl();
 				$error_msg['msg'] = $fetchResult->getError();
 			}
 
-			$this->addCheck(DI::l10n()->t('Url rewrite is working'), $status, true, $help, $error_msg);
+			/// @TODO Required false because of cURL issues in containers - see https://github.com/friendica/docker/issues/134
+			$this->addCheck(DI::l10n()->t('Url rewrite is working'), $status, false, $help, $error_msg);
 		} else {
 			// cannot check modrewrite if libcurl is not installed
 			/// @TODO Maybe issue warning here?
 		}
 
 		return $status;
+	}
+
+	/**
+	 * TLS Check
+	 *
+	 * Tries to determine whether the connection to the server is secured
+	 * by TLS or not. If not the user will be warned that it is highly
+	 * encouraged to use TLS.
+	 *
+	 * @return bool (true) as TLS is not mandatory
+	 */
+	public function checkTLS()
+	{
+		$tls = false;
+
+		if (isset($_SERVER['HTTPS'])) {
+			if (($_SERVER['HTTPS'] == 1) || ($_SERVER['HTTPS'] == 'on')) {
+				$tls = true;
+			}
+		}
+
+		if (!$tls) {
+			$help = DI::l10n()->t('The detection of TLS to secure the communication between the browser and the new Friendica server failed.');
+			$help .= ' ' . DI::l10n()->t('It is highly encouraged to use Friendica only over a secure connection as sensitive information like passwords will be transmitted.');
+			$help .= ' ' . DI::l10n()->t('Please ensure that the connection to the server is secure.');
+			$this->addCheck(DI::l10n()->t('No TLS detected'), $tls, false, $help);
+		} else {
+			$this->addCheck(DI::l10n()->t('TLS detected'), $tls, false, '');
+		}
+
+		// TLS is not required
+		return true;
 	}
 
 	/**
@@ -612,7 +658,7 @@ class Installer
 	 * @return bool true if the check was successful, otherwise false
 	 * @throws Exception
 	 */
-	public function checkDB(Database $dba)
+	public function checkDB(Database $dba): bool
 	{
 		$dba->reconnect();
 
@@ -634,8 +680,8 @@ class Installer
 	/**
 	 * Setup the default cache for a new installation
 	 *
-	 * @param Cache  $configCache The configuration cache
-	 * @param string $basePath    The determined basepath
+	 * @param \Friendica\Core\Config\ValueObject\Cache $configCache The configuration cache
+	 * @param string                                   $basePath    The determined basepath
 	 *
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */

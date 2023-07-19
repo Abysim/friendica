@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,14 +21,14 @@
 
 namespace Friendica\Object\Api\Mastodon;
 
-use Friendica\BaseEntity;
+use Friendica\BaseDataTransferObject;
 
 /**
  * Class Card
  *
  * @see https://docs.joinmastodon.org/entities/card
  */
-class Card extends BaseEntity
+class Card extends BaseDataTransferObject
 {
 	/** @var string */
 	protected $url;
@@ -39,11 +39,23 @@ class Card extends BaseEntity
 	/** @var string */
 	protected $type;
 	/** @var string */
+	protected $author_name;
+	/** @var string */
+	protected $author_url;
+	/** @var string */
 	protected $provider_name;
 	/** @var string */
 	protected $provider_url;
+	/** @var int */
+	protected $width;
+	/** @var int */
+	protected $height;
 	/** @var string */
 	protected $image;
+	/** @var string */
+	protected $blurhash;
+	/** @var array */
+	protected $history;
 
 	/**
 	 * Creates a card record from an attachment array.
@@ -51,15 +63,21 @@ class Card extends BaseEntity
 	 * @param array   $attachment Attachment record
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public function __construct(array $attachment)
+	public function __construct(array $attachment, array $history = [])
 	{
 		$this->url           = $attachment['url'] ?? '';
 		$this->title         = $attachment['title'] ?? '';
 		$this->description   = $attachment['description'] ?? '';
 		$this->type          = $attachment['type'] ?? '';
-		$this->image         = $attachment['image'] ?? '';
+		$this->author_name   = $attachment['author_name'] ?? '';
+		$this->author_url    = $attachment['author_url'] ?? '';
 		$this->provider_name = $attachment['provider_name'] ?? '';
 		$this->provider_url  = $attachment['provider_url'] ?? '';
+		$this->width         = $attachment['width'] ?? 0;
+		$this->height        = $attachment['height'] ?? 0;
+		$this->image         = $attachment['image'] ?? '';
+		$this->blurhash      = $attachment['blurhash'] ?? '';
+		$this->history       = $history;
 	}
 
 	/**
@@ -67,10 +85,10 @@ class Card extends BaseEntity
 	 *
 	 * @return array
 	 */
-	public function toArray()
+	public function toArray(): array
 	{
 		if (empty($this->url)) {
-			return null;
+			return [];
 		}
 
 		return parent::toArray();

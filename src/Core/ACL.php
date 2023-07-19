@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -26,6 +26,7 @@ use Friendica\Database\DBA;
 use Friendica\DI;
 use Friendica\Model\Contact;
 use Friendica\Model\Group;
+use Friendica\Model\User;
 
 /**
  * Handle ACL management and display
@@ -33,13 +34,24 @@ use Friendica\Model\Group;
 class ACL
 {
 	/**
+	 * Returns the default lock state for the given user id
+	 * @param int $uid
+	 * @return bool "true" if the default settings are non public
+	 */
+	public static function getLockstateForUserId(int $uid)
+	{
+		$user = User::getById($uid, ['allow_cid', 'allow_gid', 'deny_cid', 'deny_gid']);
+		return !empty($user['allow_cid']) || !empty($user['allow_gid']) || !empty($user['deny_cid']) || !empty($user['deny_gid']);
+	}
+
+	/**
 	 * Returns a select input tag for private message recipient
 	 *
-	 * @param int  $selected Existing recipien contact ID
+	 * @param int  $selected Existing recipient contact ID
 	 * @return string
 	 * @throws \Exception
 	 */
-	public static function getMessageContactSelectHTML(int $selected = null)
+	public static function getMessageContactSelectHTML(int $selected = null): string
 	{
 		$o = '';
 
@@ -50,37 +62,37 @@ class ACL
 		$page->registerStylesheet(Theme::getPathForFile('js/friendica-tagsinput/friendica-tagsinput.css'));
 		$page->registerStylesheet(Theme::getPathForFile('js/friendica-tagsinput/friendica-tagsinput-typeahead.css'));
 
-		// When used for private messages, we limit correspondence to mutual DFRN/Friendica friends and the selector
-		// to one recipient. By default our selector allows multiple selects amongst all contacts.
+		$contacts = self::getValidMessageRecipientsForUser(DI::userSession()->getLocalUserId());
+
+		$tpl = Renderer::getMarkupTemplate('acl/message_recipient.tpl');
+		$o = Renderer::replaceMacros($tpl, [
+			'$contacts'      => $contacts,
+			'$contacts_json' => json_encode($contacts),
+			'$selected'      => $selected,
+		]);
+
+		Hook::callAll(DI::args()->getModuleName() . '_post_recipient', $o);
+
+		return $o;
+	}
+
+	public static function getValidMessageRecipientsForUser(int $uid): array
+	{
 		$condition = [
-			'uid' => local_user(),
-			'self' => false,
+			'uid'     => $uid,
+			'self'    => false,
 			'blocked' => false,
 			'pending' => false,
 			'archive' => false,
 			'deleted' => false,
-			'rel' => [Contact::FOLLOWER, Contact::SHARING, Contact::FRIEND],
-			'network' => Protocol::FEDERATED,
+			'rel'     => [Contact::FOLLOWER, Contact::SHARING, Contact::FRIEND],
+			'network' => Protocol::SUPPORT_PRIVATE,
 		];
 
-		$contacts = Contact::selectToArray(
-			['id', 'name', 'addr', 'micro'],
+		return Contact::selectToArray(
+			['id', 'name', 'addr', 'micro', 'url', 'nick'],
 			DBA::mergeConditions($condition, ["`notify` != ''"])
 		);
-
-		$arr = ['contact' => $contacts, 'entry' => $o];
-
-		Hook::callAll(DI::module()->getName() . '_pre_recipient', $arr);
-
-		$tpl = Renderer::getMarkupTemplate('acl/message_recipient.tpl');
-		$o = Renderer::replaceMacros($tpl, [
-			'$contacts' => $contacts,
-			'$selected' => $selected,
-		]);
-
-		Hook::callAll(DI::module()->getName() . '_post_recipient', $o);
-
-		return $o;
 	}
 
 	/**
@@ -144,6 +156,7 @@ class ACL
 				'archive' => false,
 				'deleted' => false,
 				'pending' => false,
+				'network' => Protocol::FEDERATED,
 				'rel' => [Contact::FOLLOWER, Contact::FRIEND]
 			], $condition),
 			$params
@@ -156,7 +169,7 @@ class ACL
 
 		$acl_forums = Contact::selectToArray($fields,
 			['uid' => $user_id, 'self' => false, 'blocked' => false, 'archive' => false, 'deleted' => false,
-			'pending' => false, 'contact-type' => Contact::TYPE_COMMUNITY], $params
+			'network' => Protocol::FEDERATED, 'pending' => false, 'contact-type' => Contact::TYPE_COMMUNITY], $params
 		);
 
 		$acl_contacts = array_merge($acl_forums, $acl_contacts);
@@ -209,7 +222,7 @@ class ACL
 	 * Return the full jot ACL selector HTML
 	 *
 	 * @param Page   $page
-	 * @param array  $user                  User array
+	 * @param int    $uid                   User ID
 	 * @param bool   $for_federation
 	 * @param array  $default_permissions   Static defaults permission array:
 	 *                                      [
@@ -225,17 +238,19 @@ class ACL
 	 */
 	public static function getFullSelectorHTML(
 		Page $page,
-		array $user = null,
+		int $uid = null,
 		bool $for_federation = false,
 		array $default_permissions = [],
 		array $condition = [],
 		$form_prefix = ''
 	) {
-		if (empty($user['uid'])) {
+		if (empty($uid)) {
 			return '';
 		}
 
 		static $input_group_id = 0;
+
+		$user = User::getById($uid);
 
 		$input_group_id++;
 
@@ -280,7 +295,7 @@ class ACL
 							!empty($mailacct['pubmail'])
 						]
 					];
-	
+
 				}
 			}
 			Hook::callAll('jot_networks', $jotnets_fields);
@@ -306,16 +321,16 @@ class ACL
 			'$public_title'   => DI::l10n()->t('Public'),
 			'$public_desc'    => DI::l10n()->t('This content will be shown to all your followers and can be seen in the community pages and by anyone with its link.'),
 			'$custom_title'   => DI::l10n()->t('Limited/Private'),
-			'$custom_desc'    => DI::l10n()->t('This content will be shown only to the people in the first box, to the exception of the people mentioned in the second box. It won\'t appear anywhere public.'),
+			'$custom_desc'    => DI::l10n()->t('This content will be shown only to the people in the first box, to the exception of the people mentioned in the second box. It won\'t appear anywhere public.') . DI::l10n()->t('Start typing the name of a contact or a group to show a filtered list. You can also mention the special groups "Followers" and "Mutuals".'),
 			'$allow_label'    => DI::l10n()->t('Show to:'),
 			'$deny_label'     => DI::l10n()->t('Except to:'),
 			'$emailcc'        => DI::l10n()->t('CC: email addresses'),
 			'$emtitle'        => DI::l10n()->t('Example: bob@example.com, mary@example.com'),
 			'$jotnets_summary' => DI::l10n()->t('Connectors'),
 			'$visibility'     => $visibility,
-			'$acl_contacts'   => $acl_contacts,
-			'$acl_groups'     => $acl_groups,
-			'$acl_list'       => $acl_list,
+			'$acl_contacts'   => json_encode($acl_contacts),
+			'$acl_groups'     => json_encode($acl_groups),
+			'$acl_list'       => json_encode($acl_list),
 			'$contact_allow'  => implode(',', $default_permissions['allow_cid']),
 			'$group_allow'    => implode(',', $default_permissions['allow_gid']),
 			'$contact_deny'   => implode(',', $default_permissions['deny_cid']),
@@ -327,5 +342,63 @@ class ACL
 		]);
 
 		return $o;
+	}
+
+	/**
+	 * Checks the validity of the given ACL string
+	 *
+	 * @param string $acl_string
+	 * @param int    $uid
+	 * @return bool
+	 * @throws Exception
+	 */
+	public static function isValidContact($acl_string, $uid)
+	{
+		if (empty($acl_string)) {
+			return true;
+		}
+
+		// split <x><y><z> into array of cids
+		preg_match_all('/<[A-Za-z0-9]+>/', $acl_string, $array);
+
+		// check for each cid if the contact is valid for the given user
+		$cid_array = $array[0];
+		foreach ($cid_array as $cid) {
+			$cid = str_replace(['<', '>'], ['', ''], $cid);
+			if (!DBA::exists('contact', ['id' => $cid, 'uid' => $uid])) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
+	 * Checks the validity of the given ACL string
+	 *
+	 * @param string $acl_string
+	 * @param int    $uid
+	 * @return bool
+	 * @throws Exception
+	 */
+	public static function isValidGroup($acl_string, $uid)
+	{
+		if (empty($acl_string)) {
+			return true;
+		}
+
+		// split <x><y><z> into array of cids
+		preg_match_all('/<[A-Za-z0-9]+>/', $acl_string, $array);
+
+		// check for each cid if the contact is valid for the given user
+		$gid_array = $array[0];
+		foreach ($gid_array as $gid) {
+			$gid = str_replace(['<', '>'], ['', ''], $gid);
+			if (!DBA::exists('group', ['id' => $gid, 'uid' => $uid, 'deleted' => false])) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 }

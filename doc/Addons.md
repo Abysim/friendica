@@ -31,7 +31,7 @@ Here's the structure:
  * Status: {Unsupported|Arbitrary status}
  */
 ```
- 
+
 You can also provide a longer documentation in a `README` or `README.md` file.
 The latter will be converted from Markdown to HTML in the addon detail page.
 
@@ -44,7 +44,7 @@ Uninstalling an addon automatically unregisters any hook it registered, but if y
 
 The install and uninstall functions will be called (i.e. re-installed) if the addon changes after installation.
 Therefore your uninstall should not destroy data and install should consider that data may already exist.
-Future extensions may provide for "setup" amd "remove".
+Future extensions may provide for "setup" and "remove".
 
 ## PHP addon hooks
 
@@ -60,24 +60,13 @@ This *should* be 'addon/*addon_name*/*addon_name*.php' in most cases and can be 
 `$function` is a string and is the name of the function which will be executed when the hook is called.
 
 ### Arguments
-Your hook callback functions will be called with at least one and possibly two arguments
+Your hook callback functions will be called with at most one argument
 
-    function <addon>_<hookname>(App $a, &$b) {
+    function <addon>_<hookname>(&$b) {
 
     }
 
 If you wish to make changes to the calling data, you must declare them as reference variables (with `&`) during function declaration.
-
-#### $a
-$a is the Friendica `App` class.
-It contains a wealth of information about the current state of Friendica:
-
-* which module has been called,
-* configuration information,
-* the page contents at the point the hook was invoked,
-* profile and user information, etc.
-
-It is recommeded you call this `$a` to match its usage elsewhere.
 
 #### $b
 $b can be called anything you like.
@@ -88,7 +77,7 @@ Remember to declare it with `&` if you wish to alter it.
 
 Your addon can provide user-specific settings via the `addon_settings` PHP hook, but it can also provide node-wide settings in the administration page of your addon.
 
-Simply declare a `<addon>_addon_admin(App $a)` function to display the form and a `<addon>_addon_admin_post(App $a)` function to process the data from the form.
+Simply declare a `<addon>_addon_admin()` function to display the form and a `<addon>_addon_admin_post()` function to process the data from the form.0
 
 ## Global stylesheets
 
@@ -102,7 +91,7 @@ function <addon>_install()
 }
 
 
-function <addon>_head(App $a)
+function <addon>_head()
 {
 	\Friendica\DI::page()->registerStylesheet(__DIR__ . '/relative/path/to/addon/stylesheet.css');
 }
@@ -124,7 +113,7 @@ function <addon>_install()
 	...
 }
 
-function <addon>_footer(App $a)
+function <addon>_footer()
 {
 	\Friendica\DI::page()->registerFooterScript(__DIR__ . '/relative/path/to/addon/script.js');
 }
@@ -135,7 +124,7 @@ function <addon>_footer(App $a)
 ### JavaScript hooks
 
 The main Friendica script provides hooks via events dispatched on the `document` property.
-In your Javascript file included as described above, add your event listener like this:
+In your JavaScript file included as described above, add your event listener like this:
 
 ```js
 document.addEventListener(name, callback);
@@ -144,7 +133,7 @@ document.addEventListener(name, callback);
 - *name* is the name of the hook and corresponds to a known Friendica JavaScript hook.
 - *callback* is a JavaScript anonymous function to execute.
 
-More info about Javascript event listeners: https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener
+More info about JavaScript event listeners: https://developer.mozilla.org/en-US/docs/Web/API/EventTarget/addEventListener
 
 #### Current JavaScript hooks
 
@@ -158,18 +147,18 @@ Addons may also act as "modules" and intercept all page requests for a given URL
 In order for a addon to act as a module it needs to declare an empty function `<addon>_module()`.
 
 If this function exists, you will now receive all page requests for `https://my.web.site/<addon>` - with any number of URL components as additional arguments.
-These are parsed into an array $a->argv, with a corresponding $a->argc indicating the number of URL components.
-So `https://my.web.site/addon/arg1/arg2` would look for a module named "addon" and pass its module functions the $a App structure (which is available to many components).
-This will include:
-
+These are parsed into the `App\Arguments` object.
+So `https://my.web.site/addon/arg1/arg2` would give this:
 ```php
-$a->argc = 3
-$a->argv = array(0 => 'addon', 1 => 'arg1', 2 => 'arg2');
+DI::args()->getArgc(); // = 3
+DI::args()->get(0); // = 'addon'
+DI::args()->get(1); // = 'arg1'
+DI::args()->get(2); // = 'arg2'
 ```
 
-To display a module page, you need to declare the function `<addon>_content(App $a)`, which defines and returns the page body content.
-They may also contain `<addon>_post(App $a)` which is called before the `<addon>_content` function and typically handles the results of POST forms.
-You may also have `<addon>_init(App $a)` which is called before `<addon>_content` and should include common logic to your module.
+To display a module page, you need to declare the function `<addon>_content()`, which defines and returns the page body content.
+They may also contain `<addon>_post()` which is called before the `<addon>_content` function and typically handles the results of POST forms.
+You may also have `<addon>_init()` which is called before `<addon>_content` and should include common logic to your module.
 
 ## Templates
 
@@ -209,7 +198,7 @@ Called when a user attempts to login.
 
 ### logged_in
 Called after a user has successfully logged in.
-`$b` contains the `$a->user` array.
+`$b` contains the `App->user` array.
 
 ### display_item
 Called when formatting a post for display.
@@ -232,21 +221,119 @@ Please note: body contents are bbcode - not HTML
 Called when receiving a post from another source. This may also be used to post local activity or system generated messages.
 `$b` is the item array of information to be stored in the database and the item body is bbcode.
 
-### settings_form
-Called when generating the HTML for the user Settings page.
-`$b` is the HTML string of the settings page before the final `</form>` tag.
-
-### settings_post
-Called when the Settings pages are submitted.
-`$b` is the $_POST array.
-
 ### addon_settings
 Called when generating the HTML for the addon settings page.
-`$b` is the (string) HTML of the addon settings page before the final `</form>` tag.
+`$data` is an array containing:
+
+- **addon** (output): Required. The addon folder name.
+- **title** (output): Required. The addon settings panel title.
+- **href** (output): Optional. If set, will reduce the panel to a link pointing to this URL, can be relative. Incompatible with the following keys.
+- **html** (output): Optional. Raw HTML of the addon form elements. Both the `<form>` tags and the submit buttons are taken care of elsewhere.
+- **submit** (output): Optional. If unset, a default submit button with `name="<addon name>-submit"` will be generated.
+  Can take different value types:
+  - **string**: The label to replace the default one.
+  - **associative array**: A list of submit button, the key is the value of the `name` attribute, the value is the displayed label.
+    The first submit button in this list is considered the main one and themes might emphasize its display.
+
+#### Examples
+
+##### With link
+```php
+$data = [
+	'addon' => 'advancedcontentfilter',
+	'title' => DI::l10n()->t('Advanced Content Filter'),
+	'href'  => 'advancedcontentfilter',
+];
+```
+##### With default submit button
+```php
+$data = [
+	'addon' => 'fromapp',
+	'title' => DI::l10n()->t('FromApp Settings'),
+	'html'  => $html,
+];
+```
+##### With no HTML, just a submit button
+```php
+$data = [
+	'addon'  => 'opmlexport',
+	'title'  => DI::l10n()->t('OPML Export'),
+	'submit' => DI::l10n()->t('Export RSS/Atom contacts'),
+];
+```
+##### With multiple submit buttons
+```php
+$data = [
+	'addon'  => 'catavatar',
+	'title'  => DI::l10n()->t('Cat Avatar Settings'),
+	'html'   => $html,
+	'submit' => [
+		'catavatar-usecat'   => DI::l10n()->t('Use Cat as Avatar'),
+		'catavatar-morecat'  => DI::l10n()->t('Another random Cat!'),
+		'catavatar-emailcat' => DI::pConfig()->get(Session::getLocalUser(), 'catavatar', 'seed', false) ? DI::l10n()->t('Reset to email Cat') : null,
+	],
+];
+```
 
 ### addon_settings_post
 Called when the Addon Settings pages are submitted.
 `$b` is the $_POST array.
+
+### connector_settings
+Called when generating the HTML for a connector addon settings page.
+`$data` is an array containing:
+
+- **connector** (output): Required. The addon folder name.
+- **title** (output): Required. The addon settings panel title.
+- **image** (output): Required. The relative path of the logo image of the platform/protocol this addon is connecting to, max size 48x48px.
+- **enabled** (output): Optional. If set to a falsy value, the connector image will be dimmed.
+- **html** (output): Optional. Raw HTML of the addon form elements. Both the `<form>` tags and the submit buttons are taken care of elsewhere.
+- **submit** (output): Optional. If unset, a default submit button with `name="<addon name>-submit"` will be generated.
+  Can take different value types:
+    - **string**: The label to replace the default one.
+      - **associative array**: A list of submit button, the key is the value of the `name` attribute, the value is the displayed label.
+        The first submit button in this list is considered the main one and themes might emphasize its display.
+
+#### Examples
+
+##### With default submit button
+```php
+$data = [
+	'connector' => 'diaspora',
+	'title'     => DI::l10n()->t('Diaspora Export'),
+	'image'     => 'images/diaspora-logo.png',
+	'enabled'   => $enabled,
+	'html'      => $html,
+];
+```
+
+##### With custom submit button label and no logo dim
+```php
+$data = [
+	'connector' => 'ifttt',
+	'title'     => DI::l10n()->t('IFTTT Mirror'),
+	'image'     => 'addon/ifttt/ifttt.png',
+	'html'      => $html,
+	'submit'    => DI::l10n()->t('Generate new key'),
+];
+```
+
+##### With conditional submit buttons
+```php
+$submit = ['pumpio-submit' => DI::l10n()->t('Save Settings')];
+if ($oauth_token && $oauth_token_secret) {
+	$submit['pumpio-delete'] = DI::l10n()->t('Delete this preset');
+}
+
+$data = [
+	'connector' => 'pumpio',
+	'title'     => DI::l10n()->t('Pump.io Import/Export/Mirror'),
+	'image'     => 'images/pumpio.png',
+	'enabled'   => $enabled,
+	'html'      => $html,
+	'submit'    => $submit,
+];
+```
 
 ### profile_post
 Called when posting a profile page.
@@ -262,7 +349,7 @@ Called prior to output of profile edit page.
 ### profile_advanced
 Called when the HTML is generated for the Advanced profile, corresponding to the Profile tab within a person's profile page.
 `$b` is the HTML string representation of the generated profile.
-The profile array details are in `$a->profile`.
+The profile array details are in `App->profile`.
 
 ### directory_item
 Called from the Directory page when formatting an item for display.
@@ -315,7 +402,7 @@ Called prior to output of personal XRD file.
 
 ### home_content
 Called prior to output home page content, shown to unlogged users.
-`$b` is the HTML sring of section region.
+`$b` is the HTML string of section region.
 
 ### contact_edit
 Called when editing contact details on an individual from the Contacts page.
@@ -338,7 +425,7 @@ Called after HTML content functions have completed.
 
 ### footer
 Called after HTML content functions have completed.
-Deferred Javascript files should be registered using this hook.
+Deferred JavaScript files should be registered using this hook.
 `$b` is (string) HTML of footer div/element.
 
 ### avatar_lookup
@@ -447,7 +534,7 @@ Form field array structure is:
 - **field**: Standard field data structure to be used by `field_checkbox.tpl` and `field_select.tpl`.
 
 For `checkbox`, **field** is:
-  - [0] (String): Form field name; Mandatory. 
+  - [0] (String): Form field name; Mandatory.
   - [1]: (String): Form field label; Optional, default is none.
   - [2]: (Boolean): Whether the checkbox should be checked by default; Optional, default is false.
   - [3]: (String): Additional help text; Optional, default is none.
@@ -458,7 +545,7 @@ For `select`, **field** is:
   - [1] (String): Form field label; Optional, default is none.
   - [2] (Boolean): Default value to be selected by default; Optional, default is none.
   - [3] (String): Additional help text; Optional, default is none.
-  - [4] (Array): Associative array of options. Item key is option value, item value is option label; Mandatory. 
+  - [4] (Array): Associative array of options. Item key is option value, item value is option label; Mandatory.
 
 ### route_collection
 Called just before dispatching the router.
@@ -470,14 +557,110 @@ Hook data is a `\FastRoute\RouterCollector` object that should be used to add ad
 
 Called before trying to detect the target network of a URL.
 If any registered hook function sets the `result` key of the hook data array, it will be returned immediately.
-Hook functions should also return immediately if the hook data contains an existing result. 
+Hook functions should also return immediately if the hook data contains an existing result.
 
 Hook data:
 
 - **uri** (input): the profile URI.
 - **network** (input): the target network (can be empty for auto-detection).
 - **uid** (input): the user to return the contact data for (can be empty for public contacts).
-- **result** (output): Set by the hook function to indicate a successful detection.
+- **result** (output): Leave null if address isn't relevant to the connector, set to contact array if probe is successful, false otherwise.
+
+### item_by_link
+
+Called when trying to probe an item from a given URI.
+If any registered hook function sets the `item_id` key of the hook data array, it will be returned immediately.
+Hook functions should also return immediately if the hook data contains an existing `item_id`.
+
+Hook data:
+- **uri** (input): the item URI.
+- **uid** (input): the user to return the item data for (can be empty for public contacts).
+- **item_id** (output): Leave null if URI isn't relevant to the connector, set to created item array if probe is successful, false otherwise.
+
+### support_follow
+
+Called to assert whether a connector addon provides follow capabilities.
+
+Hook data:
+- **protocol** (input): shorthand for the protocol. List of values is available in `src/Core/Protocol.php`.
+- **result** (output): should be true if the connector provides follow capabilities, left alone otherwise.
+
+### support_revoke_follow
+
+Called to assert whether a connector addon provides follow revocation capabilities.
+
+Hook data:
+- **protocol** (input): shorthand for the protocol. List of values is available in `src/Core/Protocol.php`.
+- **result** (output): should be true if the connector provides follow revocation capabilities, left alone otherwise.
+
+### follow
+
+Called before adding a new contact for a user to handle non-native network remote contact (like Twitter).
+
+Hook data:
+
+- **url** (input): URL of the remote contact.
+- **contact** (output): should be filled with the contact (with uid = user creating the contact) array if follow was successful.
+
+### unfollow
+
+Called when unfollowing a remote contact on a non-native network (like Twitter)
+
+Hook data:
+- **contact** (input): the target public contact (uid = 0) array.
+- **uid** (input): the id of the source local user.
+- **result** (output): wether the unfollowing is successful or not.
+
+### revoke_follow
+
+Called when making a remote contact on a non-native network (like Twitter) unfollow you.
+
+Hook data:
+- **contact** (input): the target public contact (uid = 0) array.
+- **uid** (input): the id of the source local user.
+- **result** (output): a boolean value indicating wether the operation was successful or not.
+
+### block
+
+Called when blocking a remote contact on a non-native network (like Twitter).
+
+Hook data:
+- **contact** (input): the remote contact (uid = 0) array.
+- **uid** (input): the user id to issue the block for.
+- **result** (output): a boolean value indicating wether the operation was successful or not.
+
+### unblock
+
+Called when unblocking a remote contact on a non-native network (like Twitter).
+
+Hook data:
+- **contact** (input): the remote contact (uid = 0) array.
+- **uid** (input): the user id to revoke the block for.
+- **result** (output): a boolean value indicating wether the operation was successful or not.
+
+### support_probe
+
+Called to assert whether a connector addon provides probing capabilities.
+
+Hook data:
+- **protocol** (input): shorthand for the protocol. List of values is available in `src/Core/Protocol.php`.
+- **result** (output): should be true if the connector provides follow capabilities, left alone otherwise.
+
+### storage_instance
+
+Called when a custom storage is used (e.g. webdav_storage)
+
+Hook data:
+- **name** (input): the name of the used storage backend
+- **data['storage']** (output): the storage instance to use (**must** implement `\Friendica\Core\Storage\IWritableStorage`) 
+
+### storage_config
+
+Called when the admin of the node wants to configure a custom storage (e.g. webdav_storage)
+
+Hook data:
+- **name** (input): the name of the used storage backend
+- **data['storage_config']** (output): the storage configuration instance to use (**must** implement `\Friendica\Core\Storage\Capability\IConfigureStorage`)
 
 ## Complete list of hook callbacks
 
@@ -491,7 +674,6 @@ Here is a complete list of all hook callbacks with file locations (as of 24-Sep-
     Hook::callAll($a->module.'_mod_init', $placeholder);
     Hook::callAll($a->module.'_mod_init', $placeholder);
     Hook::callAll($a->module.'_mod_post', $_POST);
-    Hook::callAll($a->module.'_mod_afterpost', $placeholder);
     Hook::callAll($a->module.'_mod_content', $arr);
     Hook::callAll($a->module.'_mod_aftercontent', $arr);
     Hook::callAll('page_end', DI::page()['content']);
@@ -509,7 +691,7 @@ Here is a complete list of all hook callbacks with file locations (as of 24-Sep-
     Hook::callAll('enotify_mail', $datarray);
     Hook::callAll('check_item_notification', $notification_data);
 
-### include/conversation.php
+### src/Content/Conversation.php
 
     Hook::callAll('conversation_start', $cb);
     Hook::callAll('render_location', $locate);
@@ -525,10 +707,6 @@ Here is a complete list of all hook callbacks with file locations (as of 24-Sep-
 ### mod/xrd.php
 
     Hook::callAll('personal_xrd', $arr);
-
-### mod/ping.php
-
-    Hook::callAll('network_ping', $arr);
 
 ### mod/parse_url.php
 
@@ -551,10 +729,6 @@ Here is a complete list of all hook callbacks with file locations (as of 24-Sep-
 
     Hook::callAll('about_hook', $o);
 
-### mod/subthread.php
-
-    Hook::callAll('post_local_end', $arr);
-
 ### mod/profiles.php
 
     Hook::callAll('profile_post', $_POST);
@@ -565,11 +739,9 @@ Here is a complete list of all hook callbacks with file locations (as of 24-Sep-
     Hook::callAll('addon_settings_post', $_POST);
     Hook::callAll('connector_settings_post', $_POST);
     Hook::callAll('display_settings_post', $_POST);
-    Hook::callAll('settings_post', $_POST);
     Hook::callAll('addon_settings', $settings_addons);
     Hook::callAll('connector_settings', $settings_connectors);
     Hook::callAll('display_settings', $o);
-    Hook::callAll('settings_form', $o);
 
 ### mod/photos.php
 
@@ -590,10 +762,6 @@ Here is a complete list of all hook callbacks with file locations (as of 24-Sep-
 
     Hook::callAll('home_init', $ret);
     Hook::callAll("home_content", $content);
-
-### mod/poke.php
-
-    Hook::callAll('post_local_end', $arr);
 
 ### mod/contacts.php
 
@@ -618,14 +786,6 @@ Here is a complete list of all hook callbacks with file locations (as of 24-Sep-
     Hook::callAll('post_local_start', $_REQUEST);
     Hook::callAll('post_local', $datarray);
     Hook::callAll('post_local_end', $datarray);
-
-### mod/editpost.php
-
-    Hook::callAll('jot_tool', $jotplugins);
-
-### src/Network/FKOAuth1.php
-
-    Hook::callAll('logged_in', $a->user);
 
 ### src/Render/FriendicaSmartyEngine.php
 
@@ -670,14 +830,43 @@ Here is a complete list of all hook callbacks with file locations (as of 24-Sep-
     Hook::callAll('event_updated', $event['id']);
     Hook::callAll("event_created", $event['id']);
 
+### src/Model/Register.php
+
+    Hook::callAll('authenticate', $addon_auth);
+
 ### src/Model/User.php
 
+    Hook::callAll('authenticate', $addon_auth);
     Hook::callAll('register_account', $uid);
     Hook::callAll('remove_user', $user);
+
+### src/Module/Notifications/Ping.php
+
+    Hook::callAll('network_ping', $arr);
 
 ### src/Module/PermissionTooltip.php
 
     Hook::callAll('lockview_content', $item);
+
+### src/Module/Post/Edit.php
+
+    Hook::callAll('jot_tool', $jotplugins);
+
+### src/Module/Settings/Delegation.php
+
+    Hook::callAll('authenticate', $addon_auth);
+
+### src/Module/Settings/TwoFactor/Index.php
+
+    Hook::callAll('authenticate', $addon_auth);
+
+### src/Security/Authenticate.php
+
+    Hook::callAll('authenticate', $addon_auth);
+
+### src/Security/ExAuth.php
+
+    Hook::callAll('authenticate', $addon_auth);
 
 ### src/Content/ContactBlock.php
 
@@ -717,10 +906,25 @@ Here is a complete list of all hook callbacks with file locations (as of 24-Sep-
 ### src/Core/Authentication.php
 
     Hook::callAll('logged_in', $a->user);
-    
+
+### src/Core/Protocol.php
+
+    Hook::callAll('support_follow', $hook_data);
+    Hook::callAll('support_revoke_follow', $hook_data);
+    Hook::callAll('unfollow', $hook_data);
+    Hook::callAll('revoke_follow', $hook_data);
+    Hook::callAll('block', $hook_data);
+    Hook::callAll('unblock', $hook_data);
+    Hook::callAll('support_probe', $hook_data);
+
+### src/Core/Logger/Factory.php
+
+    Hook::callAll('logger_instance', $data);
+
 ### src/Core/StorageManager
 
     Hook::callAll('storage_instance', $data);
+    Hook::callAll('storage_config', $data);
 
 ### src/Worker/Directory.php
 
@@ -760,10 +964,6 @@ Here is a complete list of all hook callbacks with file locations (as of 24-Sep-
 ### src/Core/Hook.php
 
     self::callSingle(self::getApp(), 'hook_fork', $fork_hook, $hookdata);
-
-### src/Core/L10n/L10n.php
-
-    Hook::callAll('poke_verbs', $arr);
 
 ### src/Core/Worker.php
 

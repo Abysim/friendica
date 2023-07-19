@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,13 +22,16 @@
 namespace Friendica\Model;
 
 use Friendica\Content\Text\BBCode;
-use Friendica\Core\Cache\Duration;
+use Friendica\Core\Cache\Enum\Duration;
 use Friendica\Core\Logger;
 use Friendica\Core\Protocol;
 use Friendica\Core\System;
 use Friendica\Database\Database;
 use Friendica\Database\DBA;
 use Friendica\DI;
+use Friendica\Protocol\ActivityPub;
+use Friendica\Util\DateTimeFormat;
+use Friendica\Util\Network;
 use Friendica\Util\Strings;
 
 /**
@@ -47,27 +50,40 @@ class Tag
 	 */
 	const IMPLICIT_MENTION  = 8;
 	/**
-	 * An exclusive mention transfers the ownership of the post to the target account, usually a forum.
+	 * An exclusive mention transmits the post only to the target account without transmitting it to the followers, usually a forum.
 	 */
 	const EXCLUSIVE_MENTION = 9;
+
+	const TO         = 10;
+	const CC         = 11;
+	const BTO        = 12;
+	const BCC        = 13;
+	const AUDIENCE   = 14;
+	const ATTRIBUTED = 15;
+
+	const ACCOUNT             = 1;
+	const GENERAL_COLLECTION  = 2;
+	const FOLLOWER_COLLECTION = 3;
+	const PUBLIC_COLLECTION   = 4;
 
 	const TAG_CHARACTER = [
 		self::HASHTAG           => '#',
 		self::MENTION           => '@',
-		self::IMPLICIT_MENTION  => '%',
 		self::EXCLUSIVE_MENTION => '!',
+		self::IMPLICIT_MENTION  => '%',
 	];
 
 	/**
 	 * Store tag/mention elements
 	 *
-	 * @param integer $uriid
-	 * @param integer $type
-	 * @param string  $name
-	 * @param string  $url
-	 * @param boolean $probing
+	 * @param integer $uriId
+	 * @param integer $type Tag type
+	 * @param string  $name Tag name
+	 * @param string  $url Contact URL (optional)
+	 * @param integer $target Target (default: null)
+	 * @return void
 	 */
-	public static function store(int $uriid, int $type, string $name, string $url = '', $probing = true)
+	public static function store(int $uriId, int $type, string $name, string $url = '', int $target = null)
 	{
 		if ($type == self::HASHTAG) {
 			// Trim Unicode non-word characters
@@ -76,7 +92,7 @@ class Tag
 			$tags = explode(self::TAG_CHARACTER[self::HASHTAG], $name);
 			if (count($tags) > 1) {
 				foreach ($tags as $tag) {
-					self::store($uriid, $type, $tag, $url, $probing);
+					self::store($uriId, $type, $tag, $url);
 				}
 				return;
 			}
@@ -89,7 +105,7 @@ class Tag
 		$cid = 0;
 		$tagid = 0;
 
-		if (in_array($type, [self::MENTION, self::EXCLUSIVE_MENTION, self::IMPLICIT_MENTION])) {
+		if (in_array($type, [self::MENTION, self::EXCLUSIVE_MENTION, self::IMPLICIT_MENTION, self::TO, self::CC, self::BTO, self::BCC, self::AUDIENCE, self::ATTRIBUTED])) {
 			if (empty($url)) {
 				// No mention without a contact url
 				return;
@@ -99,50 +115,38 @@ class Tag
 				Logger::notice('Wrong scheme in url', ['url' => $url, 'callstack' => System::callstack(20)]);
 			}
 
-			if (!$probing) {
-				$condition = ['nurl' => Strings::normaliseLink($url), 'uid' => 0, 'deleted' => false];
-				$contact = DBA::selectFirst('contact', ['id'], $condition, ['order' => ['id']]);
-				if (DBA::isResult($contact)) {
-					$cid = $contact['id'];
-					Logger::info('Got id for contact url', ['cid' => $cid, 'url' => $url]);
-				}
-
-				if (empty($cid)) {
-					$ssl_url = str_replace('http://', 'https://', $url);
-					$condition = ['`alias` IN (?, ?, ?) AND `uid` = ? AND NOT `deleted`', $url, Strings::normaliseLink($url), $ssl_url, 0];
-					$contact = DBA::selectFirst('contact', ['id'], $condition, ['order' => ['id']]);
-					if (DBA::isResult($contact)) {
-						$cid = $contact['id'];
-						Logger::info('Got id for contact alias', ['cid' => $cid, 'url' => $url]);
-					}
-				}
-			} else {
-				$cid = Contact::getIdForURL($url, 0, false);
-				Logger::info('Got id by probing', ['cid' => $cid, 'url' => $url]);
-			}
+			$cid = Contact::getIdForURL($url, 0, false);
+			Logger::debug('Got id for contact', ['cid' => $cid, 'url' => $url]);
 
 			if (empty($cid)) {
-				// The contact wasn't found in the system (most likely some dead account)
-				// We ensure that we only store a single entry by overwriting the previous name
-				Logger::info('Contact not found, updating tag', ['url' => $url, 'name' => $name]);
-				DBA::update('tag', ['name' => substr($name, 0, 96)], ['url' => $url]);
+				$tag = DBA::selectFirst('tag', ['name', 'type'], ['url' => $url]);
+				if (!empty($tag)) {
+					if ($tag['name'] != substr($name, 0, 96)) {
+						DBA::update('tag', ['name' => substr($name, 0, 96)], ['url' => $url, 'type' => $tag['type']]);
+					}
+					if (!empty($target) && ($tag['type'] != $target)) {
+						DBA::update('tag', ['type' => $target], ['url' => $url]);
+					}
+				}
 			}
 		}
 
 		if (empty($cid)) {
-			if (($type != self::HASHTAG) && !empty($url) && ($url != $name)) {
-				$url = strtolower($url);
-			} else {
-				$url = '';
+			if (!in_array($type, [self::TO, self::CC, self::BTO, self::BCC, self::AUDIENCE, self::ATTRIBUTED])) {
+				if (($type != self::HASHTAG) && !empty($url) && ($url != $name)) {
+					$url = strtolower($url);
+				} else {
+					$url = '';
+				}
 			}
 
-			$tagid = self::getID($name, $url);
+			$tagid = self::getID($name, $url, $target);
 			if (empty($tagid)) {
 				return;
 			}
 		}
 
-		$fields = ['uri-id' => $uriid, 'type' => $type, 'tid' => $tagid, 'cid' => $cid];
+		$fields = ['uri-id' => $uriId, 'type' => $type, 'tid' => $tagid, 'cid' => $cid];
 
 		if (in_array($type, [self::MENTION, self::EXCLUSIVE_MENTION, self::IMPLICIT_MENTION])) {
 			$condition = $fields;
@@ -155,23 +159,85 @@ class Tag
 
 		DBA::insert('post-tag', $fields, Database::INSERT_IGNORE);
 
-		Logger::info('Stored tag/mention', ['uri-id' => $uriid, 'tag-id' => $tagid, 'contact-id' => $cid, 'name' => $name, 'type' => $type, 'callstack' => System::callstack(8)]);
+		Logger::debug('Stored tag/mention', ['uri-id' => $uriId, 'tag-id' => $tagid, 'contact-id' => $cid, 'name' => $name, 'type' => $type, 'callstack' => System::callstack(8)]);
 	}
 
 	/**
-	 * Get a tag id for a given tag name and url
+	 * Fetch the target type for the given url
 	 *
-	 * @param string $name
 	 * @param string $url
-	 * @return void
+	 * @param bool   $fetch Fetch information via network operations
+	 * @return null|int
 	 */
-	public static function getID(string $name, string $url = '')
+	public static function getTargetType(string $url, bool $fetch = true)
+	{
+		$target = null;
+
+		if (empty($url)) {
+			return $target;
+		}
+
+		$tag = DBA::selectFirst('tag', ['url', 'type'], ['url' => $url]);
+		if (!empty($tag['type'])) {
+			$target = $tag['type'];
+			if ($target != self::GENERAL_COLLECTION) {
+				Logger::debug('Found existing type', ['type' => $tag['type'], 'url' => $url]);
+				return $target;
+			}
+		}
+
+		if ($url == ActivityPub::PUBLIC_COLLECTION) {
+			$target = self::PUBLIC_COLLECTION;
+			Logger::debug('Public collection', ['url' => $url]);
+		} else {
+			if (DBA::exists('apcontact', ['followers' => $url])) {
+				$target = self::FOLLOWER_COLLECTION;
+				Logger::debug('Found collection via existing apcontact', ['url' => $url]);
+			} elseif (Contact::getIdForURL($url, 0, $fetch ? null : false)) {
+				$target = self::ACCOUNT;
+				Logger::debug('URL is an account', ['url' => $url]);
+			} elseif ($fetch && ($target != self::GENERAL_COLLECTION)) {
+				$content = ActivityPub::fetchContent($url);
+				if (!empty($content['type']) && ($content['type'] == 'OrderedCollection')) {
+					$target = self::GENERAL_COLLECTION;
+					Logger::debug('URL is an ordered collection', ['url' => $url]);
+				}
+			}
+		}
+
+		if (!empty($target) && !empty($tag['url']) && ($tag['type'] != $target)) {
+			DBA::update('tag', ['type' => $target], ['url' => $url]);
+		}
+
+		if (empty($target)) {
+			Logger::debug('No type could be detected', ['url' => $url]);
+		}
+
+		return $target;
+	}
+
+	/**
+	 * Get a tag id for a given tag name and URL
+	 *
+	 * @param string $name Name of tag
+	 * @param string $url
+	 * @param int    $type Type of tag
+	 * @return int Tag id
+	 */
+	public static function getID(string $name, string $url = '', int $type = null): int
 	{
 		$fields = ['name' => substr($name, 0, 96), 'url' => $url];
 
-		$tag = DBA::selectFirst('tag', ['id'], $fields);
+		$tag = DBA::selectFirst('tag', ['id', 'type'], $fields);
 		if (DBA::isResult($tag)) {
+			if (empty($tag['type']) && !empty($type)) {
+				DBA::update('tag', ['type' => $type], $fields);
+			}
 			return $tag['id'];
+		}
+
+		if (!empty($type)) {
+			$fields['type'] = $type;
 		}
 
 		DBA::insert('tag', $fields, Database::INSERT_IGNORE);
@@ -180,6 +246,9 @@ class Tag
 			return $tid;
 		}
 
+		// Also log type
+		$fields['type'] = $type;
+
 		Logger::error('No tag id created', $fields);
 		return 0;
 	}
@@ -187,46 +256,83 @@ class Tag
 	/**
 	 * Store tag/mention elements
 	 *
-	 * @param integer $uriid
+	 * @param integer $uriId
 	 * @param string $hash
 	 * @param string $name
 	 * @param string $url
-	 * @param boolean $probing
+	 * @return void
 	 */
-	public static function storeByHash(int $uriid, string $hash, string $name, string $url = '', $probing = true)
+	public static function storeByHash(int $uriId, string $hash, string $name, string $url = '')
 	{
 		$type = self::getTypeForHash($hash);
 		if ($type == self::UNKNOWN) {
 			return;
 		}
 
-		self::store($uriid, $type, $name, $url, $probing);
+		self::store($uriId, $type, $name, $url);
+	}
+
+	/**
+	 * Get tags and mentions from the body
+	 *
+	 * @param string  $body    Body of the post
+	 * @param string  $tags    Accepted tags
+	 *
+	 * @return array Tag list
+	 */
+	public static function getFromBody(string $body, string $tags = null): array
+	{
+		if (is_null($tags)) {
+			$tags = self::TAG_CHARACTER[self::HASHTAG] . self::TAG_CHARACTER[self::MENTION] . self::TAG_CHARACTER[self::EXCLUSIVE_MENTION];
+		}
+
+		if (!preg_match_all("/([" . $tags . "])\[url\=([^\[\]]*)\]([^\[\]]*)\[\/url\]/ism", $body, $result, PREG_SET_ORDER)) {
+			return [];
+		}
+
+		return $result;
 	}
 
 	/**
 	 * Store tags and mentions from the body
-	 * 
-	 * @param integer $uriid   URI-Id
+	 *
+	 * @param integer $uriId   URI-Id
 	 * @param string  $body    Body of the post
 	 * @param string  $tags    Accepted tags
-	 * @param boolean $probing Perform a probing for contacts, adding them if needed
+	 * @return void
 	 */
-	public static function storeFromBody(int $uriid, string $body, string $tags = null, $probing = true)
+	public static function storeFromBody(int $uriId, string $body, string $tags = null)
 	{
+		$item = ['uri-id' => $uriId, 'body' => $body, 'quote-uri-id' => null];
+		self::storeFromArray($item, $tags);
+	}
+
+	/**
+	 * Store tags and mentions from the item array
+	 *
+	 * @param array   $item    Item array
+	 * @param string  $tags    Accepted tags
+	 * @return void
+	 */
+	public static function storeFromArray(array $item, string $tags = null)
+	{
+		Logger::info('Check for tags', ['uri-id' => $item['uri-id'], 'hash' => $tags, 'callstack' => System::callstack()]);
+
 		if (is_null($tags)) {
-			$tags =  self::TAG_CHARACTER[self::HASHTAG] . self::TAG_CHARACTER[self::MENTION] . self::TAG_CHARACTER[self::EXCLUSIVE_MENTION];
+			$tags = self::TAG_CHARACTER[self::HASHTAG] . self::TAG_CHARACTER[self::MENTION] . self::TAG_CHARACTER[self::EXCLUSIVE_MENTION];
 		}
 
-		Logger::info('Check for tags', ['uri-id' => $uriid, 'hash' => $tags, 'callstack' => System::callstack()]);
-
-		if (!preg_match_all("/([" . $tags . "])\[url\=([^\[\]]*)\]([^\[\]]*)\[\/url\]/ism", $body, $result, PREG_SET_ORDER)) {
-			return;
+		foreach (self::getFromBody($item['body'], $tags) as $tag) {
+			self::storeByHash($item['uri-id'], $tag[1], $tag[3], $tag[2]);
 		}
 
-		Logger::info('Found tags', ['uri-id' => $uriid, 'hash' => $tags, 'result' => $result]);
+		$shared = DI::contentItem()->getSharedPost($item, ['uri-id']);
 
-		foreach ($result as $tag) {
-			self::storeByHash($uriid, $tag[1], $tag[3], $tag[2], $probing);
+		// Search for hashtags in the shared body (but only if hashtags are wanted)
+		if (!empty($shared) && (strpos($tags, self::TAG_CHARACTER[self::HASHTAG]) !== false)) {
+			foreach (self::getByURIId($shared['post']['uri-id'], [self::HASHTAG]) as $tag) {
+				self::store($item['uri-id'], $tag['type'], $tag['name'], $tag['url']);
+			}
 		}
 	}
 
@@ -234,51 +340,53 @@ class Tag
 	 * Store raw tags (not encapsulated in links) from the body
 	 * This function is needed in the intermediate phase.
 	 * Later we can call item::setHashtags in advance to have all tags converted.
-	 * 
-	 * @param integer $uriid URI-Id
+	 *
+	 * @param integer $uriId URI-Id
 	 * @param string  $body   Body of the post
+	 * @return void
 	 */
-	public static function storeRawTagsFromBody(int $uriid, string $body)
+	public static function storeRawTagsFromBody(int $uriId, string $body)
 	{
-		Logger::info('Check for tags', ['uri-id' => $uriid, 'callstack' => System::callstack()]);
+		Logger::info('Check for tags', ['uri-id' => $uriId, 'callstack' => System::callstack()]);
 
 		$result = BBCode::getTags($body);
 		if (empty($result)) {
 			return;
 		}
 
-		Logger::info('Found tags', ['uri-id' => $uriid, 'result' => $result]);
+		Logger::info('Found tags', ['uri-id' => $uriId, 'result' => $result]);
 
 		foreach ($result as $tag) {
 			if (substr($tag, 0, 1) != self::TAG_CHARACTER[self::HASHTAG]) {
 				continue;
 			}
-			self::storeByHash($uriid, substr($tag, 0, 1), substr($tag, 1));
+			self::storeByHash($uriId, substr($tag, 0, 1), substr($tag, 1));
 		}
 	}
 
 	/**
 	 * Checks for stored hashtags and mentions for the given post
 	 *
-	 * @param integer $uriid
+	 * @param integer $uriId
 	 * @return bool
 	 */
-	public static function existsForPost(int $uriid)
+	public static function existsForPost(int $uriId): bool
 	{
-		return DBA::exists('post-tag', ['uri-id' => $uriid, 'type' => [self::HASHTAG, self::MENTION, self::IMPLICIT_MENTION, self::EXCLUSIVE_MENTION]]);
+		return DBA::exists('post-tag', ['uri-id' => $uriId, 'type' => [self::HASHTAG, self::MENTION, self::EXCLUSIVE_MENTION, self::IMPLICIT_MENTION]]);
 	}
 
 	/**
 	 * Remove tag/mention
 	 *
-	 * @param integer $uriid
-	 * @param integer $type
-	 * @param string $name
-	 * @param string $url
+	 * @param integer $uriId
+	 * @param integer $type Type
+	 * @param string $name Name
+	 * @param string $url URL
+	 * @return void
 	 */
-	public static function remove(int $uriid, int $type, string $name, string $url = '')
+	public static function remove(int $uriId, int $type, string $name, string $url = '')
 	{
-		$condition = ['uri-id' => $uriid, 'type' => $type, 'url' => $url];
+		$condition = ['uri-id' => $uriId, 'type' => $type, 'url' => $url];
 		if ($type == self::HASHTAG) {
 			$condition['name'] = $name;
 		}
@@ -288,35 +396,36 @@ class Tag
 			return;
 		}
 
-		Logger::info('Removing tag/mention', ['uri-id' => $uriid, 'tid' => $tag['tid'], 'name' => $name, 'url' => $url, 'callstack' => System::callstack(8)]);
-		DBA::delete('post-tag', ['uri-id' => $uriid, 'type' => $type, 'tid' => $tag['tid'], 'cid' => $tag['cid']]);
+		Logger::debug('Removing tag/mention', ['uri-id' => $uriId, 'tid' => $tag['tid'], 'name' => $name, 'url' => $url, 'callstack' => System::callstack(8)]);
+		DBA::delete('post-tag', ['uri-id' => $uriId, 'type' => $type, 'tid' => $tag['tid'], 'cid' => $tag['cid']]);
 	}
 
 	/**
 	 * Remove tag/mention
 	 *
-	 * @param integer $uriid
+	 * @param integer $uriId
 	 * @param string $hash
 	 * @param string $name
 	 * @param string $url
+	 * @return void
 	 */
-	public static function removeByHash(int $uriid, string $hash, string $name, string $url = '')
+	public static function removeByHash(int $uriId, string $hash, string $name, string $url = '')
 	{
 		$type = self::getTypeForHash($hash);
 		if ($type == self::UNKNOWN) {
 			return;
 		}
 
-		self::remove($uriid, $type, $name, $url);
+		self::remove($uriId, $type, $name, $url);
 	}
 
 	/**
 	 * Get the type for the given hash
 	 *
 	 * @param string $hash
-	 * @return integer type
+	 * @return integer Tag type
 	 */
-	private static function getTypeForHash(string $hash)
+	private static function getTypeForHash(string $hash): int
 	{
 		if ($hash == self::TAG_CHARACTER[self::MENTION]) {
 			return self::MENTION;
@@ -334,22 +443,23 @@ class Tag
 	/**
 	 * Create implicit mentions for a given post
 	 *
-	 * @param integer $uri_id
-	 * @param integer $parent_uri_id
+	 * @param integer $uriId
+	 * @param integer $parentUriId
+	 * @return void
 	 */
-	public static function createImplicitMentions(int $uri_id, int $parent_uri_id)
+	public static function createImplicitMentions(int $uriId, int $parentUriId)
 	{
 		// Always mention the direct parent author
-		$parent = Item::selectFirst(['author-link', 'author-name'], ['uri-id' => $parent_uri_id]);
-		self::store($uri_id, self::IMPLICIT_MENTION, $parent['author-name'], $parent['author-link']);
+		$parent = Post::selectFirst(['author-link', 'author-name'], ['uri-id' => $parentUriId]);
+		self::store($uriId, self::IMPLICIT_MENTION, $parent['author-name'], $parent['author-link']);
 
 		if (DI::config()->get('system', 'disable_implicit_mentions')) {
 			return;
 		}
 
-		$tags = DBA::select('tag-view', ['name', 'url'], ['uri-id' => $parent_uri_id]);
+		$tags = DBA::select('tag-view', ['name', 'url'], ['uri-id' => $parentUriId, 'type' => [self::MENTION, self::EXCLUSIVE_MENTION, self::IMPLICIT_MENTION]]);
 		while ($tag = DBA::fetch($tags)) {
-			self::store($uri_id, self::IMPLICIT_MENTION, $tag['name'], $tag['url']);
+			self::store($uriId, self::IMPLICIT_MENTION, $tag['name'], $tag['url']);
 		}
 		DBA::close($tags);
 	}
@@ -357,30 +467,49 @@ class Tag
 	/**
 	 * Retrieves the terms from the provided type(s) associated with the provided item ID.
 	 *
-	 * @param int       $item_id
-	 * @param int|array $type
-	 * @return array
+	 * @param int   $uriId
+	 * @param array $type Tag type(s)
+	 * @return array|bool Array on success, false on error
 	 * @throws \Exception
 	 */
-	public static function getByURIId(int $uri_id, array $type = [self::HASHTAG, self::MENTION, self::IMPLICIT_MENTION, self::EXCLUSIVE_MENTION])
+	public static function getByURIId(int $uriId, array $type = [self::HASHTAG, self::MENTION, self::EXCLUSIVE_MENTION, self::IMPLICIT_MENTION])
 	{
-		$condition = ['uri-id' => $uri_id, 'type' => $type];
-		return DBA::selectToArray('tag-view', ['type', 'name', 'url'], $condition);
+		$condition = ['uri-id' => $uriId, 'type' => $type];
+		return DBA::selectToArray('tag-view', ['type', 'name', 'url', 'tag-type'], $condition);
+	}
+
+	/**
+	 * Checks if the given url is mentioned in the post
+	 *
+	 * @param integer $uriId
+	 * @param string $url
+	 * @param array $type
+	 *
+	 * @return boolean
+	 */
+	public static function isMentioned(int $uriId, string $url, array $type = [self::MENTION, self::EXCLUSIVE_MENTION]): bool
+	{
+		$tags = self::getByURIId($uriId, $type);
+		foreach ($tags as $tag) {
+			if (Strings::compareLink($url, $tag['url'])) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
 	 * Return a string with all tags and mentions
 	 *
-	 * @param integer $uri_id
-	 * @param array   $type
+	 * @param integer $uriId
+	 * @param array   $type Tag type(s)
 	 * @return string tags and mentions
 	 * @throws \Exception
 	 */
-	public static function getCSVByURIId(int $uri_id, array $type = [self::HASHTAG, self::MENTION, self::IMPLICIT_MENTION, self::EXCLUSIVE_MENTION])
+	public static function getCSVByURIId(int $uriId, array $type = [self::HASHTAG, self::MENTION, self::EXCLUSIVE_MENTION, self::IMPLICIT_MENTION]): string
 	{
 		$tag_list = [];
-		$tags = self::getByURIId($uri_id, $type);
-		foreach ($tags as $tag) {
+		foreach (self::getByURIId($uriId, $type) as $tag) {
 			$tag_list[] = self::TAG_CHARACTER[$tag['type']] . '[url=' . $tag['url'] . ']' . $tag['name'] . '[/url]';
 		}
 
@@ -396,7 +525,7 @@ class Tag
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	public static function populateFromItem(&$item)
+	public static function populateFromItem(array &$item): array
 	{
 		$return = [
 			'tags' => [],
@@ -405,10 +534,13 @@ class Tag
 			'implicit_mentions' => [],
 		];
 
-		$searchpath = DI::baseUrl() . "/search?tag=";
+		$searchpath = DI::baseUrl() . '/search?tag=';
 
-		$taglist = DBA::select('tag-view', ['type', 'name', 'url'],
-			['uri-id' => $item['uri-id'], 'type' => [self::HASHTAG, self::MENTION, self::EXCLUSIVE_MENTION, self::IMPLICIT_MENTION]]);
+		$taglist = DBA::select(
+			'tag-view',
+			['type', 'name', 'url', 'cid'],
+			['uri-id' => $item['uri-id'], 'type' => [self::HASHTAG, self::MENTION, self::EXCLUSIVE_MENTION, self::IMPLICIT_MENTION]]
+		);
 		while ($tag = DBA::fetch($taglist)) {
 			if ($tag['url'] == '') {
 				$tag['url'] = $searchpath . rawurlencode($tag['name']);
@@ -417,24 +549,33 @@ class Tag
 			$orig_tag = $tag['url'];
 
 			$prefix = self::TAG_CHARACTER[$tag['type']];
-			switch($tag['type']) {
+			switch ($tag['type']) {
 				case self::HASHTAG:
 					if ($orig_tag != $tag['url']) {
 						$item['body'] = str_replace($orig_tag, $tag['url'], $item['body']);
 					}
 
-					$return['hashtags'][] = $prefix . '<a href="' . $tag['url'] . '" target="_blank" rel="noopener noreferrer">' . htmlspecialchars($tag['name']) . '</a>';
-					$return['tags'][] = $prefix . '<a href="' . $tag['url'] . '" target="_blank" rel="noopener noreferrer">' . htmlspecialchars($tag['name']) . '</a>';
+					$return['hashtags'][] = '<bdi>' . $prefix . '<a href="' . $tag['url'] . '" target="_blank" rel="noopener noreferrer">' . htmlspecialchars($tag['name']) . '</a></bdi>';
+					$return['tags'][] = '<bdi>' . $prefix . '<a href="' . $tag['url'] . '" target="_blank" rel="noopener noreferrer">' . htmlspecialchars($tag['name']) . '</a></bdi>';
 					break;
+
 				case self::MENTION:
 				case self::EXCLUSIVE_MENTION:
+					if (!empty($tag['cid'])) {
+						$tag['url'] = Contact::magicLinkById($tag['cid']);
+					} else {
 						$tag['url'] = Contact::magicLink($tag['url']);
-					$return['mentions'][] = $prefix . '<a href="' . $tag['url'] . '" target="_blank" rel="noopener noreferrer">' . htmlspecialchars($tag['name']) . '</a>';
-					$return['tags'][] = $prefix . '<a href="' . $tag['url'] . '" target="_blank" rel="noopener noreferrer">' . htmlspecialchars($tag['name']) . '</a>';
+					}
+					$return['mentions'][] = '<bdi>' . $prefix . '<a href="' . $tag['url'] . '" target="_blank" rel="noopener noreferrer">' . htmlspecialchars($tag['name']) . '</a></bdi>';
+					$return['tags'][] = '<bdi>' . $prefix . '<a href="' . $tag['url'] . '" target="_blank" rel="noopener noreferrer">' . htmlspecialchars($tag['name']) . '</a></bdi>';
 					break;
+
 				case self::IMPLICIT_MENTION:
 					$return['implicit_mentions'][] = $prefix . $tag['name'];
 					break;
+
+				default:
+					Logger::warning('Unknown tag type found', $tag);
 			}
 		}
 		DBA::close($taglist);
@@ -449,31 +590,34 @@ class Tag
 	 * @param integer $uid
 	 * @return integer number of posts
 	 */
-	public static function countByTag(string $search, int $uid = 0)
+	public static function countByTag(string $search, int $uid = 0): int
 	{
-		$condition = ["`name` = ? AND (NOT `private` OR (`private` AND `uid` = ?))
-			AND `uri-id` IN (SELECT `uri-id` FROM `item` WHERE `network` IN (?, ?, ?, ?))",
-			$search, $uid, Protocol::ACTIVITYPUB, Protocol::DFRN, Protocol::DIASPORA, Protocol::OSTATUS];
-		$params = ['group_by' => ['uri-id']];
+		$condition = ["`name` = ? AND (`uid` = ? OR (`uid` = ? AND NOT `global`))
+			AND (`network` IN (?, ?, ?, ?) OR (`uid` = ? AND `uid` != ?))",
+			$search, 0, $uid,
+			Protocol::ACTIVITYPUB, Protocol::DFRN, Protocol::DIASPORA, Protocol::OSTATUS, $uid, 0,
+		];
 
-		return DBA::count('tag-search-view', $condition, $params);
+		return DBA::count('tag-search-view', $condition);
 	}
 
 	/**
 	 * Search posts for given tag
 	 *
-	 * @param string $search
-	 * @param integer $uid
-	 * @param integer $start
-	 * @param integer $limit
+	 * @param string $search Tag to search for
+	 * @param integer $uid User Id
+	 * @param integer $start Starting record
+	 * @param integer $limit Maximum count of records
 	 * @param integer $last_uriid
 	 * @return array with URI-ID
 	 */
-	public static function getURIIdListByTag(string $search, int $uid = 0, int $start = 0, int $limit = 100, int $last_uriid = 0)
+	public static function getURIIdListByTag(string $search, int $uid = 0, int $start = 0, int $limit = 100, int $last_uriid = 0): array
 	{
-		$condition = ["`name` = ? AND (NOT `private` OR (`private` AND `uid` = ?))
-			AND `uri-id` IN (SELECT `uri-id` FROM `item` WHERE `network` IN (?, ?, ?, ?))",
-			$search, $uid, Protocol::ACTIVITYPUB, Protocol::DFRN, Protocol::DIASPORA, Protocol::OSTATUS];
+		$condition = ["`name` = ? AND (`uid` = ? OR (`uid` = ? AND NOT `global`))
+			AND (`network` IN (?, ?, ?, ?) OR (`uid` = ? AND `uid` != ?))",
+			$search, 0, $uid,
+			Protocol::ACTIVITYPUB, Protocol::DFRN, Protocol::DIASPORA, Protocol::OSTATUS, $uid, 0,
+		];
 
 		if (!empty($last_uriid)) {
 			$condition = DBA::mergeConditions($condition, ["`uri-id` < ?", $last_uriid]);
@@ -481,19 +625,18 @@ class Tag
 
 		$params = [
 			'order' => ['uri-id' => true],
-			'group_by' => ['uri-id'],
 			'limit' => [$start, $limit]
 		];
 
 		$tags = DBA::select('tag-search-view', ['uri-id'], $condition, $params);
 
-		$uriids = [];
+		$uriIds = [];
 		while ($tag = DBA::fetch($tags)) {
-			$uriids[] = $tag['uri-id'];
+			$uriIds[] = $tag['uri-id'];
 		}
 		DBA::close($tags);
 
-		return $uriids;
+		return $uriIds;
 	}
 
 	/**
@@ -501,17 +644,36 @@ class Tag
 	 *
 	 * @param int $period Period in hours to consider posts
 	 * @param int $limit  Number of returned tags
+	 * @param int $offset  Page offset in results
 	 * @return array
 	 * @throws \Exception
 	 */
-	public static function getGlobalTrendingHashtags(int $period, $limit = 10)
+	public static function getGlobalTrendingHashtags(int $period, int $limit = 10, int $offset = 0): array
 	{
-		$tags = DI::cache()->get('global_trending_tags-' . $period . '-' . $limit);
-		if (!empty($tags)) {
-			return $tags;
-		} else {
-			return self::setGlobalTrendingHashtags($period, $limit);
+		$tags = DI::cache()->get("global_trending_tags-$period");
+		if (empty($tags)) {
+			$tags = self::setGlobalTrendingHashtags($period, 1000);
 		}
+		return array_slice($tags, $offset, $limit);
+	}
+
+	/**
+	 * Fetch the blocked tags as SQL
+	 *
+	 * @return string SQL for blocked tag names or empty string
+	 */
+	private static function getBlockedSQL(): string
+	{
+		$blocked_txt = DI::config()->get('system', 'blocked_tags');
+		if (empty($blocked_txt)) {
+			return '';
+		}
+
+		$blocked = explode(',', $blocked_txt);
+		array_walk($blocked, function (&$value) {
+			$value = "'" . DBA::escape(trim($value)) . "'";
+		});
+		return ' AND NOT `name` IN (' . implode(',', $blocked) . ')';
 	}
 
 	/**
@@ -522,17 +684,38 @@ class Tag
 	 * @return array
 	 * @throws \Exception
 	 */
-	public static function setGlobalTrendingHashtags(int $period, int $limit = 10)
+	public static function setGlobalTrendingHashtags(int $period, int $limit = 10): array
 	{
-		$tagsStmt = DBA::p("SELECT `name` AS `term`, COUNT(*) AS `score`
+		/*
+		* Get a uri-id that is at least X hours old.
+		* We use the uri-id in the query for the hash tags since this is much faster
+		*/
+		$post = Post::selectFirstThread(
+			['uri-id'],
+			["`uid` = ? AND `received` < ?", 0, DateTimeFormat::utc('now - ' . $period . ' hour')],
+			['order' => ['received' => true]]
+		);
+
+		if (empty($post['uri-id'])) {
+			return [];
+		}
+
+		$block_sql = self::getBlockedSQL();
+
+		$tagsStmt = DBA::p(
+			"SELECT `name` AS `term`, COUNT(*) AS `score`, COUNT(DISTINCT(`author-id`)) as `authors`
 			FROM `tag-search-view`
-			WHERE `private` = ? AND `uid` = ? AND `received` > DATE_SUB(NOW(), INTERVAL ? HOUR)
-			GROUP BY `term` ORDER BY `score` DESC LIMIT ?",
-			Item::PUBLIC, 0, $period, $limit);
+			WHERE `private` = ? AND `uid` = ? AND `uri-id` > ? $block_sql
+			GROUP BY `term` ORDER BY `authors` DESC, `score` DESC LIMIT ?",
+			Item::PUBLIC,
+			0,
+			$post['uri-id'],
+			$limit
+		);
 
 		if (DBA::isResult($tagsStmt)) {
 			$tags = DBA::toArray($tagsStmt);
-			DI::cache()->set('global_trending_tags-' . $period . '-' . $limit, $tags, Duration::DAY);
+			DI::cache()->set("global_trending_tags-$period", $tags, Duration::HOUR);
 			return $tags;
 		}
 
@@ -544,17 +727,17 @@ class Tag
 	 *
 	 * @param int $period Period in hours to consider posts
 	 * @param int $limit  Number of returned tags
+	 * @param int $offset  Page offset in results
 	 * @return array
 	 * @throws \Exception
 	 */
-	public static function getLocalTrendingHashtags(int $period, $limit = 10)
+	public static function getLocalTrendingHashtags(int $period, $limit = 10, int $offset = 0): array
 	{
-		$tags = DI::cache()->get('local_trending_tags-' . $period . '-' . $limit);
-		if (!empty($tags)) {
-			return $tags;
-		} else {
-			return self::setLocalTrendingHashtags($period, $limit);
+		$tags = DI::cache()->get("local_trending_tags-$period");
+		if (empty($tags)) {
+			$tags = self::setLocalTrendingHashtags($period, 1000);
 		}
+		return array_slice($tags, $offset, $limit);
 	}
 
 	/**
@@ -565,17 +748,34 @@ class Tag
 	 * @return array
 	 * @throws \Exception
 	 */
-	public static function setLocalTrendingHashtags(int $period, int $limit = 10)
+	public static function setLocalTrendingHashtags(int $period, int $limit = 10): array
 	{
-		$tagsStmt = DBA::p("SELECT `name` AS `term`, COUNT(*) AS `score`
+		// Get a uri-id that is at least X hours old.
+		// We use the uri-id in the query for the hash tags since this is much faster
+		$post = Post::selectFirstThread(
+			['uri-id'],
+			["`uid` = ? AND `received` < ?", 0, DateTimeFormat::utc('now - ' . $period . ' hour')],
+			['order' => ['received' => true]]
+		);
+		if (empty($post['uri-id'])) {
+			return [];
+		}
+
+		$block_sql = self::getBlockedSQL();
+
+		$tagsStmt = DBA::p(
+			"SELECT `name` AS `term`, COUNT(*) AS `score`, COUNT(DISTINCT(`author-id`)) as `authors`
 			FROM `tag-search-view`
-			WHERE `private` = ? AND `wall` AND `origin` AND `received` > DATE_SUB(NOW(), INTERVAL ? HOUR)
-			GROUP BY `term` ORDER BY `score` DESC LIMIT ?",
-			Item::PUBLIC, $period, $limit);
+			WHERE `private` = ? AND `wall` AND `origin` AND `uri-id` > ? $block_sql
+			GROUP BY `term` ORDER BY `authors` DESC, `score` DESC LIMIT ?",
+			Item::PUBLIC,
+			$post['uri-id'],
+			$limit
+		);
 
 		if (DBA::isResult($tagsStmt)) {
 			$tags = DBA::toArray($tagsStmt);
-			DI::cache()->set('local_trending_tags-' . $period . '-' . $limit, $tags, Duration::DAY);
+			DI::cache()->set("local_trending_tags-$period", $tags, Duration::HOUR);
 			return $tags;
 		}
 
@@ -585,11 +785,11 @@ class Tag
 	/**
 	 * Check if the provided tag is of one of the provided term types.
 	 *
-	 * @param string $tag
+	 * @param string $tag Tag name
 	 * @param int    ...$types
 	 * @return bool
 	 */
-	public static function isType($tag, ...$types)
+	public static function isType(string $tag, ...$types): bool
 	{
 		$tag_chars = [];
 		foreach ($types as $type) {
@@ -607,7 +807,7 @@ class Tag
 	 * @param string $tag
 	 * @return array User list
 	 */
-	private static function getUIDListByTag(string $tag)
+	private static function getUIDListByTag(string $tag): array
 	{
 		$uids = [];
 		$searches = DBA::select('search', ['uid'], ['term' => $tag]);
@@ -622,13 +822,13 @@ class Tag
 	/**
 	 * Fetch user who subscribed to the tags of the given item
 	 *
-	 * @param integer $uri_id
+	 * @param integer $uriId
 	 * @return array User list
 	 */
-	public static function getUIDListByURIId(int $uri_id)
+	public static function getUIDListByURIId(int $uriId): array
 	{
 		$uids = [];
-		$tags = self::getByURIId($uri_id, [self::HASHTAG]);
+		$tags = self::getByURIId($uriId, [self::HASHTAG]);
 
 		foreach ($tags as $tag) {
 			$uids = array_merge($uids, self::getUIDListByTag(self::TAG_CHARACTER[self::HASHTAG] . $tag['name']));

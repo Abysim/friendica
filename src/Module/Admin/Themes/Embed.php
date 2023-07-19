@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,48 +21,63 @@
 
 namespace Friendica\Module\Admin\Themes;
 
+use Friendica\App;
+use Friendica\Core\L10n;
 use Friendica\Core\Renderer;
 use Friendica\DI;
 use Friendica\Module\BaseAdmin;
+use Friendica\Module\Response;
+use Friendica\Util\Profiler;
 use Friendica\Util\Strings;
+use Psr\Log\LoggerInterface;
 
 class Embed extends BaseAdmin
 {
-	public static function init(array $parameters = [])
+	/** @var App */
+	protected $app;
+	/** @var App\Mode */
+	protected $mode;
+
+	public function __construct(App $app, L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, Response $response, App\Mode $mode, array $server, array $parameters = [])
 	{
-		$theme = Strings::sanitizeFilePathItem($parameters['theme']);
+		parent::__construct($l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
+
+		$this->app  = $app;
+		$this->mode = $mode;
+
+		$theme = Strings::sanitizeFilePathItem($this->parameters['theme']);
 		if (is_file("view/theme/$theme/config.php")) {
-			DI::app()->setCurrentTheme($theme);
+			$this->app->setCurrentTheme($theme);
 		}
 	}
 
-	public static function post(array $parameters = [])
+	protected function post(array $request = [])
 	{
 		self::checkAdminAccess();
 
-		$theme = Strings::sanitizeFilePathItem($parameters['theme']);
+		$theme = Strings::sanitizeFilePathItem($this->parameters['theme']);
 		if (is_file("view/theme/$theme/config.php")) {
 			require_once "view/theme/$theme/config.php";
 			if (function_exists('theme_admin_post')) {
 				self::checkFormSecurityTokenRedirectOnError('/admin/themes/' . $theme . '/embed?mode=minimal', 'admin_theme_settings');
-				theme_admin_post(DI::app());
+				theme_admin_post($this->app);
 			}
 		}
 
-		if (DI::mode()->isAjax()) {
+		if ($this->mode->isAjax()) {
 			return;
 		}
 
-		DI::baseUrl()->redirect('admin/themes/' . $theme . '/embed?mode=minimal');
+		$this->baseUrl->redirect('admin/themes/' . $theme . '/embed?mode=minimal');
 	}
 
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		parent::content($parameters);
+		parent::content();
 
-		$theme = Strings::sanitizeFilePathItem($parameters['theme']);
+		$theme = Strings::sanitizeFilePathItem($this->parameters['theme']);
 		if (!is_dir("view/theme/$theme")) {
-			notice(DI::l10n()->t('Unknown theme.'));
+			DI::sysmsg()->addNotice($this->t('Unknown theme.'));
 			return '';
 		}
 
@@ -71,7 +86,7 @@ class Embed extends BaseAdmin
 			require_once "view/theme/$theme/config.php";
 
 			if (function_exists('theme_admin')) {
-				$admin_form = theme_admin(DI::app());
+				$admin_form = theme_admin($this->app);
 			}
 		}
 
@@ -80,7 +95,7 @@ class Embed extends BaseAdmin
 
 		$t = Renderer::getMarkupTemplate('admin/addons/embed.tpl');
 		return Renderer::replaceMacros($t, [
-			'$action' => '/admin/themes/' . $theme . '/embed?mode=minimal',
+			'$action' => 'admin/themes/' . $theme . '/embed?mode=minimal',
 			'$form' => $admin_form,
 			'$form_security_token' => self::getFormSecurityToken("admin_theme_settings"),
 		]);

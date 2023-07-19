@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,15 +21,15 @@
 
 namespace Friendica\Model;
 
+use Friendica\Core\ACL;
 use Friendica\Core\Logger;
 use Friendica\Core\System;
 use Friendica\Core\Worker;
-use Friendica\DI;
 use Friendica\Database\DBA;
-use Friendica\Model\Notify\Type;
+use Friendica\DI;
 use Friendica\Protocol\Activity;
+use Friendica\Protocol\Delivery;
 use Friendica\Util\DateTimeFormat;
-use Friendica\Worker\Delivery;
 
 /**
  * Class to handle private messages
@@ -37,15 +37,16 @@ use Friendica\Worker\Delivery;
 class Mail
 {
 	/**
-	 * Insert received private message
+	 * Insert private message
 	 *
 	 * @param array $msg
+	 * @param bool  $notification
 	 * @return int|boolean Message ID or false on error
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 * @throws \ImagickException
 	 */
-	public static function insert($msg)
+	public static function insert(array $msg, bool $notification = true)
 	{
-		$user = User::getById($msg['uid']);
-
 		if (!isset($msg['reply'])) {
 			$msg['reply'] = DBA::exists('mail', ['parent-uri' => $msg['parent-uri']]);
 		}
@@ -58,11 +59,14 @@ class Mail
 		}
 
 		if (empty($msg['guid'])) {
-			$host = parse_url($msg['from-url'], PHP_URL_HOST);
-			$msg['guid'] = Item::guidFromUri($msg['uri'], $host);
+			$msg['guid'] = Item::guidFromUri($msg['uri'], parse_url($msg['from-url'], PHP_URL_HOST));
 		}
 
 		$msg['created'] = (!empty($msg['created']) ? DateTimeFormat::utc($msg['created']) : DateTimeFormat::utcNow());
+
+		$msg['author-id']     = Contact::getIdForURL($msg['from-url'], 0, false);
+		$msg['uri-id']        = ItemURI::insert(['uri' => $msg['uri'], 'guid' => $msg['guid']]);
+		$msg['parent-uri-id'] = ItemURI::getIdByURI($msg['parent-uri']);
 
 		DBA::lock('mail');
 
@@ -70,6 +74,14 @@ class Mail
 			DBA::unlock();
 			Logger::info('duplicate message already delivered.');
 			return false;
+		}
+
+		if ($msg['reply'] && DBA::isResult($reply = DBA::selectFirst('mail', ['uri', 'uri-id'], ['parent-uri' => $msg['parent-uri'], 'reply' => false]))) {
+			$msg['thr-parent']    = $reply['uri'];
+			$msg['thr-parent-id'] = $reply['uri-id'];
+		} else {
+			$msg['thr-parent']    = $msg['uri'];
+			$msg['thr-parent-id'] = $msg['uri-id'];
 		}
 
 		DBA::insert('mail', $msg);
@@ -82,19 +94,22 @@ class Mail
 			DBA::update('conv', ['updated' => DateTimeFormat::utcNow()], ['id' => $msg['convid']]);
 		}
 
-		// send notifications.
-		$notif_params = [
-			'type'  => Type::MAIL,
-			'otype' => Notify\ObjectType::MAIL,
-			'verb'  => Activity::POST,
-			'uid'   => $user['uid'],
-			'cid'   => $msg['contact-id'],
-			'link'  => DI::baseUrl() . '/message/' . $msg['id'],
-		];
+		if ($notification) {
+			$user = User::getById($msg['uid']);
+			// send notifications.
+			$notif_params = [
+				'type'  => Notification\Type::MAIL,
+				'otype' => Notification\ObjectType::MAIL,
+				'verb'  => Activity::POST,
+				'uid'   => $user['uid'],
+				'cid'   => $msg['contact-id'],
+				'link'  => DI::baseUrl() . '/message/' . $msg['id'],
+			];
 
-		notification($notif_params);
+			DI::notify()->createFromArray($notif_params);
 
-		Logger::info('Mail is processed, notification was sent.', ['id' => $msg['id'], 'uri' => $msg['uri']]);
+			Logger::info('Mail is processed, notification was sent.', ['id' => $msg['id'], 'uri' => $msg['uri']]);
+		}
 
 		return $msg['id'];
 	}
@@ -102,6 +117,7 @@ class Mail
 	/**
 	 * Send private message
 	 *
+	 * @param integer $sender_uid the user id of the sender
 	 * @param integer $recipient recipient id, default 0
 	 * @param string  $body      message body, default empty
 	 * @param string  $subject   message subject, default empty
@@ -109,7 +125,7 @@ class Mail
 	 * @return int
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function send($recipient = 0, $body = '', $subject = '', $replyto = '')
+	public static function send(int $sender_uid, int $recipient = 0, string $body = '', string $subject = '', string $replyto = ''): int
 	{
 		$a = DI::app();
 
@@ -121,20 +137,24 @@ class Mail
 			$subject = DI::l10n()->t('[no subject]');
 		}
 
-		$me = DBA::selectFirst('contact', [], ['uid' => local_user(), 'self' => true]);
+		$me = DBA::selectFirst('contact', [], ['uid' => $sender_uid, 'self' => true]);
 		if (!DBA::isResult($me)) {
 			return -2;
 		}
 
-		$contact = DBA::selectFirst('contact', [], ['id' => $recipient, 'uid' => local_user()]);
-		if (!DBA::isResult($contact)) {
+		$contacts = ACL::getValidMessageRecipientsForUser($sender_uid);
+
+		$contactIndex = array_search($recipient, array_column($contacts, 'id'));
+		if ($contactIndex === false) {
 			return -2;
 		}
 
-		Photo::setPermissionFromBody($body, local_user(), $me['id'],  '<' . $contact['id'] . '>', '', '', '');
+		$contact = $contacts[$contactIndex];
+
+		Photo::setPermissionFromBody($body, $sender_uid, $me['id'], '<' . $contact['id'] . '>', '', '', '');
 
 		$guid = System::createUUID();
-		$uri = Item::newURI(local_user(), $guid);
+		$uri = Item::newURI($guid);
 
 		$convid = 0;
 		$reply = false;
@@ -144,7 +164,7 @@ class Mail
 		if (strlen($replyto)) {
 			$reply = true;
 			$condition = ["`uid` = ? AND (`uri` = ? OR `parent-uri` = ?)",
-				local_user(), $replyto, $replyto];
+				$sender_uid, $replyto, $replyto];
 			$mail = DBA::selectFirst('mail', ['convid'], $condition);
 			if (DBA::isResult($mail)) {
 				$convid = $mail['convid'];
@@ -154,27 +174,19 @@ class Mail
 		$convuri = '';
 		if (!$convid) {
 			// create a new conversation
-			$recip_host = substr($contact['url'], strpos($contact['url'], '://') + 3);
-			$recip_host = substr($recip_host, 0, strpos($recip_host, '/'));
-
-			$recip_handle = (($contact['addr']) ? $contact['addr'] : $contact['nick'] . '@' . $recip_host);
-			$sender_handle = $a->user['nickname'] . '@' . substr(DI::baseUrl(), strpos(DI::baseUrl(), '://') + 3);
-
 			$conv_guid = System::createUUID();
-			$convuri = $recip_handle . ':' . $conv_guid;
+			$convuri = $contact['addr'] . ':' . $conv_guid;
 
-			$handles = $recip_handle . ';' . $sender_handle;
-
-			$fields = ['uid' => local_user(), 'guid' => $conv_guid, 'creator' => $sender_handle,
+			$fields = ['uid' => $sender_uid, 'guid' => $conv_guid, 'creator' => $me['addr'],
 				'created' => DateTimeFormat::utcNow(), 'updated' => DateTimeFormat::utcNow(),
-				'subject' => $subject, 'recips' => $handles];
+				'subject' => $subject, 'recips' => $contact['addr'] . ';' . $me['addr']];
 			if (DBA::insert('conv', $fields)) {
 				$convid = DBA::lastInsertId();
 			}
 		}
 
 		if (!$convid) {
-			Logger::log('send message: conversation not found.');
+			Logger::warning('conversation not found.');
 			return -4;
 		}
 
@@ -182,11 +194,9 @@ class Mail
 			$replyto = $convuri;
 		}
 
-		$post_id = null;
-		$success = DBA::insert(
-			'mail',
+		$post_id = self::insert(
 			[
-				'uid' => local_user(),
+				'uid' => $sender_uid,
 				'guid' => $guid,
 				'convid' => $convid,
 				'from-name' => $me['name'],
@@ -201,12 +211,9 @@ class Mail
 				'uri' => $uri,
 				'parent-uri' => $replyto,
 				'created' => DateTimeFormat::utcNow()
-			]
+			],
+			false
 		);
-
-		if ($success) {
-			$post_id = DBA::lastInsertId();
-		}
 
 		/**
 		 *
@@ -226,14 +233,14 @@ class Mail
 				foreach ($images as $image) {
 					$image_rid = Photo::ridFromURI($image);
 					if (!empty($image_rid)) {
-						Photo::update(['allow-cid' => '<' . $recipient . '>'], ['resource-id' => $image_rid, 'album' => 'Wall Photos', 'uid' => local_user()]);
+						Photo::update(['allow-cid' => '<' . $recipient . '>'], ['resource-id' => $image_rid, 'album' => 'Wall Photos', 'uid' => $sender_uid]);
 					}
 				}
 			}
 		}
 
 		if ($post_id) {
-			Worker::add(PRIORITY_HIGH, "Notifier", Delivery::MAIL, $post_id);
+			Worker::add(Worker::PRIORITY_HIGH, "Notifier", Delivery::MAIL, $post_id);
 			return intval($post_id);
 		} else {
 			return -3;
@@ -249,7 +256,7 @@ class Mail
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	public static function sendWall(array $recipient = [], $body = '', $subject = '', $replyto = '')
+	public static function sendWall(array $recipient = [], string $body = '', string $subject = '', string $replyto = ''): int
 	{
 		if (!$recipient) {
 			return -1;
@@ -260,7 +267,7 @@ class Mail
 		}
 
 		$guid = System::createUUID();
-		$uri = Item::newURI(local_user(), $guid);
+		$uri = Item::newURI($guid);
 
 		$me = Contact::getByURL($replyto);
 		if (!$me['name']) {
@@ -284,12 +291,11 @@ class Mail
 		}
 
 		if (!$convid) {
-			Logger::log('send message: conversation not found.');
+			Logger::warning('conversation not found.');
 			return -4;
 		}
 
-		DBA::insert(
-			'mail',
+		self::insert(
 			[
 				'uid' => $recipient['uid'],
 				'guid' => $guid,
@@ -307,7 +313,8 @@ class Mail
 				'parent-uri' => $me['url'],
 				'created' => DateTimeFormat::utcNow(),
 				'unknown' => 1
-			]
+			],
+			false
 		);
 
 		return 0;

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,8 +25,11 @@ use Friendica\BaseModule;
 use Friendica\Core\Logger;
 use Friendica\Core\Protocol;
 use Friendica\Core\Renderer;
+use Friendica\Database\Database;
 use Friendica\Database\DBA;
 use Friendica\DI;
+use Friendica\Network\HTTPException;
+use Friendica\Protocol\ActivityPub;
 
 /**
  * functions for interacting with the group database table
@@ -36,9 +39,16 @@ class Group
 	const FOLLOWERS = '~';
 	const MUTUALS = '&';
 
-	public static function getByUserId($uid, $includesDeleted = false)
+	/**
+	 * Fetches group record by user id and maybe includes deleted groups as well
+	 *
+	 * @param int  $uid User id to fetch group(s) for
+	 * @param bool $includesDeleted Whether deleted groups should be included
+	 * @return array|bool Array on success, bool on error
+	 */
+	public static function getByUserId(int $uid, bool $includesDeleted = false)
 	{
-		$conditions = ['uid' => $uid];
+		$conditions = ['uid' => $uid, 'cid' => null];
 
 		if (!$includesDeleted) {
 			$conditions['deleted'] = false;
@@ -48,15 +58,18 @@ class Group
 	}
 
 	/**
-	 * @param int $group_id
+	 * Checks whether given group id is found in database
+	 *
+	 * @param int $group_id Group id
+	 * @param int $uid Optional user id
 	 * @return bool
 	 * @throws \Exception
 	 */
-	public static function exists($group_id, $uid = null)
+	public static function exists(int $group_id, int $uid = null): bool
 	{
 		$condition = ['id' => $group_id, 'deleted' => false];
 
-		if (isset($uid)) {
+		if (!is_null($uid)) {
 			$condition = [
 				'uid' => $uid
 			];
@@ -70,12 +83,12 @@ class Group
 	 *
 	 * Note: If we found a deleted group with the same name, we restore it
 	 *
-	 * @param int    $uid
-	 * @param string $name
-	 * @return boolean
+	 * @param int    $uid User id to create group for
+	 * @param string $name Name of group
+	 * @return int|boolean Id of newly created group or false on error
 	 * @throws \Exception
 	 */
-	public static function create($uid, $name)
+	public static function create(int $uid, string $name)
 	{
 		$return = false;
 		if (!empty($uid) && !empty($name)) {
@@ -89,7 +102,7 @@ class Group
 				$group = DBA::selectFirst('group', ['deleted'], ['id' => $gid]);
 				if (DBA::isResult($group) && $group['deleted']) {
 					DBA::update('group', ['deleted' => 0], ['id' => $gid]);
-					notice(DI::l10n()->t('A deleted group with this name was revived. Existing item permissions <strong>may</strong> apply to this group and any future members. If this is not what you intended, please create another group with a different name.'));
+					DI::sysmsg()->addNotice(DI::l10n()->t('A deleted group with this name was revived. Existing item permissions <strong>may</strong> apply to this group and any future members. If this is not what you intended, please create another group with a different name.'));
 				}
 				return true;
 			}
@@ -111,7 +124,7 @@ class Group
 	 * @return bool Was the update successful?
 	 * @throws \Exception
 	 */
-	public static function update($id, $name)
+	public static function update(int $id, string $name): bool
 	{
 		return DBA::update('group', ['name' => $name], ['id' => $id]);
 	}
@@ -119,31 +132,35 @@ class Group
 	/**
 	 * Get a list of group ids a contact belongs to
 	 *
-	 * @param int $cid
-	 * @return array
+	 * @param int $cid Contact id
+	 * @return array Group ids
 	 * @throws \Exception
 	 */
-	public static function getIdsByContactId($cid)
+	public static function getIdsByContactId(int $cid): array
 	{
-		$return = [];
+		$contact = Contact::getById($cid, ['rel']);
+		if (!$contact) {
+			return [];
+		}
+
+		$groupIds = [];
 
 		$stmt = DBA::select('group_member', ['gid'], ['contact-id' => $cid]);
 		while ($group = DBA::fetch($stmt)) {
-			$return[] = $group['gid'];
+			$groupIds[] = $group['gid'];
 		}
 		DBA::close($stmt);
 
 		// Meta-groups
-		$contact = Contact::getById($cid, ['rel']);
 		if ($contact['rel'] == Contact::FOLLOWER || $contact['rel'] == Contact::FRIEND) {
-			$return[] = self::FOLLOWERS;
+			$groupIds[] = self::FOLLOWERS;
 		}
 
 		if ($contact['rel'] == Contact::FRIEND) {
-			$return[] = self::MUTUALS;
+			$groupIds[] = self::MUTUALS;
 		}
 
-		return $return;
+		return $groupIds;
 	}
 
 	/**
@@ -160,7 +177,7 @@ class Group
 	public static function countUnseen()
 	{
 		$stmt = DBA::p("SELECT `group`.`id`, `group`.`name`,
-				(SELECT COUNT(*) FROM `item` FORCE INDEX (`uid_unseen_contactid`)
+				(SELECT COUNT(*) FROM `post-user`
 					WHERE `uid` = ?
 					AND `unseen`
 					AND `contact-id` IN
@@ -170,8 +187,8 @@ class Group
 					) AS `count`
 				FROM `group`
 				WHERE `group`.`uid` = ?;",
-			local_user(),
-			local_user()
+			DI::userSession()->getLocalUserId(),
+			DI::userSession()->getLocalUserId()
 		);
 
 		return DBA::toArray($stmt);
@@ -182,12 +199,12 @@ class Group
 	 *
 	 * Returns false if no group has been found.
 	 *
-	 * @param int    $uid
-	 * @param string $name
-	 * @return int|boolean
+	 * @param int    $uid User id
+	 * @param string $name Group name
+	 * @return int|boolean Groups' id number or false on error
 	 * @throws \Exception
 	 */
-	public static function getIdByName($uid, $name)
+	public static function getIdByName(int $uid, string $name)
 	{
 		if (!$uid || !strlen($name)) {
 			return false;
@@ -208,7 +225,7 @@ class Group
 	 * @return boolean
 	 * @throws \Exception
 	 */
-	public static function remove($gid)
+	public static function remove(int $gid): bool
 	{
 		if (!$gid) {
 			return false;
@@ -252,28 +269,6 @@ class Group
 	}
 
 	/**
-	 * Mark a group as deleted based on its name
-	 *
-	 * @param int    $uid
-	 * @param string $name
-	 * @return bool
-	 * @throws \Exception
-	 * @deprecated Use Group::remove instead
-	 *
-	 */
-	public static function removeByName($uid, $name)
-	{
-		$return = false;
-		if (!empty($uid) && !empty($name)) {
-			$gid = self::getIdByName($uid, $name);
-
-			$return = self::remove($gid);
-		}
-
-		return $return;
-	}
-
-	/**
 	 * Adds a contact to a group
 	 *
 	 * @param int $gid
@@ -281,21 +276,24 @@ class Group
 	 * @return boolean
 	 * @throws \Exception
 	 */
-	public static function addMember($gid, $cid)
+	public static function addMember(int $gid, int $cid): bool
 	{
 		if (!$gid || !$cid) {
 			return false;
 		}
 
-		$row_exists = DBA::exists('group_member', ['gid' => $gid, 'contact-id' => $cid]);
-		if ($row_exists) {
-			// Row already existing, nothing to do
-			$return = true;
-		} else {
-			$return = DBA::insert('group_member', ['gid' => $gid, 'contact-id' => $cid]);
+		// @TODO Backward compatibility with user contacts, remove by version 2022.03
+		$group = DBA::selectFirst('group', ['uid'], ['id' => $gid]);
+		if (empty($group)) {
+			throw new HTTPException\NotFoundException('Group not found.');
 		}
 
-		return $return;
+		$cdata = Contact::getPublicAndUserContactID($cid, $group['uid']);
+		if (empty($cdata['user'])) {
+			throw new HTTPException\NotFoundException('Invalid contact.');
+		}
+
+		return DBA::insert('group_member', ['gid' => $gid, 'contact-id' => $cdata['user']], Database::INSERT_IGNORE);
 	}
 
 	/**
@@ -306,55 +304,111 @@ class Group
 	 * @return boolean
 	 * @throws \Exception
 	 */
-	public static function removeMember($gid, $cid)
+	public static function removeMember(int $gid, int $cid): bool
 	{
 		if (!$gid || !$cid) {
 			return false;
 		}
 
-		$return = DBA::delete('group_member', ['gid' => $gid, 'contact-id' => $cid]);
+		// @TODO Backward compatibility with user contacts, remove by version 2022.03
+		$group = DBA::selectFirst('group', ['uid'], ['id' => $gid]);
+		if (empty($group)) {
+			throw new HTTPException\NotFoundException('Group not found.');
+		}
 
-		return $return;
+		$cdata = Contact::getPublicAndUserContactID($cid, $group['uid']);
+		if (empty($cdata['user'])) {
+			throw new HTTPException\NotFoundException('Invalid contact.');
+		}
+
+		return DBA::delete('group_member', ['gid' => $gid, 'contact-id' => $cid]);
 	}
 
 	/**
-	 * Removes a contact from a group based on its name
+	 * Adds contacts to a group
 	 *
-	 * @param int    $uid
-	 * @param string $name
-	 * @param int    $cid
-	 * @return boolean
+	 * @param int $gid
+	 * @param array $contacts Array with contact ids
+	 * @return void
 	 * @throws \Exception
-	 * @deprecated Use Group::removeMember instead
-	 *
 	 */
-	public static function removeMemberByName($uid, $name, $cid)
+	public static function addMembers(int $gid, array $contacts)
 	{
-		$gid = self::getIdByName($uid, $name);
+		if (!$gid || !$contacts) {
+			return;
+		}
 
-		$return = self::removeMember($gid, $cid);
+		// @TODO Backward compatibility with user contacts, remove by version 2022.03
+		$group = DBA::selectFirst('group', ['uid'], ['id' => $gid]);
+		if (empty($group)) {
+			throw new HTTPException\NotFoundException('Group not found.');
+		}
 
-		return $return;
+		foreach ($contacts as $cid) {
+			$cdata = Contact::getPublicAndUserContactID($cid, $group['uid']);
+			if (empty($cdata['user'])) {
+				throw new HTTPException\NotFoundException('Invalid contact.');
+			}
+
+			DBA::insert('group_member', ['gid' => $gid, 'contact-id' => $cdata['user']], Database::INSERT_IGNORE);
+		}
+	}
+
+	/**
+	 * Removes contacts from a group
+	 *
+	 * @param int $gid Group id
+	 * @param array $contacts Contact ids
+	 * @return bool
+	 * @throws \Exception
+	 */
+	public static function removeMembers(int $gid, array $contacts)
+	{
+		if (!$gid || !$contacts) {
+			return false;
+		}
+
+		// @TODO Backward compatibility with user contacts, remove by version 2022.03
+		$group = DBA::selectFirst('group', ['uid'], ['id' => $gid]);
+		if (empty($group)) {
+			throw new HTTPException\NotFoundException('Group not found.');
+		}
+
+		$contactIds = [];
+
+		foreach ($contacts as $cid) {
+			$cdata = Contact::getPublicAndUserContactID($cid, $group['uid']);
+			if (empty($cdata['user'])) {
+				throw new HTTPException\NotFoundException('Invalid contact.');
+			}
+
+			$contactIds[] = $cdata['user'];
+		}
+
+		// Return status of deletion
+		return DBA::delete('group_member', ['gid' => $gid, 'contact-id' => $contactIds]);
 	}
 
 	/**
 	 * Returns the combined list of contact ids from a group id list
 	 *
-	 * @param int     $uid
-	 * @param array   $group_ids
-	 * @param boolean $check_dead
+	 * @param int     $uid              User id
+	 * @param array   $group_ids        Groups ids
+	 * @param boolean $check_dead       Whether check "dead" records (?)
+	 * @param boolean $expand_followers Expand the list of followers
 	 * @return array
 	 * @throws \Exception
 	 */
-	public static function expand($uid, array $group_ids, $check_dead = false)
+	public static function expand(int $uid, array $group_ids, bool $check_dead = false, bool $expand_followers = true): array
 	{
 		if (!is_array($group_ids) || !count($group_ids)) {
 			return [];
 		}
 
-		$return = [];
-		$pubmail = false;
-		$networks = Protocol::SUPPORT_PRIVATE;
+		$return               = [];
+		$pubmail              = false;
+		$followers_collection = false;
+		$networks             = Protocol::SUPPORT_PRIVATE;
 
 		$mailacct = DBA::selectFirst('mailacct', ['pubmail'], ['`uid` = ? AND `server` != ""', $uid]);
 		if (DBA::isResult($mailacct)) {
@@ -367,20 +421,23 @@ class Group
 
 		$key = array_search(self::FOLLOWERS, $group_ids);
 		if ($key !== false) {
-			$followers = Contact::selectToArray(['id'], [
-				'uid' => $uid,
-				'rel' => [Contact::FOLLOWER, Contact::FRIEND],
-				'network' => $networks,
-				'contact-type' => [Contact::TYPE_UNKNOWN, Contact::TYPE_PERSON],
-				'archive' => false,
-				'pending' => false,
-				'blocked' => false,
-			]);
+			if ($expand_followers) {
+				$followers = Contact::selectToArray(['id'], [
+					'uid' => $uid,
+					'rel' => [Contact::FOLLOWER, Contact::FRIEND],
+					'network' => $networks,
+					'contact-type' => [Contact::TYPE_UNKNOWN, Contact::TYPE_PERSON],
+					'archive' => false,
+					'pending' => false,
+					'blocked' => false,
+				]);
 
-			foreach ($followers as $follower) {
-				$return[] = $follower['id'];
+				foreach ($followers as $follower) {
+					$return[] = $follower['id'];
+				}
+			} else {
+				$followers_collection = true;
 			}
-
 			unset($group_ids[$key]);
 		}
 
@@ -413,19 +470,23 @@ class Group
 			$return = Contact::pruneUnavailable($return);
 		}
 
+		if ($followers_collection) {
+			$return[] = -1;
+		}
+
 		return $return;
 	}
 
 	/**
 	 * Returns a templated group selection list
 	 *
-	 * @param int    $uid
+	 * @param int    $uid User id
 	 * @param int    $gid   An optional pre-selected group
 	 * @param string $label An optional label of the list
 	 * @return string
 	 * @throws \Exception
 	 */
-	public static function displayGroupSelection($uid, $gid = 0, $label = '')
+	public static function displayGroupSelection(int $uid, int $gid = 0, string $label = ''): string
 	{
 		$display_groups = [
 			[
@@ -435,7 +496,7 @@ class Group
 			]
 		];
 
-		$stmt = DBA::select('group', [], ['deleted' => 0, 'uid' => $uid], ['order' => ['name']]);
+		$stmt = DBA::select('group', [], ['deleted' => false, 'uid' => $uid, 'cid' => null], ['order' => ['name']]);
 		while ($group = DBA::fetch($stmt)) {
 			$display_groups[] = [
 				'name' => $group['name'],
@@ -467,14 +528,14 @@ class Group
 	 *    'standard' => include link 'Edit groups'
 	 *    'extended' => include link 'Create new group'
 	 *    'full' => include link 'Create new group' and provide for each group a link to edit this group
-	 * @param string $group_id
-	 * @param int    $cid
-	 * @return string
+	 * @param string|int $group_id Distinct group id or 'everyone'
+	 * @param int    $cid Contact id
+	 * @return string Sidebar widget HTML code
 	 * @throws \Exception
 	 */
-	public static function sidebarWidget($every = 'contact', $each = 'group', $editmode = 'standard', $group_id = '', $cid = 0)
+	public static function sidebarWidget(string $every = 'contact', string $each = 'group', string $editmode = 'standard', $group_id = '', int $cid = 0)
 	{
-		if (!local_user()) {
+		if (!DI::userSession()->getLocalUserId()) {
 			return '';
 		}
 
@@ -492,7 +553,7 @@ class Group
 			$member_of = self::getIdsByContactId($cid);
 		}
 
-		$stmt = DBA::select('group', [], ['deleted' => 0, 'uid' => local_user()], ['order' => ['name']]);
+		$stmt = DBA::select('group', [], ['deleted' => false, 'uid' => DI::userSession()->getLocalUserId(), 'cid' => null], ['order' => ['name']]);
 		while ($group = DBA::fetch($stmt)) {
 			$selected = (($group_id == $group['id']) ? ' group-selected' : '');
 
@@ -546,5 +607,81 @@ class Group
 		]);
 
 		return $o;
+	}
+
+	/**
+	 * Fetch the group id for the given contact id
+	 *
+	 * @param integer $id Contact ID
+	 * @return integer Group IO
+	 */
+	public static function getIdForForum(int $id): int
+	{
+		Logger::info('Get id for forum id', ['id' => $id]);
+		$contact = Contact::getById($id, ['uid', 'name', 'contact-type', 'manually-approve']);
+		if (empty($contact) || ($contact['contact-type'] != Contact::TYPE_COMMUNITY) || !$contact['manually-approve']) {
+			return 0;
+		}
+
+		$group = DBA::selectFirst('group', ['id'], ['uid' => $contact['uid'], 'cid' => $id]);
+		if (empty($group)) {
+			$fields = [
+				'uid'  => $contact['uid'],
+				'name' => $contact['name'],
+				'cid'  => $id,
+			];
+			DBA::insert('group', $fields);
+			$gid = DBA::lastInsertId();
+		} else {
+			$gid = $group['id'];
+		}
+
+		return $gid;
+	}
+
+	/**
+	 * Fetch the followers of a given contact id and store them as group members
+	 *
+	 * @param integer $id Contact ID
+	 * @return void
+	 */
+	public static function updateMembersForForum(int $id)
+	{
+		Logger::info('Update forum members', ['id' => $id]);
+
+		$contact = Contact::getById($id, ['uid', 'url']);
+		if (empty($contact)) {
+			return;
+		}
+
+		$apcontact = APContact::getByURL($contact['url']);
+		if (empty($apcontact['followers'])) {
+			return;
+		}
+
+		$gid = self::getIdForForum($id);
+		if (empty($gid)) {
+			return;
+		}
+
+		$group_members = DBA::selectToArray('group_member', ['contact-id'], ['gid' => $gid]);
+		if (!empty($group_members)) {
+			$current = array_unique(array_column($group_members, 'contact-id'));
+		} else {
+			$current = [];
+		}
+
+		foreach (ActivityPub::fetchItems($apcontact['followers'], $contact['uid']) as $follower) {
+			$id = Contact::getIdForURL($follower);
+			if (!in_array($id, $current)) {
+				DBA::insert('group_member', ['gid' => $gid, 'contact-id' => $id]);
+			} else {
+				$key = array_search($id, $current);
+				unset($current[$key]);
+			}
+		}
+
+		DBA::delete('group_member', ['gid' => $gid, 'contact-id' => $current]);
+		Logger::info('Updated forum members', ['id' => $id, 'count' => DBA::count('group_member', ['gid' => $gid])]);
 	}
 }

@@ -1,5 +1,5 @@
-<script src="{{$baseurl}}/view/theme/quattro/jquery.tools.min.js?v={{$smarty.const.FRIENDICA_VERSION}}"></script>
-<script type="text/javascript" src="{{$baseurl}}/view/js/ajaxupload.js?v={{$smarty.const.FRIENDICA_VERSION}}" ></script>
+<script src="{{$baseurl}}/view/theme/frio/js/jquery.tools.min.js?v={{$smarty.const.FRIENDICA_VERSION}}"></script>
+<script type="text/javascript" src="{{$baseurl}}/view/js/ajaxupload.js?v={{$smarty.const.FRIENDICA_VERSION}}"></script>
 
 <div class="form-group field select">
 	<label for="id_{{$scheme.0}}">{{$scheme.1}}</label>
@@ -192,22 +192,26 @@
 		// Create colorpickers
 		$("#frio_nav_bg, #frio_nav_icon_color, #frio_background_color, #frio_link_color, #frio_login_bg_color").colorpicker({format: 'hex', align: 'left'});
 
-		// show image options when user user starts to type the address of the image
-		$("#id_frio_background_image").keyup(function(){
-			var elText = $(this).val();
-			if(elText.length !== 0) {
-				$("#frio_bg_image_options").show();
-			} else {
-				$("#frio_bg_image_options").hide();
-			}
-		});
+		if ($("#id_frio_background_image").length) {
+			// show image options when user starts to type the address of the image
+			$("#id_frio_background_image").keyup(function () {
+				const elText = $(this).val();
+				if (elText.length !== 0) {
+					$("#frio_bg_image_options").show();
+				} else {
+					$("#frio_bg_image_options").hide();
+				}
+			});
 
-		// show the image options is there is allready an image
-		if($("#id_frio_background_image").val().length != 0) {
+			// show the image options if there is already an image
+			if ($("#id_frio_background_image").val().length != 0) {
 				$("#frio_bg_image_options").show();
+			}
 		}
 	});
 </script>
+
+{{include file="field_checkbox.tpl" field=$always_open_compose}}
 
 <div class="settings-submit-wrapper pull-right">
 	<button type="submit" value="{{$submit}}" class="settings-submit btn btn-primary" name="frio-settings-submit">{{$submit}}</button>

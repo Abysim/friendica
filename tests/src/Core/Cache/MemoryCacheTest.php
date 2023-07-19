@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,20 +22,20 @@
 namespace Friendica\Test\src\Core\Cache;
 
 use Exception;
-use Friendica\Core\Cache\IMemoryCache;
+use Friendica\Core\Cache\Capability\ICanCacheInMemory;
 
 abstract class MemoryCacheTest extends CacheTest
 {
 	/**
-	 * @var IMemoryCache
+	 * @var \Friendica\Core\Cache\Capability\ICanCacheInMemory
 	 */
 	protected $instance;
 
-	protected function setUp()
+	protected function setUp(): void
 	{
 		parent::setUp();
 
-		if (!($this->instance instanceof IMemoryCache)) {
+		if (!($this->instance instanceof ICanCacheInMemory)) {
 			throw new Exception('MemoryCacheTest unsupported');
 		}
 	}

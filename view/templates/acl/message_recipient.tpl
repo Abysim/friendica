@@ -1,4 +1,5 @@
-<select name="recipient" class="form-control input-lg" id="recipient">
+<select name="recipient" class="form-control input-lg" id="recipient" required>
+	<option></option>
 	{{foreach $contacts as $contact}}
 		<option value="{{$contact.id}}"{{if $contact.id == $selected}} selected{{/if}}>{{$contact.name}}</option>
 	{{/foreach}}
@@ -8,7 +9,7 @@
 		let $recipient_input = $('[name="recipient"]');
 
 		let acl = new Bloodhound({
-			local: {{$contacts|@json_encode nofilter}},
+			local: {{$contacts_json nofilter}},
 			identify: function(obj) { return obj.id.toString(); },
 			datumTokenizer: Bloodhound.tokenizers.obj.whitespace(['name', 'addr']),
 			queryTokenizer: Bloodhound.tokenizers.whitespace,
@@ -48,7 +49,9 @@
 			}
 		});
 
+		{{if $selected}}
 		// Import existing ACL into the tags input fields.
 		$recipient_input.tagsinput('add', acl.get({{$selected}})[0]);
+		{{/if}}
 	});
 </script>

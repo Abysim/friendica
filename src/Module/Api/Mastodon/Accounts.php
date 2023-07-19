@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,6 +24,7 @@ namespace Friendica\Module\Api\Mastodon;
 use Friendica\Core\System;
 use Friendica\Database\DBA;
 use Friendica\DI;
+use Friendica\Model\Contact;
 use Friendica\Module\BaseApi;
 
 /**
@@ -32,21 +33,31 @@ use Friendica\Module\BaseApi;
 class Accounts extends BaseApi
 {
 	/**
-	 * @param array $parameters
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-		if (empty($parameters['id'])) {
-			DI::mstdnError()->RecordNotFound();
+		$uid = self::getCurrentUserID();
+
+		if (empty($this->parameters['id']) && empty($this->parameters['name'])) {
+			DI::mstdnError()->UnprocessableEntity();
 		}
 
-		$id = $parameters['id'];
-		if (!DBA::exists('contact', ['id' => $id, 'uid' => 0])) {
-			DI::mstdnError()->RecordNotFound();
+		if (!empty($this->parameters['id'])) {
+			$id = $this->parameters['id'];
+			if (!DBA::exists('contact', ['id' => $id, 'uid' => 0])) {
+				DI::mstdnError()->RecordNotFound();
+			}
+		} else {
+			$contact = Contact::selectFirst(['id'], ['nick' => $this->parameters['name'], 'uid' => 0]);
+			if (!empty($contact['id'])) {
+				$id = $contact['id'];
+			} elseif (!($id = Contact::getIdForURL($this->parameters['name'], 0, false))) {
+				DI::mstdnError()->RecordNotFound();
+			}
 		}
 
-		$account = DI::mstdnAccount()->createFromContactId($id);
+		$account = DI::mstdnAccount()->createFromContactId($id, $uid);
 		System::jsonExit($account);
 	}
 }

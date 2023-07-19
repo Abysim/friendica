@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,7 @@ use Friendica\Network\HTTPException;
 
 class InternalServerErrorException extends HTTPException
 {
-	protected $code = 500;
+	protected $code        = 500;
+	protected $httpdesc    = 'Internal Server Error';
+	protected $explanation = 'An unexpected condition was encountered and no more specific message is suitable.';
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,14 +21,14 @@
 
 namespace Friendica\Object\Api\Mastodon;
 
-use Friendica\BaseEntity;
+use Friendica\BaseDataTransferObject;
 
 /**
  * Class Activity
  *
  * @see https://docs.joinmastodon.org/entities/activity
  */
-class Activity extends BaseEntity
+class Activity extends BaseDataTransferObject
 {
 	/** @var string (UNIX Timestamp) */
 	protected $week;
@@ -40,7 +40,7 @@ class Activity extends BaseEntity
 	protected $registrations;
 
 	/**
-	 * Creates an activity 
+	 * Creates an activity
 	 *
 	 * @param array   $item
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException

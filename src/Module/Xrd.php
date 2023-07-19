@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,78 +22,75 @@
 namespace Friendica\Module;
 
 use Friendica\BaseModule;
-use Friendica\Core\Hook;
-use Friendica\Core\Renderer;
 use Friendica\Core\System;
-use Friendica\Database\DBA;
 use Friendica\DI;
 use Friendica\Model\Photo;
 use Friendica\Model\User;
+use Friendica\Network\HTTPException\NotFoundException;
 use Friendica\Protocol\ActivityNamespace;
 use Friendica\Protocol\Salmon;
-use Friendica\Util\Strings;
+use Friendica\Util\XML;
 
 /**
  * Prints responses to /.well-known/webfinger  or /xrd requests
  */
 class Xrd extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-		$app = DI::app();
-
 		// @TODO: Replace with parameter from router
-		if ($app->argv[0] == 'xrd') {
+		if (DI::args()->getArgv()[0] == 'xrd') {
 			if (empty($_GET['uri'])) {
 				return;
 			}
 
-			$uri = urldecode(Strings::escapeTags(trim($_GET['uri'])));
-			if (($_SERVER['HTTP_ACCEPT'] ?? '') == 'application/jrd+json') {
-				$mode = 'json';
+			$uri = urldecode(trim($_GET['uri']));
+			if (strpos($_SERVER['HTTP_ACCEPT'] ?? '', 'application/jrd+json') !== false)  {
+				$mode = Response::TYPE_JSON;
 			} else {
-				$mode = 'xml';
+				$mode = Response::TYPE_XML;
 			}
 		} else {
 			if (empty($_GET['resource'])) {
 				return;
 			}
 
-			$uri = urldecode(Strings::escapeTags(trim($_GET['resource'])));
-			if (($_SERVER['HTTP_ACCEPT'] ?? '') == 'application/xrd+xml') {
-				$mode = 'xml';
+			$uri = urldecode(trim($_GET['resource']));
+			if (strpos($_SERVER['HTTP_ACCEPT'] ?? '', 'application/xrd+xml') !== false)  {
+				$mode = Response::TYPE_XML;
 			} else {
-				$mode = 'json';
+				$mode = Response::TYPE_JSON;
 			}
 		}
 
 		if (substr($uri, 0, 4) === 'http') {
 			$name = ltrim(basename($uri), '~');
+			$host = parse_url($uri, PHP_URL_HOST);
 		} else {
 			$local = str_replace('acct:', '', $uri);
 			if (substr($local, 0, 2) == '//') {
 				$local = substr($local, 2);
 			}
 
-			$name = substr($local, 0, strpos($local, '@'));
+			list($name, $host) = explode('@', $local);
+		}
+
+		if (!empty($host) && $host !== DI::baseUrl()->getHost()) {
+			DI::logger()->notice('Invalid host name for xrd query',['host' => $host, 'uri' => $uri]);
+			throw new NotFoundException('Invalid host name for xrd query: ' . $host);
 		}
 
 		if ($name == User::getActorName()) {
 			$owner = User::getSystemAccount();
 			if (empty($owner)) {
-				throw new \Friendica\Network\HTTPException\NotFoundException();
+				throw new NotFoundException('System account was not found. Please setup your Friendica installation properly.');
 			}
-			self::printSystemJSON($owner);
+			$this->printSystemJSON($owner);
 		} else {
-			$user = User::getByNickname($name);
-			if (empty($user)) {
-				throw new \Friendica\Network\HTTPException\NotFoundException();
-			}
-
-			$owner = User::getOwnerDataById($user['uid']);
+			$owner = User::getOwnerDataByNick($name);
 			if (empty($owner)) {
-				DI::logger()->warning('No owner data for user id', ['uri' => $uri, 'name' => $name, 'user' => $user]);
-				throw new \Friendica\Network\HTTPException\NotFoundException();
+				DI::logger()->notice('No owner data for user id', ['uri' => $uri, 'name' => $name]);
+				throw new NotFoundException('Owner was not found for user->uid=' . $name);
 			}
 
 			$alias = str_replace('/profile/', '/~', $owner['url']);
@@ -105,15 +102,16 @@ class Xrd extends BaseModule
 			$avatar = ['type' => 'image/jpeg'];
 		}
 
-		if ($mode == 'xml') {
-			self::printXML($alias, DI::baseUrl()->get(), $user, $owner, $avatar);
+		if ($mode == Response::TYPE_XML) {
+			$this->printXML($alias, $owner, $avatar);
 		} else {
-			self::printJSON($alias, DI::baseUrl()->get(), $owner, $avatar);
+			$this->printJSON($alias, $owner, $avatar);
 		}
 	}
 
-	private static function printSystemJSON(array $owner)
+	private function printSystemJSON(array $owner)
 	{
+		$baseURL = (string)$this->baseUrl;
 		$json = [
 			'subject' => 'acct:' . $owner['addr'],
 			'aliases' => [$owner['url']],
@@ -130,7 +128,26 @@ class Xrd extends BaseModule
 				],
 				[
 					'rel'      => 'http://ostatus.org/schema/1.0/subscribe',
-					'template' => DI::baseUrl()->get() . '/follow?url={uri}',
+					'template' => $baseURL . '/contact/follow?url={uri}',
+				],
+				[
+					'rel'  => ActivityNamespace::FEED,
+					'type' => 'application/atom+xml',
+					'href' => $owner['poll'] ?? $baseURL,
+				],
+				[
+					'rel'  => 'salmon',
+					'href' => $baseURL . '/salmon/' . $owner['nickname'],
+				],
+				[
+					'rel'  => 'http://microformats.org/profile/hcard',
+					'type' => 'text/html',
+					'href' => $baseURL . '/hcard/' . $owner['nickname'],
+				],
+				[
+					'rel'  => 'http://joindiaspora.com/seed_location',
+					'type' => 'text/html',
+					'href' => $baseURL,
 				],
 			]
 		];
@@ -138,12 +155,9 @@ class Xrd extends BaseModule
 		System::jsonExit($json, 'application/jrd+json; charset=utf-8');
 	}
 
-	private static function printJSON($alias, $baseURL, $owner, $avatar)
+	private function printJSON(string $alias, array $owner, array $avatar)
 	{
-		$salmon_key = Salmon::salmonKey($owner['spubkey']);
-
-		header('Access-Control-Allow-Origin: *');
-		header('Content-type: application/json; charset=utf-8');
+		$baseURL = (string)$this->baseUrl;
 
 		$json = [
 			'subject' => 'acct:' . $owner['addr'],
@@ -177,13 +191,9 @@ class Xrd extends BaseModule
 					'href' => $baseURL . '/hcard/' . $owner['nickname'],
 				],
 				[
-					'rel'  => ActivityNamespace::POCO,
-					'href' => $owner['poco'],
-				],
-				[
 					'rel'  => 'http://webfinger.net/rel/avatar',
 					'type' => $avatar['type'],
-					'href' => $owner['photo'],
+					'href' => User::getAvatarUrl($owner),
 				],
 				[
 					'rel'  => 'http://joindiaspora.com/seed_location',
@@ -204,11 +214,11 @@ class Xrd extends BaseModule
 				],
 				[
 					'rel'      => 'http://ostatus.org/schema/1.0/subscribe',
-					'template' => $baseURL . '/follow?url={uri}',
+					'template' => $baseURL . '/contact/follow?url={uri}',
 				],
 				[
 					'rel'  => 'magic-public-key',
-					'href' => 'data:application/magic-public-key,' . $salmon_key,
+					'href' => 'data:application/magic-public-key,' . Salmon::salmonKey($owner['spubkey']),
 				],
 				[
 					'rel'  => 'http://purl.org/openwebauth/v1',
@@ -218,40 +228,105 @@ class Xrd extends BaseModule
 			],
 		];
 
-		echo json_encode($json);
-		exit();
+		header('Access-Control-Allow-Origin: *');
+		System::jsonExit($json, 'application/jrd+json; charset=utf-8');
 	}
 
-	private static function printXML($alias, $baseURL, $user, $owner, $avatar)
+	private function printXML(string $alias, array $owner, array $avatar)
 	{
-		$salmon_key = Salmon::salmonKey($owner['spubkey']);
+		$baseURL = (string)$this->baseUrl;
 
-		header('Access-Control-Allow-Origin: *');
-		header('Content-type: text/xml');
-
-		$tpl = Renderer::getMarkupTemplate('xrd_person.tpl');
-
-		$o = Renderer::replaceMacros($tpl, [
-			'$nick'        => $owner['nickname'],
-			'$accturi'     => 'acct:' . $owner['addr'],
-			'$alias'       => $alias,
-			'$profile_url' => $owner['url'],
-			'$hcard_url'   => $baseURL . '/hcard/' . $owner['nickname'],
-			'$atom'        => $owner['poll'],
-			'$poco_url'    => $owner['poco'],
-			'$photo'       => $owner['photo'],
-			'$type'        => $avatar['type'],
-			'$salmon'      => $baseURL . '/salmon/' . $owner['nickname'],
-			'$salmen'      => $baseURL . '/salmon/' . $owner['nickname'] . '/mention',
-			'$subscribe'   => $baseURL . '/follow?url={uri}',
-			'$openwebauth' => $baseURL . '/owa',
-			'$modexp'      => 'data:application/magic-public-key,' . $salmon_key
+		$xmlString = XML::fromArray([
+			'XRD' => [
+				'@attributes' => [
+					'xmlns'    => 'http://docs.oasis-open.org/ns/xri/xrd-1.0',
+				],
+				'Subject' => 'acct:' . $owner['addr'],
+				'1:Alias' => $owner['url'],
+				'2:Alias' => $alias,
+				'1:link' => [
+					'@attributes' => [
+						'rel'  => 'http://purl.org/macgirvin/dfrn/1.0',
+						'href' => $owner['url']
+					]
+				],
+				'2:link' => [
+					'@attributes' => [
+						'rel'  => 'http://schemas.google.com/g/2010#updates-from',
+						'type' => 'application/atom+xml',
+						'href' => $owner['poll']
+					]
+				],
+				'3:link' => [
+					'@attributes' => [
+						'rel'  => 'http://webfinger.net/rel/profile-page',
+						'type' => 'text/html',
+						'href' => $owner['url']
+					]
+				],
+				'4:link' => [
+					'@attributes' => [
+						'rel'  => 'http://microformats.org/profile/hcard',
+						'type' => 'text/html',
+						'href' => $baseURL . '/hcard/' . $owner['nickname']
+					]
+				],
+				'5:link' => [
+					'@attributes' => [
+						'rel'  => 'http://webfinger.net/rel/avatar',
+						'type' => $avatar['type'],
+						'href' => User::getAvatarUrl($owner)
+					]
+				],
+				'6:link' => [
+					'@attributes' => [
+						'rel'  => 'http://joindiaspora.com/seed_location',
+						'type' => 'text/html',
+						'href' => $baseURL
+					]
+				],
+				'7:link' => [
+					'@attributes' => [
+						'rel'  => 'salmon',
+						'href' => $baseURL . '/salmon/' . $owner['nickname']
+					]
+				],
+				'8:link' => [
+					'@attributes' => [
+						'rel'  => 'http://salmon-protocol.org/ns/salmon-replies',
+						'href' => $baseURL . '/salmon/' . $owner['nickname']
+					]
+				],
+				'9:link' => [
+					'@attributes' => [
+						'rel'  => 'http://salmon-protocol.org/ns/salmon-mention',
+						'href' => $baseURL . '/salmon/' . $owner['nickname'] . '/mention'
+					]
+				],
+				'10:link' => [
+					'@attributes' => [
+						'rel'  => 'http://ostatus.org/schema/1.0/subscribe',
+						'template' => $baseURL . '/contact/follow?url={uri}'
+					]
+				],
+				'11:link' => [
+					'@attributes' => [
+						'rel'  => 'magic-public-key',
+						'href' => 'data:application/magic-public-key,' . Salmon::salmonKey($owner['spubkey'])
+					]
+				],
+				'12:link' => [
+					'@attributes' => [
+						'rel'  => 'http://purl.org/openwebauth/v1',
+						'type' => 'application/x-zot+json',
+						'href' => $baseURL . '/owa'
+					]
+				],
+			],
 		]);
 
-		$arr = ['user' => $user, 'xml' => $o];
-		Hook::callAll('personal_xrd', $arr);
+		header('Access-Control-Allow-Origin: *');
 
-		echo $arr['xml'];
-		exit();
+		System::httpExit($xmlString, Response::TYPE_XML, 'application/xrd+xml');
 	}
 }

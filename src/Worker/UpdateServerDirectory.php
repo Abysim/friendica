@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,16 +22,16 @@
 namespace Friendica\Worker;
 
 use Friendica\Core\Logger;
-use Friendica\Database\DBA;
 use Friendica\DI;
 use Friendica\Model\Contact;
 use Friendica\Model\GServer;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
 
 class UpdateServerDirectory
 {
 	/**
 	 * Query the given server for their users
-	 * 
+	 *
 	 * @param array $gserver Server record
 	 */
 	public static function execute(array $gserver)
@@ -45,7 +45,7 @@ class UpdateServerDirectory
 
 	private static function discoverPoCo(array $gserver)
 	{
-		$result = DI::httpRequest()->fetch($gserver['poco'] . '?fields=urls');
+		$result = DI::httpClient()->fetch($gserver['poco'] . '?fields=urls', HttpClientAccept::JSON);
 		if (empty($result)) {
 			Logger::info('Empty result', ['url' => $gserver['url']]);
 			return;
@@ -77,8 +77,8 @@ class UpdateServerDirectory
 	}
 
 	private static function discoverMastodonDirectory(array $gserver)
-	{		
-		$result = DI::httpRequest()->fetch($gserver['url'] . '/api/v1/directory?order=new&local=true&limit=200&offset=0');
+	{
+		$result = DI::httpClient()->fetch($gserver['url'] . '/api/v1/directory?order=new&local=true&limit=200&offset=0', HttpClientAccept::JSON);
 		if (empty($result)) {
 			Logger::info('Empty result', ['url' => $gserver['url']]);
 			return;

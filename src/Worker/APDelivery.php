@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,12 +23,9 @@ namespace Friendica\Worker;
 
 use Friendica\Core\Logger;
 use Friendica\Core\Worker;
-use Friendica\Model\Contact;
-use Friendica\Model\Item;
 use Friendica\Model\Post;
+use Friendica\Model\User;
 use Friendica\Protocol\ActivityPub;
-use Friendica\Util\HTTPSignature;
-
 class APDelivery
 {
 	/**
@@ -39,67 +36,58 @@ class APDelivery
 	 * @param string  $inbox     The URL of the recipient profile
 	 * @param integer $uid       The ID of the user who triggered this delivery
 	 * @param array   $receivers The contact IDs related to the inbox URL for contact archival housekeeping
+	 * @param int     $uri_id    URI-ID of item to be transmitted
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	public static function execute(string $cmd, int $item_id, string $inbox, int $uid, array $receivers = [])
+	public static function execute(string $cmd, int $item_id, string $inbox, int $uid, array $receivers = [], int $uri_id = 0)
 	{
 		if (ActivityPub\Transmitter::archivedInbox($inbox)) {
-			Logger::info('Inbox is archived', ['cmd' => $cmd, 'inbox' => $inbox, 'id' => $item_id, 'uid' => $uid]);
-			if (in_array($cmd, [Delivery::POST])) {
-				$item = Item::selectFirst(['uri-id'], ['id' => $item_id]);
-				Post\DeliveryData::incrementQueueFailed($item['uri-id'] ?? 0);
+			Logger::info('Inbox is archived', ['cmd' => $cmd, 'inbox' => $inbox, 'id' => $item_id, 'uri-id' => $uri_id, 'uid' => $uid]);
+			if (empty($uri_id) && !empty($item_id)) {
+				$item = Post::selectFirst(['uri-id'], ['id' => $item_id]);
+				$uri_id = $item['uri-id'] ?? 0;
+			}
+			if (empty($uri_id)) {
+				$posts   = Post\Delivery::selectForInbox($inbox);
+				$uri_ids = array_column($posts, 'uri-id');
+			} else {
+				$uri_ids = [$uri_id];
+			}
+
+			foreach ($uri_ids as $uri_id) {
+				Post\Delivery::remove($uri_id, $inbox);
+				Post\DeliveryData::incrementQueueFailed($uri_id);
 			}
 			return;
 		}
 
-		Logger::info('Invoked', ['cmd' => $cmd, 'inbox' => $inbox, 'id' => $item_id, 'uid' => $uid]);
+		Logger::debug('Invoked', ['cmd' => $cmd, 'inbox' => $inbox, 'id' => $item_id, 'uri-id' => $uri_id, 'uid' => $uid]);
 
-		$success = true;
-
-		if ($cmd == Delivery::MAIL) {
-			$data = ActivityPub\Transmitter::createActivityFromMail($item_id);
-			if (!empty($data)) {
-				$success = HTTPSignature::transmit($data, $inbox, $uid);
-			}
-		} elseif ($cmd == Delivery::SUGGESTION) {
-			$success = ActivityPub\Transmitter::sendContactSuggestion($uid, $inbox, $item_id);
-		} elseif ($cmd == Delivery::RELOCATION) {
-			// @todo Implementation pending
-		} elseif ($cmd == Delivery::POKE) {
-			// Implementation not planned
-		} elseif ($cmd == Delivery::REMOVAL) {
-			$success = ActivityPub\Transmitter::sendProfileDeletion($uid, $inbox);
-		} elseif ($cmd == Delivery::PROFILEUPDATE) {
-			$success = ActivityPub\Transmitter::sendProfileUpdate($uid, $inbox);
+		if (empty($uri_id)) {
+			$result  = ActivityPub\Delivery::deliver($inbox);
+			$success = $result['success'];
+			$drop    = false;
+			$uri_ids = $result['uri_ids'];
 		} else {
-			$data = ActivityPub\Transmitter::createCachedActivityFromItem($item_id);
-			if (!empty($data)) {
-				$success = HTTPSignature::transmit($data, $inbox, $uid);
+			$owner = User::getOwnerDataById($uid);
+			if (!$owner) {
+				Post\Delivery::remove($uri_id, $inbox);
+				Post\Delivery::incrementFailed($uri_id, $inbox);
+				return;
 			}
+
+			$result  = ActivityPub\Delivery::deliverToInbox($cmd, $item_id, $inbox, $owner, $receivers, $uri_id);
+			$success = $result['success'];
+			$drop    = $result['drop'];
+			$uri_ids = [$uri_id];
 		}
 
-		// This should never fail and is temporariy (until the move to the "post" structure)
-		$item = Item::selectFirst(['uri-id'], ['id' => $item_id]);
-		$uriid = $item['uri-id'] ?? 0;
-
-		foreach ($receivers as $receiver) {
-			$contact = Contact::getById($receiver);
-			if (empty($contact)) {
-				continue;
+		if (!$drop && !$success && !Worker::defer() && !empty($uri_ids)) {
+			foreach ($uri_ids as $uri_id) {
+				Post\Delivery::remove($uri_id, $inbox);
+				Post\DeliveryData::incrementQueueFailed($uri_id);
 			}
-
-			if ($success) {
-				Contact::unmarkForArchival($contact);
-			} else {
-				Contact::markForArchival($contact);
-			}
-		}
-
-		if (!$success && !Worker::defer() && in_array($cmd, [Delivery::POST])) {
-			Post\DeliveryData::incrementQueueFailed($uriid);
-		} elseif ($success && in_array($cmd, [Delivery::POST])) {
-			Post\DeliveryData::incrementQueueDone($uriid, Post\DeliveryData::ACTIVITYPUB);
 		}
 	}
 }

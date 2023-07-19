@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,15 +23,17 @@ namespace Friendica\Worker;
 
 use Friendica\Core\Logger;
 use Friendica\Database\DBA;
+use Friendica\Database\DBStructure;
+use Friendica\Model\Contact;
 
 class MergeContact
 {
 	/**
 	 * Replace all occurences of the given contact id and replace it
 	 *
-	 * @param integer $new_cid
-	 * @param integer $old_cid
-	 * @param integer $uid
+	 * @param integer $new_cid New contact id
+	 * @param integer $old_cid Old contact id
+	 * @param integer $uid User id
 	 */
 	public static function execute(int $new_cid, int $old_cid, int $uid)
 	{
@@ -42,9 +44,11 @@ class MergeContact
 
 		Logger::info('Handling duplicate', ['search' => $old_cid, 'replace' => $new_cid]);
 
-		// Search and replace
-		DBA::update('item', ['contact-id' => $new_cid], ['contact-id' => $old_cid]);
-		DBA::update('thread', ['contact-id' => $new_cid], ['contact-id' => $old_cid]);
+		foreach (['item', 'thread', 'post-user', 'post-thread-user'] as $table) {
+			if (DBStructure::existsTable($table)) {
+				DBA::update($table, ['contact-id' => $new_cid], ['contact-id' => $old_cid]);
+			}
+		}
 		DBA::update('mail', ['contact-id' => $new_cid], ['contact-id' => $old_cid]);
 		DBA::update('photo', ['contact-id' => $new_cid], ['contact-id' => $old_cid]);
 		DBA::update('event', ['cid' => $new_cid], ['cid' => $old_cid]);
@@ -53,16 +57,69 @@ class MergeContact
 		if ($uid == 0) {
 			DBA::update('post-tag', ['cid' => $new_cid], ['cid' => $old_cid]);
 			DBA::delete('post-tag', ['cid' => $old_cid]);
-			DBA::update('item', ['author-id' => $new_cid], ['author-id' => $old_cid]);
-			DBA::update('item', ['owner-id' => $new_cid], ['owner-id' => $old_cid]);
-			DBA::update('item', ['causer-id' => $new_cid], ['causer-id' => $old_cid]);
-			DBA::update('thread', ['author-id' => $new_cid], ['author-id' => $old_cid]);
-			DBA::update('thread', ['owner-id' => $new_cid], ['owner-id' => $old_cid]);
+			foreach (['item', 'post', 'post-thread', 'post-user', 'post-thread-user'] as $table) {
+				if (DBStructure::existsTable($table)) {
+					DBA::update($table, ['author-id' => $new_cid], ['author-id' => $old_cid]);
+					DBA::update($table, ['owner-id' => $new_cid], ['owner-id' => $old_cid]);
+					DBA::update($table, ['causer-id' => $new_cid], ['causer-id' => $old_cid]);
+				}
+			}
+			if (DBStructure::existsTable('thread')) {
+				DBA::update('thread', ['author-id' => $new_cid], ['author-id' => $old_cid]);
+				DBA::update('thread', ['owner-id' => $new_cid], ['owner-id' => $old_cid]);
+			}
 		} else {
-			/// @todo Check if some other data needs to be adjusted as well, possibly the "rel" status?
+			self::mergePersonalContacts($new_cid, $old_cid);
 		}
 
 		// Remove the duplicate
-		DBA::delete('contact', ['id' => $old_cid]);
+		Contact::deleteById($old_cid);
+	}
+
+	/**
+	 * Merge important fields between two contacts
+	 *
+	 * @param integer $first
+	 * @param integer $duplicate
+	 * @return void
+	 */
+	private static function mergePersonalContacts(int $first, int $duplicate)
+	{
+		$fields = ['self', 'remote_self', 'rel', 'prvkey', 'subhub', 'hub-verify', 'priority', 'writable', 'archive', 'pending',
+			'rating', 'notify_new_posts', 'fetch_further_information', 'ffi_keyword_denylist', 'block_reason'];
+		$c1 = Contact::getById($first, $fields);
+		$c2 = Contact::getById($duplicate, $fields);
+
+		$ctarget = $c1;
+
+		if ($c1['self'] || $c2['self']) {
+			return;
+		}
+
+		$ctarget['rel'] = $c1['rel'] | $c2['rel'];
+		foreach (['prvkey', 'hub-verify', 'priority', 'rating', 'fetch_further_information', 'ffi_keyword_denylist', 'block_reason'] as $field) {
+			$ctarget[$field] = $c1[$field] ?: $c2[$field];
+		}
+
+		foreach (['remote_self', 'subhub', 'writable', 'notify_new_posts'] as $field) {
+			$ctarget[$field] = $c1[$field] || $c2[$field];
+		}
+
+		foreach (['archive', 'pending'] as $field) {
+			$ctarget[$field] = $c1[$field] && $c2[$field];
+		}
+
+		$data = [];
+
+		foreach ($fields as $field) {
+			if ($ctarget[$field] != $c1[$field]) {
+				$data[$field] = $ctarget[$field];
+			}
+		}
+
+		if (empty($data)) {
+			return;
+		}
+		Contact::update($data, ['id' => $first]);
 	}
 }

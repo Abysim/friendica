@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -73,7 +73,9 @@ class FileSystem
 	 *
 	 * @param string $url The file/url
 	 *
-	 * @return false|resource the open stream ressource
+	 * @return resource the open stream resource
+	 *
+	 * @throws \UnexpectedValueException
 	 */
 	public function createStream(string $url)
 	{

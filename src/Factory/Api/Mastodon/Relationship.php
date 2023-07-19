@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,6 +21,8 @@
 
 namespace Friendica\Factory\Api\Mastodon;
 
+use Exception;
+use Friendica\Network\HTTPException;
 use Friendica\Object\Api\Mastodon\Relationship as RelationshipEntity;
 use Friendica\BaseFactory;
 use Friendica\Model\Contact;
@@ -28,30 +30,29 @@ use Friendica\Model\Contact;
 class Relationship extends BaseFactory
 {
 	/**
-	 * @param int $userContactId Contact row id with uid != 0
+	 * @param int $contactId Contact ID (public or user contact)
+	 * @param int $uid User ID
+	 *
 	 * @return RelationshipEntity
-	 * @throws \Exception
+	 * @throws Exception
 	 */
-	public function createFromContactId(int $userContactId)
+	public function createFromContactId(int $contactId, int $uid): RelationshipEntity
 	{
-		return $this->createFromContact(Contact::getById($userContactId));
-	}
+		$cdata = Contact::getPublicAndUserContactID($contactId, $uid);
+		$pcid  = !empty($cdata['public']) ? $cdata['public'] : $contactId;
+		$cid   = !empty($cdata['user']) ? $cdata['user'] : $contactId;
 
-	/**
-	 * @param array $userContact Full contact row record with uid != 0
-	 * @return RelationshipEntity
-	 */
-	public function createFromContact(array $userContact)
-	{
-		return new RelationshipEntity($userContact['id'], $userContact);
-	}
+		$contact = Contact::getById($cid);
+		if (!$contact) {
+			$this->logger->warning('Target contact not found', ['contactId' => $contactId, 'uid' => $uid, 'pcid' => $pcid, 'cid' => $cid]);
+			throw new HTTPException\NotFoundException('Contact not found.');
+		}
 
-	/**
-	 * @param int $userContactId Contact row id with uid != 0
-	 * @return RelationshipEntity
-	 */
-	public function createDefaultFromContactId(int $userContactId)
-	{
-		return new RelationshipEntity($userContactId);
+		return new RelationshipEntity(
+			$pcid,
+			$contact,
+			Contact\User::isBlocked($cid, $uid),
+			Contact\User::isIgnored($cid, $uid)
+		);
 	}
 }

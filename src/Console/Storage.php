@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,7 +22,9 @@
 namespace Friendica\Console;
 
 use Asika\SimpleConsole\CommandArgsException;
-use Friendica\Core\StorageManager;
+use Friendica\Core\Storage\Repository\StorageManager;
+use Friendica\Core\Storage\Exception\ReferenceStorageException;
+use Friendica\Core\Storage\Exception\StorageException;
 
 /**
  * tool to manage storage backend and stored data from CLI
@@ -67,7 +69,7 @@ HELP;
 		return $help;
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		if ($this->getOption('v')) {
 			$this->out('Executable: ' . $this->executable);
@@ -104,7 +106,7 @@ HELP;
 		$this->out(sprintf($rowfmt, 'Sel', 'Name'));
 		$this->out('-----------------------');
 		$isregisterd = false;
-		foreach ($this->storageManager->listBackends() as $name => $class) {
+		foreach ($this->storageManager->listBackends() as $name) {
 			$issel = ' ';
 			if ($current && $current::getName() == $name) {
 				$issel = '*';
@@ -126,20 +128,20 @@ HELP;
 
 	protected function doSet()
 	{
-		if (count($this->args) !== 2) {
+		if (count($this->args) !== 2 || empty($this->args[1])) {
 			throw new CommandArgsException('Invalid arguments');
 		}
 
 		$name = $this->args[1];
-		$class = $this->storageManager->getByName($name);
+		try {
+			$class = $this->storageManager->getWritableStorageByName($name);
 
-		if ($class === '') {
+			if (!$this->storageManager->setBackend($class)) {
+				$this->out($class . ' is not a valid backend storage class.');
+				return -1;
+			}
+		} catch (ReferenceStorageException $exception) {
 			$this->out($name . ' is not a registered backend.');
-			return -1;
-		}
-
-		if (!$this->storageManager->setBackend($class)) {
-			$this->out($class . ' is not a valid backend storage class.');
 			return -1;
 		}
 
@@ -164,6 +166,10 @@ HELP;
 
 		$current = $this->storageManager->getBackend();
 		$total = 0;
+
+		if (is_null($current)) {
+			throw new StorageException(sprintf("Cannot move to legacy storage. Please select a storage backend."));
+		}
 
 		do {
 			$moved = $this->storageManager->move($current, $tables, $this->getOption('n', 5000));

@@ -30,9 +30,8 @@
 		</div>
 	</div>
 	<div class="wall-item-bottom">
-		<div class="">
-			<!-- {{if $plink}}<a title="{{$plink.title}}" href="{{$plink.href}}"><i class="icon-link icon-large"></i></a>{{/if}} -->
-			{{if $conv}}<a href='{{$conv.href}}' id='context-{{$id}}' title='{{$conv.title}}'><i class="icon-link icon-large"></i></a>{{/if}}
+		<div dir="auto">
+			{{if $conv}}<a href="{{$conv.href}}" id="context-{{$id}}" title="{{$conv.title}}"><i class="icon-link icon-large"></i></a>{{/if}}
 		</div>
 		<div class="wall-item-actions">
 
@@ -40,14 +39,14 @@
 
 			<div class="wall-item-actions-social">
 			{{if $star}}
-				<a href="#" id="star-{{$id}}" onclick="dostar({{$id}}); return false;"  class="{{$star.classdo}}"  title="{{$star.do}}">{{$star.do}}</a>
-				<a href="#" id="unstar-{{$id}}" onclick="dostar({{$id}}); return false;"  class="{{$star.classundo}}"  title="{{$star.undo}}">{{$star.undo}}</a>
+				<a href="#" id="star-{{$id}}" onclick="doStar({{$id}}); return false;" class="{{$star.classdo}}" title="{{$star.do}}">{{$star.do}}</a>
+				<a href="#" id="unstar-{{$id}}" onclick="doStar({{$id}}); return false;" class="{{$star.classundo}}" title="{{$star.undo}}">{{$star.undo}}</a>
 				<a href="#" id="tagger-{{$id}}" onclick="itemTag({{$id}}); return false;" class="{{$star.classtagger}}" title="{{$star.tagger}}">{{$star.tagger}}</a>
 			{{/if}}
 
 			{{if $vote}}
-				<a href="#" id="like-{{$id}}"{{if $item.responses.like.self}} class="active"{{/if}} title="{{$vote.like.0}}" onclick="dolike({{$id}}, 'like'{{if $item.responses.like.self}}, true{{/if}}); return false">{{$vote.like.1}}</a>
-				<a href="#" id="dislike-{{$id}}"{{if $item.responses.dislike.self}} class="active"{{/if}} title="{{$vote.dislike.0}}" onclick="dolike({{$id}}, 'dislike'{{if $item.responses.dislike.self}}, true{{/if}}); return false">{{$vote.dislike.1}}</a>
+				<a href="#" id="like-{{$id}}"{{if $item.responses.like.self}} class="active"{{/if}} title="{{$vote.like.0}}" onclick="doActivityItem({{$id}}, 'like'{{if $item.responses.like.self}}, true{{/if}}); return false">{{$vote.like.1}}</a>
+				<a href="#" id="dislike-{{$id}}"{{if $item.responses.dislike.self}} class="active"{{/if}} title="{{$vote.dislike.0}}" onclick="doActivityItem({{$id}}, 'dislike'{{if $item.responses.dislike.self}}, true{{/if}}); return false">{{$vote.dislike.1}}</a>
 			{{/if}}
 
 			{{if $vote.share}}

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,20 +22,25 @@
 namespace Friendica\Worker;
 
 use Friendica\Core\Logger;
+use Friendica\Core\Worker;
 use Friendica\Database\DBA;
 use Friendica\DI;
 use Friendica\Model\GServer;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
+use Friendica\Util\Network;
 use Friendica\Util\Strings;
 
 class UpdateServerPeers
 {
 	/**
 	 * Query the given server for their known peers
+	 *
 	 * @param string $gserver Server URL
+	 * @return void
 	 */
 	public static function execute(string $url)
 	{
-		$ret = DI::httpRequest()->get($url . '/api/v1/instance/peers');
+		$ret = DI::httpClient()->get($url . '/api/v1/instance/peers', HttpClientAccept::JSON);
 		if (!$ret->isSuccess() || empty($ret->getBody())) {
 			Logger::info('Server is not reachable or does not offer the "peers" endpoint', ['url' => $url]);
 			return;
@@ -52,6 +57,11 @@ class UpdateServerPeers
 		$total = 0;
 		$added = 0;
 		foreach ($peers as $peer) {
+			if (Network::isUrlBlocked('https://' . $peer)) {
+				// Ignore blocked systems as soon as possible in the loop to avoid being slowed down by tar pits
+				continue;
+			}
+
 			++$total;
 			if (DBA::exists('gserver', ['nurl' => Strings::normaliseLink('http://' . $peer)])) {
 				// We already know this server
@@ -60,6 +70,7 @@ class UpdateServerPeers
 			// This endpoint doesn't offer the schema. So we assume that it is HTTPS.
 			GServer::add('https://' . $peer);
 			++$added;
+			Worker::coolDown();
 		}
 		Logger::info('Server peer update ended', ['total' => $total, 'added' => $added, 'url' => $url]);
 	}

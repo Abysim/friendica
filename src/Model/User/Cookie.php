@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,7 +22,7 @@
 namespace Friendica\Model\User;
 
 use Friendica\App;
-use Friendica\Core\Config\IConfig;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 
 /**
  * Interacting with the Friendica Cookie of a user
@@ -41,126 +41,131 @@ class Cookie
 	const HTTPONLY = true;
 
 	/** @var string The remote address of this node */
-	private $remoteAddr = '0.0.0.0';
+	private $remoteAddr;
 	/** @var bool True, if the connection is ssl enabled */
-	private $sslEnabled = false;
+	private $sslEnabled;
 	/** @var string The private key of this Friendica node */
 	private $sitePrivateKey;
 	/** @var int The default cookie lifetime */
-	private $lifetime = self::DEFAULT_EXPIRE * 24 * 60 * 60;
-	/** @var array The $_COOKIE array */
-	private $cookie;
+	private $lifetime;
+	/** @var array The Friendica cookie data array */
+	private $data;
 
-	public function __construct(IConfig $config, App\BaseURL $baseURL, array $server = [], array $cookie = [])
+	/**
+	 * @param App\Request         $request The current http request
+	 * @param IManageConfigValues $config
+	 * @param App\BaseURL         $baseURL
+	 * @param array               $COOKIE The $_COOKIE array
+	 */
+	public function __construct(App\Request $request, IManageConfigValues $config, App\BaseURL $baseURL, array $COOKIE = [])
 	{
-		if (!empty($server['REMOTE_ADDR'])) {
-			$this->remoteAddr = $server['REMOTE_ADDR'];
-		}
-
-		$this->sslEnabled     = $baseURL->getSSLPolicy() === App\BaseURL::SSL_POLICY_FULL;
+		$this->sslEnabled     = $baseURL->getScheme() === 'https';
 		$this->sitePrivateKey = $config->get('system', 'site_prvkey');
 
 		$authCookieDays = $config->get('system', 'auth_cookie_lifetime',
 			self::DEFAULT_EXPIRE);
 		$this->lifetime = $authCookieDays * 24 * 60 * 60;
-		$this->cookie   = $cookie;
+
+		$this->remoteAddr = $request->getRemoteAddress();
+
+		$this->data = json_decode($COOKIE[self::NAME] ?? '[]', true) ?: [];
 	}
 
 	/**
-	 * Checks if the Friendica cookie is set for a user
+	 * Returns the value for a key of the Friendica cookie
 	 *
-	 * @param string $hash       The cookie hash
-	 * @param string $password   The user password
-	 * @param string $privateKey The private Key of the user
-	 *
-	 * @return boolean True, if the cookie is set
-	 *
+	 * @param string $key
+	 * @param mixed  $default
+	 * @return mixed|null The value for the provided cookie key
 	 */
-	public function check(string $hash, string $password, string $privateKey)
+	public function get(string $key, $default = null)
 	{
-		return hash_equals(
-			$this->getHash($password, $privateKey),
-			$hash
-		);
+		return $this->data[$key] ?? $default;
 	}
 
 	/**
-	 * Set the Friendica cookie for a user
+	 * Set a single cookie key value.
+	 * Overwrites an existing value with the same key.
 	 *
-	 * @param int      $uid        The user id
-	 * @param string   $password   The user password
-	 * @param string   $privateKey The user private key
-	 * @param int|null $seconds    optional the seconds
+	 * @param $key
+	 * @param $value
+	 * @return bool
+	 */
+	public function set($key, $value): bool
+	{
+		return $this->setMultiple([$key => $value]);
+	}
+
+	/**
+	 * Sets multiple cookie key values.
+	 * Overwrites existing values with the same key.
+	 *
+	 * @param array $values
+	 * @return bool
+	 */
+	public function setMultiple(array $values): bool
+	{
+		$this->data = $values + $this->data;
+
+		return $this->send();
+	}
+
+	/**
+	 * Remove a cookie key
+	 *
+	 * @param string $key
+	 */
+	public function unset(string $key)
+	{
+		if (isset($this->data[$key])) {
+			unset($this->data[$key]);
+
+			$this->send();
+		}
+	}
+
+	/**
+	 * Resets the cookie to a given data set
+	 *
+	 * @param array $data
 	 *
 	 * @return bool
 	 */
-	public function set(int $uid, string $password, string $privateKey, int $seconds = null)
+	public function reset(array $data): bool
 	{
-		if (!isset($seconds)) {
-			$seconds = $this->lifetime + time();
-		} elseif (isset($seconds) && $seconds != 0) {
-			$seconds = $seconds + time();
-		}
-
-		$value = json_encode([
-			'uid'  => $uid,
-			'hash' => $this->getHash($password, $privateKey),
-			'ip'   => $this->remoteAddr,
-		]);
-
-		return $this->setCookie(self::NAME, $value, $seconds, $this->sslEnabled);
+		return $this->clear() &&
+			   $this->setMultiple($data);
 	}
 
 	/**
-	 * Returns the data of the Friendicas user cookie
-	 *
-	 * @return mixed|null The JSON data, null if not set
+	 * Clears the Friendica cookie
 	 */
-	public function getData()
+	public function clear(): bool
 	{
-		// When the "Friendica" cookie is set, take the value to authenticate and renew the cookie.
-		if (isset($this->cookie[self::NAME])) {
-			$data = json_decode($this->cookie[self::NAME]);
-			if (!empty($data)) {
-				return $data;
-			}
-		}
-
-		return null;
-	}
-
-	/**
-	 * Clears the Friendica cookie of this user after leaving the page
-	 */
-	public function clear()
-	{
+		$this->data = [];
 		// make sure cookie is deleted on browser close, as a security measure
-		return $this->setCookie(self::NAME, '', -3600, $this->sslEnabled);
+		return $this->setCookie('', -3600, $this->sslEnabled);
 	}
 
 	/**
-	 * Calculate the hash that is needed for the Friendica cookie
+	 * Send the cookie, should be called every time $this->data is changed or to refresh the cookie.
 	 *
-	 * @param string $password   The user password
-	 * @param string $privateKey The private key of the user
-	 *
-	 * @return string Hashed data
+	 * @return bool
 	 */
-	private function getHash(string $password, string $privateKey)
+	public function send(): bool
 	{
-		return hash_hmac(
-			'sha256',
-			hash_hmac('sha256', $password, $privateKey),
-			$this->sitePrivateKey
+		return $this->setCookie(
+			json_encode(['ip' => $this->remoteAddr] + $this->data),
+			$this->lifetime + time(),
+			$this->sslEnabled
 		);
 	}
 
 	/**
-	 * Send a cookie - protected, internal function for test-mocking possibility
+	 * setcookie() wrapper: protected, internal function for test-mocking possibility
 	 *
 	 * @link  https://php.net/manual/en/function.setcookie.php
 	 *
-	 * @param string $name
 	 * @param string $value  [optional]
 	 * @param int    $expire [optional]
 	 * @param bool   $secure [optional]
@@ -168,9 +173,43 @@ class Cookie
 	 * @return bool If output exists prior to calling this function,
 	 *
 	 */
-	protected function setCookie(string $name, string $value = null, int $expire = null,
-	                             bool $secure = null)
+	protected function setCookie(string $value = null, int $expire = null,
+								 bool $secure = null): bool
 	{
-		return setcookie($name, $value, $expire, self::PATH, self::DOMAIN, $secure, self::HTTPONLY);
+		return setcookie(self::NAME, $value, $expire, self::PATH, self::DOMAIN, $secure, self::HTTPONLY);
+	}
+
+	/**
+	 * Calculate a hash of a user's private data for storage in the cookie.
+	 * Hashed twice, with the user's own private key first, then the node's private key second.
+	 *
+	 * @param string $privateData User private data
+	 * @param string $privateKey  User private key
+	 *
+	 * @return string Hashed data
+	 */
+	public function hashPrivateData(string $privateData, string $privateKey): string
+	{
+		return hash_hmac(
+			'sha256',
+			hash_hmac('sha256', $privateData, $privateKey),
+			$this->sitePrivateKey
+		);
+	}
+
+	/**
+	 * @param string $hash        Hash from a cookie key value
+	 * @param string $privateData User private data
+	 * @param string $privateKey  User private key
+	 *
+	 * @return boolean
+	 *
+	 */
+	public function comparePrivateDataHash(string $hash, string $privateData, string $privateKey): bool
+	{
+		return hash_equals(
+			$this->hashPrivateData($privateData, $privateKey),
+			$hash
+		);
 	}
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -38,7 +38,7 @@ class ForumManager
 	 *
 	 * @param int     $uid         of the profile owner
 	 * @param boolean $lastitem    Sort by lastitem
-	 * @param boolean $showhidden  Show frorums which are not hidden
+	 * @param boolean $showhidden  Show forums which are not hidden
 	 * @param boolean $showprivate Show private groups
 	 *
 	 * @return array
@@ -57,23 +57,29 @@ class ForumManager
 			$params = ['order' => ['name']];
 		}
 
-		$condition_str = "`network` IN (?, ?) AND `uid` = ? AND NOT `blocked` AND NOT `pending` AND NOT `archive` AND ";
+		$condition = [
+			'contact-type' => Contact::TYPE_COMMUNITY,
+			'network' => [Protocol::DFRN, Protocol::ACTIVITYPUB],
+			'uid' => $uid,
+			'blocked' => false,
+			'pending' => false,
+			'archive' => false,
+		];
 
-		if ($showprivate) {
-			$condition_str .= '(`forum` OR `prv`)';
-		} else {
-			$condition_str .= '`forum`';
+		$condition = DBA::mergeConditions($condition, ["`platform` != ?", 'peertube']);
+
+		if (!$showprivate) {
+			$condition = DBA::mergeConditions($condition, ['manually-approve' => false]);
 		}
 
 		if (!$showhidden) {
-			$condition_str .=  ' AND NOT `hidden`';
+			$condition = DBA::mergeConditions($condition, ['hidden' => false]);
 		}
 
 		$forumlist = [];
 
-		$fields = ['id', 'url', 'name', 'micro', 'thumb', 'avatar'];
-		$condition = [$condition_str, Protocol::DFRN, Protocol::ACTIVITYPUB, $uid];
-		$contacts = DBA::select('contact', $fields, $condition, $params);
+		$fields = ['id', 'url', 'name', 'micro', 'thumb', 'avatar', 'network', 'uid'];
+		$contacts = DBA::select('account-user-view', $fields, $condition, $params);
 		if (!$contacts) {
 			return($forumlist);
 		}
@@ -96,7 +102,7 @@ class ForumManager
 	/**
 	 * Forumlist widget
 	 *
-	 * Sidebar widget to show subcribed friendica forums. If activated
+	 * Sidebar widget to show subscribed friendica forums. If activated
 	 * in the settings, it appears at the notwork page sidebar
 	 *
 	 * @param string $baseurl Base module path
@@ -127,7 +133,7 @@ class ForumManager
 
 				$entry = [
 					'url' => $baseurl . '/' . $contact['id'],
-					'external_url' => Contact::magicLink($contact['url']),
+					'external_url' => Contact::magicLinkByContact($contact),
 					'name' => $contact['name'],
 					'cid' => $contact['id'],
 					'selected' 	=> $selected,
@@ -209,14 +215,15 @@ class ForumManager
 	public static function countUnseenItems()
 	{
 		$stmtContacts = DBA::p(
-			"SELECT `contact`.`id`, `contact`.`name`, COUNT(*) AS `count` FROM `item`
-				INNER JOIN `contact` ON `item`.`contact-id` = `contact`.`id`
-				WHERE `item`.`uid` = ? AND `item`.`visible` AND NOT `item`.`deleted` AND `item`.`unseen`
-				AND `contact`.`network`= 'dfrn' AND (`contact`.`forum` OR `contact`.`prv`)
+			"SELECT `contact`.`id`, `contact`.`name`, COUNT(*) AS `count` FROM `post-user-view`
+				INNER JOIN `contact` ON `post-user-view`.`contact-id` = `contact`.`id`
+				WHERE `post-user-view`.`uid` = ? AND `post-user-view`.`visible` AND NOT `post-user-view`.`deleted` AND `post-user-view`.`unseen`
+				AND `contact`.`network` IN (?, ?) AND `contact`.`contact-type` = ?
 				AND NOT `contact`.`blocked` AND NOT `contact`.`hidden`
 				AND NOT `contact`.`pending` AND NOT `contact`.`archive`
-				GROUP BY `contact`.`id` ",
-			local_user()
+				AND `contact`.`uid` = ?
+				GROUP BY `contact`.`id`",
+			DI::userSession()->getLocalUserId(), Protocol::DFRN, Protocol::ACTIVITYPUB, Contact::TYPE_COMMUNITY, DI::userSession()->getLocalUserId()
 		);
 
 		return DBA::toArray($stmtContacts);

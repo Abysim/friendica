@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,22 +24,25 @@ namespace Friendica\Module;
 use Friendica\BaseModule;
 use Friendica\Core\System;
 use Friendica\Model\Contact;
+use Friendica\Network\HTTPException\NotFoundException;
 
 /**
  * Redirects to another URL based on the parameter 'addr'
  */
 class Acctlink extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		$addr = trim($_GET['addr'] ?? '');
-
-		if ($addr) {
-			$url = Contact::getByURL($addr)['url'] ?? '';
-			if ($url) {
-				System::externalRedirect($url['url']);
-				exit();
-			}
+		if (!$addr) {
+			throw new NotFoundException('Parameter "addr" is missing or empty');
 		}
+
+		$contact = Contact::getByURL($addr, null, ['url']) ?? '';
+		if (!$contact) {
+			throw new NotFoundException('Contact not found');
+		}
+
+		System::externalRedirect($contact['url']);
 	}
 }

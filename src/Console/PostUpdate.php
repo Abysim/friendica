@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,7 +22,7 @@
 namespace Friendica\Console;
 
 use Friendica\App;
-use Friendica\Core\Config\IConfig;
+use Friendica\Core\KeyValueStorage\Capabilities\IManageKeyValuePairs;
 use Friendica\Core\L10n;
 use Friendica\Core\Update;
 
@@ -38,9 +38,9 @@ class PostUpdate extends \Asika\SimpleConsole\Console
 	 */
 	private $appMode;
 	/**
-	 * @var IConfig
+	 * @var IManageKeyValuePairs
 	 */
-	private $config;
+	private $keyValue;
 	/**
 	 * @var L10n
 	 */
@@ -60,16 +60,16 @@ HELP;
 		return $help;
 	}
 
-	public function __construct(App\Mode $appMode, IConfig $config, L10n $l10n, array $argv = null)
+	public function __construct(App\Mode $appMode, IManageKeyValuePairs $keyValue, L10n $l10n, array $argv = null)
 	{
 		parent::__construct($argv);
 
-		$this->appMode = $appMode;
-		$this->config = $config;
-		$this->l10n = $l10n;
+		$this->appMode  = $appMode;
+		$this->keyValue = $keyValue;
+		$this->l10n     = $l10n;
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		$a = \Friendica\DI::app();
 
@@ -83,7 +83,7 @@ HELP;
 			$this->out($this->getHelp());
 			return 0;
 		} elseif ($reset_version) {
-			$this->config->set('system', 'post_update_version', $reset_version);
+			$this->keyValue->set('post_update_version', $reset_version);
 			echo $this->l10n->t('Post update version number has been set to %s.', $reset_version) . "\n";
 			return 0;
 		}

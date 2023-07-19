@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,18 +23,20 @@ namespace Friendica\Worker;
 
 use Friendica\Core\Hook;
 use Friendica\Core\Logger;
+use Friendica\Core\Search;
 use Friendica\Core\Worker;
 use Friendica\Database\DBA;
 use Friendica\DI;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
 
 /**
  * Sends updated profile data to the directory
  */
 class Directory
 {
-	public static function execute($url = '')
+	public static function execute(string $url = '')
 	{
-		$dir = DI::config()->get('system', 'directory');
+		$dir = Search::getGlobalDirectory();
 
 		if (!strlen($dir)) {
 			return;
@@ -51,9 +53,9 @@ class Directory
 
 		Hook::callAll('globaldir_update', $arr);
 
-		Logger::log('Updating directory: ' . $arr['url'], Logger::DEBUG);
+		Logger::info('Updating directory: ' . $arr['url']);
 		if (strlen($arr['url'])) {
-			DI::httpRequest()->fetch($dir . '?url=' . bin2hex($arr['url']));
+			DI::httpClient()->fetch($dir . '?url=' . bin2hex($arr['url']), HttpClientAccept::HTML);
 		}
 
 		return;
@@ -62,7 +64,7 @@ class Directory
 	private static function updateAll() {
 		$users = DBA::select('owner-view', ['url'], ['net-publish' => true, 'account_expired' => false, 'verified' => true]);
 		while ($user = DBA::fetch($users)) {
-			Worker::add(PRIORITY_LOW, 'Directory', $user['url']);
+			Worker::add(Worker::PRIORITY_LOW, 'Directory', $user['url']);
 		}
 		DBA::close($users);
 	}

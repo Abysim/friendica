@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,14 +25,23 @@ use Friendica\BaseModule;
 use Friendica\Core\Hook;
 use Friendica\Core\Renderer;
 use Friendica\DI;
+use Friendica\Model\User;
 use Friendica\Module\Security\Login;
+use Friendica\Protocol\ActivityPub;
 
 /**
  * Home module - Landing page of the current node
  */
 class Home extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function rawContent(array $request = [])
+	{
+		if (ActivityPub::isRequest()) {
+			DI::baseUrl()->redirect(User::getActorName());
+		}
+	}
+
+	protected function content(array $request = []): string
 	{
 		$app = DI::app();
 		$config = DI::config();
@@ -42,11 +51,11 @@ class Home extends BaseModule
 
 		Hook::callAll('home_init', $ret);
 
-		if (local_user() && ($app->user['nickname'])) {
+		if (DI::userSession()->getLocalUserId() && ($app->getLoggedInUserNickname())) {
 			DI::baseUrl()->redirect('network');
 		}
 
-		if (strlen($config->get('system', 'singleuser'))) {
+		if ($config->get('system', 'singleuser')) {
 			DI::baseUrl()->redirect('/profile/' . $config->get('system', 'singleuser'));
 		}
 
@@ -60,7 +69,7 @@ class Home extends BaseModule
 			$customHome = $homeFilePath;
 
 			if (file_exists($cssFilePath)) {
-				DI::page()['htmlhead'] .= '<link rel="stylesheet" type="text/css" href="' . DI::baseUrl()->get() . '/home.css' . '" media="all" />';
+				DI::page()->registerStylesheet('home.css', 'all');
 			}
 		}
 

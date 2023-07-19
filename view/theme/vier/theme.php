@@ -1,5 +1,22 @@
 <?php
 /**
+ * @copyright Copyright (C) 2010-2023, the Friendica project
+ *
+ * @license GNU AGPL version 3 or any later version
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * Name: Vier
  * Version: 1.2
  * Author: Fabio <http://kirgroup.com/profile/fabrixxm>
@@ -19,15 +36,22 @@ use Friendica\DI;
 use Friendica\Model\Contact;
 use Friendica\Util\Strings;
 
+/*
+ * This script can be included even when the app is in maintenance mode which requires us to avoid any config call
+ */
+
 function vier_init(App $a)
 {
-	$a->theme_events_in_profile = false;
-
 	Renderer::setActiveTemplateEngine('smarty3');
 
 	$args = DI::args();
 
-	if ($args->get(0) === 'profile' && $args->get(1) === ($a->user['nickname'] ?? '') || $args->get(0) === 'network' && local_user()
+	if (
+		DI::mode()->has(App\Mode::MAINTENANCEDISABLED)
+		&& (
+			$args->get(0) === 'profile' && $args->get(1) === ($a->getLoggedInUserNickname() ?? '')
+			|| $args->get(0) === 'network' && DI::userSession()->getLocalUserId()
+		)
 	) {
 		vier_community_info();
 
@@ -80,7 +104,7 @@ EOT;
 
 	// Hide the left menu bar
 	/// @TODO maybe move this static array out where it should belong?
-	if (empty(DI::page()['aside']) && in_array($args->get(0), ["community", "events", "help", "delegation", "notifications",
+	if (empty(DI::page()['aside']) && in_array($args->get(0), ["community", "calendar", "help", "delegation", "notifications",
 			"probe", "webfinger", "login", "invite", "credits"])) {
 		DI::page()['htmlhead'] .= "<link rel='stylesheet' href='view/theme/vier/hide.css' />";
 	}
@@ -88,8 +112,8 @@ EOT;
 
 function get_vier_config($key, $default = false, $admin = false)
 {
-	if (local_user() && !$admin) {
-		$result = DI::pConfig()->get(local_user(), "vier", $key);
+	if (DI::userSession()->getLocalUserId() && !$admin) {
+		$result = DI::pConfig()->get(DI::userSession()->getLocalUserId(), "vier", $key);
 		if (!is_null($result)) {
 			return $result;
 		}
@@ -113,26 +137,25 @@ function vier_community_info()
 	$show_lastusers  = get_vier_config("show_lastusers", 1);
 
 	// get_baseurl
-	$url = DI::baseUrl();
-	$aside['$url'] = $url;
+	$aside['$url'] = $url = (string)DI::baseUrl();
 
-	// comunity_profiles
+	// community_profiles
 	if ($show_profiles) {
-		$contacts = Contact\Relation::getSuggestions(local_user(), 0, 9);
+		$contacts = Contact\Relation::getCachedSuggestions(DI::userSession()->getLocalUserId(), 0, 9);
 
 		$tpl = Renderer::getMarkupTemplate('ch_directory_item.tpl');
 		if (DBA::isResult($contacts)) {
-			$aside['$comunity_profiles_title'] = DI::l10n()->t('Community Profiles');
-			$aside['$comunity_profiles_items'] = [];
+			$aside['$community_profiles_title'] = DI::l10n()->t('Community Profiles');
+			$aside['$community_profiles_items'] = [];
 
 			foreach ($contacts as $contact) {
 				$entry = Renderer::replaceMacros($tpl, [
 					'$id' => $contact['id'],
-					'$profile_link' => 'follow/?url='.urlencode($contact['url']),
+					'$profile_link' => 'contact/follow?url=' . urlencode($contact['url']),
 					'$photo' => Contact::getMicro($contact),
 					'$alt_text' => $contact['name'],
 				]);
-				$aside['$comunity_profiles_items'][] = $entry;
+				$aside['$community_profiles_items'][] = $entry;
 			}
 		}
 	}
@@ -165,7 +188,7 @@ function vier_community_info()
 	}
 
 	//right_aside FIND FRIENDS
-	if ($show_friends && local_user()) {
+	if ($show_friends && DI::userSession()->getLocalUserId()) {
 		$nv = [];
 		$nv['findpeople'] = DI::l10n()->t('Find People');
 		$nv['desc'] = DI::l10n()->t('Enter name or interest');
@@ -184,8 +207,8 @@ function vier_community_info()
 	}
 
 	//Community_Pages at right_aside
-	if ($show_pages && local_user()) {
-		$aside['$page'] = ForumManager::widget('network/forum', local_user());;
+	if ($show_pages && DI::userSession()->getLocalUserId()) {
+		$aside['$page'] = ForumManager::widget('network/forum', DI::userSession()->getLocalUserId());;
 	}
 	// END Community Page
 
@@ -285,7 +308,7 @@ function vier_community_info()
 			$r[] = ["photo" => "images/wordpress.png", "name" => "Wordpress"];
 		}
 
-		if (function_exists("imap_open") && !DI::config()->get("system", "imap_disabled") && !DI::config()->get("system", "dfrn_only")) {
+		if (function_exists("imap_open") && !DI::config()->get("system", "imap_disabled")) {
 			$r[] = ["photo" => "images/mail.png", "name" => "E-Mail"];
 		}
 

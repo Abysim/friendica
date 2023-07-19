@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,6 +23,7 @@ namespace Friendica\Model;
 
 use DOMDocument;
 use DOMXPath;
+use Exception;
 use Friendica\Core\Logger;
 use Friendica\Core\Protocol;
 use Friendica\Core\System;
@@ -31,12 +32,21 @@ use Friendica\Database\Database;
 use Friendica\Database\DBA;
 use Friendica\DI;
 use Friendica\Module\Register;
-use Friendica\Network\CurlResult;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
+use Friendica\Network\HTTPClient\Client\HttpClientOptions;
+use Friendica\Network\HTTPClient\Capability\ICanHandleHttpResponses;
+use Friendica\Network\Probe;
+use Friendica\Protocol\ActivityPub;
 use Friendica\Protocol\Relay;
 use Friendica\Util\DateTimeFormat;
+use Friendica\Util\JsonLD;
 use Friendica\Util\Network;
 use Friendica\Util\Strings;
 use Friendica\Util\XML;
+use Friendica\Network\HTTPException;
+use Friendica\Worker\UpdateGServer;
+use GuzzleHttp\Psr7\Uri;
+use Psr\Http\Message\UriInterface;
 
 /**
  * This class handles GServer related functions
@@ -54,8 +64,15 @@ class GServer
 	const DETECT_MANUAL = 0;
 	const DETECT_HEADER = 1;
 	const DETECT_BODY = 2;
+	const DETECT_HOST_META = 3;
+	const DETECT_CONTACTS = 4;
+	const DETECT_AP_ACTOR = 5;
+	const DETECT_AP_COLLECTION = 6;
+
+	const DETECT_UNSPECIFIC = [self::DETECT_MANUAL, self::DETECT_HEADER, self::DETECT_BODY, self::DETECT_HOST_META, self::DETECT_CONTACTS, self::DETECT_AP_ACTOR];
 
 	// Implementation specific endpoints
+	// @todo Possibly add Lemmy detection via the endpoint /api/v3/site
 	const DETECT_FRIENDIKA = 10;
 	const DETECT_FRIENDICA = 11;
 	const DETECT_STATUSNET = 12;
@@ -65,26 +82,30 @@ class GServer
 	const DETECT_MASTODON_API = 16;
 	const DETECT_STATUS_PHP = 17; // Nextcloud
 	const DETECT_V1_CONFIG = 18;
+	const DETECT_PUMPIO = 19; // Deprecated
+	const DETECT_SYSTEM_ACTOR = 20; // Mistpark, Osada, Roadhouse, Zap
 
 	// Standardized endpoints
 	const DETECT_STATISTICS_JSON = 100;
 	const DETECT_NODEINFO_1 = 101;
 	const DETECT_NODEINFO_2 = 102;
+	const DETECT_NODEINFO_210 = 103;
 
 	/**
-	 * Check for the existance of a server and adds it in the background if not existant
+	 * Check for the existence of a server and adds it in the background if not existant
 	 *
 	 * @param string $url
 	 * @param boolean $only_nodeinfo
+	 *
 	 * @return void
 	 */
 	public static function add(string $url, bool $only_nodeinfo = false)
 	{
-		if (self::getID($url, false)) {
+		if (self::getID($url)) {
 			return;
 		}
 
-		Worker::add(PRIORITY_LOW, 'UpdateGServer', $url, $only_nodeinfo);
+		UpdateGServer::add(Worker::PRIORITY_LOW, $url, $only_nodeinfo);
 	}
 
 	/**
@@ -92,60 +113,180 @@ class GServer
 	 *
 	 * @param string $url
 	 * @param boolean $no_check Don't check if the server hadn't been found
-	 * @return int gserver id
+	 *
+	 * @return int|null gserver id or NULL on empty URL or failed check
 	 */
-	public static function getID(string $url, bool $no_check = false)
+	public static function getID(string $url, bool $no_check = false): ?int
 	{
+		$url = self::cleanURL($url);
+
 		if (empty($url)) {
 			return null;
 		}
 
-		$url = self::cleanURL($url);
-
 		$gserver = DBA::selectFirst('gserver', ['id'], ['nurl' => Strings::normaliseLink($url)]);
 		if (DBA::isResult($gserver)) {
-			Logger::info('Got ID for URL', ['id' => $gserver['id'], 'url' => $url, 'callstack' => System::callstack(20)]);
+			Logger::debug('Got ID for URL', ['id' => $gserver['id'], 'url' => $url, 'callstack' => System::callstack(20)]);
+
+			if (Network::isUrlBlocked($url)) {
+				self::setBlockedById($gserver['id']);
+			} else {
+				self::setUnblockedById($gserver['id']);
+			}
+
 			return $gserver['id'];
 		}
 
 		if ($no_check || !self::check($url)) {
 			return null;
 		}
-	
+
 		return self::getID($url, true);
+	}
+
+	/**
+	 * Retrieves all the servers which base domain are matching the provided domain pattern
+	 *
+	 * The pattern is a simple fnmatch() pattern with ? for single wildcard and * for multiple wildcard
+	 *
+	 * @param string $pattern
+	 *
+	 * @return array
+	 *
+	 * @throws Exception
+	 */
+	public static function listByDomainPattern(string $pattern): array
+	{
+		$likePattern = 'http://' . strtr($pattern, ['_' => '\_', '%' => '\%', '?' => '_', '*' => '%']);
+
+		// The SUBSTRING_INDEX returns everything before the eventual third /, which effectively trims an
+		// eventual server path and keep only the server domain which we're matching against the pattern.
+		$sql = "SELECT `gserver`.*, COUNT(*) AS `contacts`
+			FROM `gserver`
+			LEFT JOIN `contact` ON `gserver`.`id` = `contact`.`gsid`
+			WHERE SUBSTRING_INDEX(`gserver`.`nurl`, '/', 3) LIKE ?
+			AND NOT `gserver`.`failed`
+			GROUP BY `gserver`.`id`";
+
+		$stmt = DI::dba()->p($sql, $likePattern);
+
+		return DI::dba()->toArray($stmt);
+	}
+
+	/**
+	 * Checks if the given server array is unreachable for a long time now
+	 *
+	 * @param integer $gsid
+	 * @return boolean
+	 */
+	private static function isDefunct(array $gserver): bool
+	{
+		return ($gserver['failed'] || in_array($gserver['network'], Protocol::FEDERATED)) &&
+			($gserver['last_contact'] >= $gserver['created']) &&
+			($gserver['last_contact'] < $gserver['last_failure']) &&
+			($gserver['last_contact'] < DateTimeFormat::utc('now - 90 days'));
+	}
+
+	/**
+	 * Checks if the given server id is unreachable for a long time now
+	 *
+	 * @param integer $gsid
+	 * @return boolean
+	 */
+	public static function isDefunctById(int $gsid): bool
+	{
+		$gserver = DBA::selectFirst('gserver', ['url', 'next_contact', 'last_contact', 'last_failure', 'created', 'failed', 'network'], ['id' => $gsid]);
+		if (empty($gserver)) {
+			return false;
+		} else {
+			if (strtotime($gserver['next_contact']) < time()) {
+				UpdateGServer::add(Worker::PRIORITY_LOW, $gserver['url']);
+			}
+
+			return self::isDefunct($gserver);
+		}
+	}
+
+	/**
+	 * Checks if the given server id is reachable
+	 *
+	 * @param integer $gsid
+	 * @return boolean
+	 */
+	public static function isReachableById(int $gsid): bool
+	{
+		$gserver = DBA::selectFirst('gserver', ['url', 'next_contact', 'failed', 'network'], ['id' => $gsid]);
+		if (empty($gserver)) {
+			return true;
+		} else {
+			if (strtotime($gserver['next_contact']) < time()) {
+				UpdateGServer::add(Worker::PRIORITY_LOW, $gserver['url']);
+			}
+
+			return !$gserver['failed'] && in_array($gserver['network'], Protocol::FEDERATED);
+		}
 	}
 
 	/**
 	 * Checks if the given server is reachable
 	 *
-	 * @param string  $profile URL of the given profile
-	 * @param string  $server  URL of the given server (If empty, taken from profile)
-	 * @param string  $network Network value that is used, when detection failed
-	 * @param boolean $force   Force an update.
+	 * @param array $contact Contact that should be checked
 	 *
 	 * @return boolean 'true' if server seems vital
 	 */
-	public static function reachable(string $profile, string $server = '', string $network = '', bool $force = false)
+	public static function reachable(array $contact): bool
 	{
-		if ($server == '') {
-			$contact = Contact::getByURL($profile, null, ['baseurl']);
-			if (!empty($contact['baseurl'])) {
-				$server = $contact['baseurl'];
-			}
-		}
-
-		if ($server == '') {
+		if (!empty($contact['gsid'])) {
+			$gsid = $contact['gsid'];
+		} elseif (!empty($contact['baseurl'])) {
+			$server = $contact['baseurl'];
+		} elseif ($contact['network'] == Protocol::DIASPORA) {
+			$parts = parse_url($contact['url']);
+			unset($parts['path']);
+			$server = (string)Uri::fromParts($parts);
+		} else {
 			return true;
 		}
 
-		return self::check($server, $network, $force);
+		if (!empty($gsid)) {
+			$condition = ['id' => $gsid];
+		} else {
+			$condition = ['nurl' => Strings::normaliseLink($server)];
+		}
+
+		$gserver = DBA::selectFirst('gserver', ['url', 'next_contact', 'failed', 'network'], $condition);
+		if (empty($gserver)) {
+			$reachable = true;
+		} else {
+			$reachable = !$gserver['failed'] && in_array($gserver['network'], Protocol::FEDERATED);
+			$server    = $gserver['url'];
+		}
+
+		if (!empty($server) && (empty($gserver) || strtotime($gserver['next_contact']) < time())) {
+			UpdateGServer::add(Worker::PRIORITY_LOW, $server);
+		}
+
+		return $reachable;
 	}
 
-	public static function getNextUpdateDate(bool $success, string $created = '', string $last_contact = '')
+	/**
+	 * Calculate the next update day
+	 *
+	 * @param bool $success
+	 * @param string $created
+	 * @param string $last_contact
+	 * @param bool $undetected
+	 *
+	 * @return string
+	 *
+	 * @throws Exception
+	 */
+	public static function getNextUpdateDate(bool $success, string $created = '', string $last_contact = '', bool $undetected = false): string
 	{
-		// On successful contact process check again next week
+		// On successful contact process check again next week when it is a detected system.
+		// When we haven't detected the system, it could be a static website or a really old system.
 		if ($success) {
-			return DateTimeFormat::utc('now +7 day');
+			return DateTimeFormat::utc($undetected ? 'now +1 month' : 'now +7 day');
 		}
 
 		$now = strtotime(DateTimeFormat::utcNow());
@@ -170,7 +311,7 @@ class GServer
 		if (($now - $contact_time) < (60 * 60 * 24)) {
 			return DateTimeFormat::utc('now +1 day');
 		}
-		
+
 		// If the last contact was less than a week before then try again in a week
 		if (($now - $contact_time) < (60 * 60 * 24 * 7)) {
 			return DateTimeFormat::utc('now +1 week');
@@ -186,7 +327,7 @@ class GServer
 			return DateTimeFormat::utc('now +1 month');
 		}
 
-		// The system hadn't been successul contacted for more than a month, so try again in three months
+		// The system hadn't been successful contacted for more than a month, so try again in three months
 		return DateTimeFormat::utc('now +3 month');
 	}
 
@@ -200,10 +341,16 @@ class GServer
 	 *
 	 * @return boolean 'true' if server seems vital
 	 */
-	public static function check(string $server_url, string $network = '', bool $force = false, bool $only_nodeinfo = false)
+	public static function check(string $server_url, string $network = '', bool $force = false, bool $only_nodeinfo = false): bool
 	{
 		$server_url = self::cleanURL($server_url);
 		if ($server_url == '') {
+			return false;
+		}
+
+		if (Network::isUrlBlocked($server_url)) {
+			Logger::info('Server is blocked', ['url' => $server_url]);
+			self::setBlockedByUrl($server_url);
 			return false;
 		}
 
@@ -212,7 +359,7 @@ class GServer
 			if ($gserver['created'] <= DBA::NULL_DATETIME) {
 				$fields = ['created' => DateTimeFormat::utcNow()];
 				$condition = ['nurl' => Strings::normaliseLink($server_url)];
-				DBA::update('gserver', $fields, $condition);
+				self::update($fields, $condition);
 			}
 
 			if (!$force && (strtotime($gserver['next_contact']) > time())) {
@@ -228,57 +375,163 @@ class GServer
 	}
 
 	/**
+	 * Reset failed server status by gserver id
+	 *
+	 * @param int    $gsid
+	 * @param string $network
+	 */
+	public static function setReachableById(int $gsid, string $network)
+	{
+		$gserver = DBA::selectFirst('gserver', ['url', 'failed', 'next_contact', 'network'], ['id' => $gsid]);
+		if (!DBA::isResult($gserver)) {
+			return;
+		}
+
+		$blocked = Network::isUrlBlocked($gserver['url']);
+		if ($gserver['failed']) {
+			$fields = ['failed' => false, 'blocked' => $blocked, 'last_contact' => DateTimeFormat::utcNow()];
+			if (!empty($network) && !in_array($gserver['network'], Protocol::FEDERATED)) {
+				$fields['network'] = $network;
+			}
+			self::update($fields, ['id' => $gsid]);
+			Logger::info('Reset failed status for server', ['url' => $gserver['url']]);
+
+			if (strtotime($gserver['next_contact']) < time()) {
+				UpdateGServer::add(Worker::PRIORITY_LOW, $gserver['url']);
+			}
+		} elseif ($blocked) {
+			self::setBlockedById($gsid);
+		} else {
+			self::setUnblockedById($gsid);
+		}
+	}
+
+	/**
+	 * Set failed server status by gserver id
+	 *
+	 * @param int $gsid
+	 */
+	public static function setFailureById(int $gsid)
+	{
+		$gserver = DBA::selectFirst('gserver', ['url', 'failed', 'next_contact'], ['id' => $gsid]);
+		if (DBA::isResult($gserver) && !$gserver['failed']) {
+			self::update(['failed' => true, 'blocked' => Network::isUrlBlocked($gserver['url']), 'last_failure' => DateTimeFormat::utcNow()], ['id' => $gsid]);
+			Logger::info('Set failed status for server', ['url' => $gserver['url']]);
+
+			if (strtotime($gserver['next_contact']) < time()) {
+				UpdateGServer::add(Worker::PRIORITY_LOW, $gserver['url']);
+			}
+		}
+	}
+
+	public static function setUnblockedById(int $gsid)
+	{
+		$gserver = DBA::selectFirst('gserver', ['url'], ["(`blocked` OR `blocked` IS NULL) AND `id` = ?", $gsid]);
+		if (DBA::isResult($gserver)) {
+			self::update(['blocked' => false], ['id' => $gsid]);
+			Logger::info('Set unblocked status for server', ['url' => $gserver['url']]);
+		}
+	}
+
+	public static function setBlockedById(int $gsid)
+	{
+		$gserver = DBA::selectFirst('gserver', ['url'], ["(NOT `blocked` OR `blocked` IS NULL) AND `id` = ?", $gsid]);
+		if (DBA::isResult($gserver)) {
+			self::update(['blocked' => true, 'failed' => true], ['id' => $gsid]);
+			Logger::info('Set blocked status for server', ['url' => $gserver['url']]);
+		}
+	}
+
+	public static function setBlockedByUrl(string $url)
+	{
+		$gserver = DBA::selectFirst('gserver', ['url', 'id'], ["(NOT `blocked` OR `blocked` IS NULL) AND `nurl` = ?", Strings::normaliseLink($url)]);
+		if (DBA::isResult($gserver)) {
+			self::update(['blocked' => true, 'failed' => true], ['id' => $gserver['id']]);
+			Logger::info('Set blocked status for server', ['url' => $gserver['url']]);
+		}
+	}
+
+	/**
 	 * Set failed server status
 	 *
 	 * @param string $url
+	 * @return void
 	 */
-	public static function setFailure(string $url)
+	public static function setFailureByUrl(string $url)
 	{
-		$gserver = DBA::selectFirst('gserver', [], ['nurl' => Strings::normaliseLink($url)]);
+		$nurl = Strings::normaliseLink($url);
+
+		$gserver = DBA::selectFirst('gserver', [], ['nurl' => $nurl]);
 		if (DBA::isResult($gserver)) {
 			$next_update = self::getNextUpdateDate(false, $gserver['created'], $gserver['last_contact']);
-			DBA::update('gserver', ['failed' => true, 'last_failure' => DateTimeFormat::utcNow(),
-			'next_contact' => $next_update, 'detection-method' => null],
-			['nurl' => Strings::normaliseLink($url)]);
+			self::update(['url' => $url, 'failed' => true, 'blocked' => Network::isUrlBlocked($url), 'last_failure' => DateTimeFormat::utcNow(),
+			'next_contact' => $next_update, 'network' => Protocol::PHANTOM, 'detection-method' => null],
+			['nurl' => $nurl]);
 			Logger::info('Set failed status for existing server', ['url' => $url]);
+			if (self::isDefunct($gserver)) {
+				self::archiveContacts($gserver['id']);
+			}
 			return;
 		}
-		DBA::insert('gserver', ['url' => $url, 'nurl' => Strings::normaliseLink($url),
+
+		self::insert(['url' => $url, 'nurl' => $nurl,
 			'network' => Protocol::PHANTOM, 'created' => DateTimeFormat::utcNow(),
 			'failed' => true, 'last_failure' => DateTimeFormat::utcNow()]);
 		Logger::info('Set failed status for new server', ['url' => $url]);
 	}
 
 	/**
-	 * Remove unwanted content from the given URL
+	 * Archive server related contacts and inboxes
 	 *
-	 * @param string $url
-	 * @return string cleaned URL
+	 * @param integer $gsid
+	 * @return void
 	 */
-	public static function cleanURL(string $url)
+	private static function archiveContacts(int $gsid)
 	{
-		$url = trim($url, '/');
-		$url = str_replace('/index.php', '', $url);
-
-		$urlparts = parse_url($url);
-		unset($urlparts['user']);
-		unset($urlparts['pass']);
-		unset($urlparts['query']);
-		unset($urlparts['fragment']);
-		return Network::unparseURL($urlparts);
+		Contact::update(['archive' => true], ['gsid' => $gsid]);
+		DBA::update('inbox-status', ['archive' => true], ['gsid' => $gsid]);
 	}
 
 	/**
-	 * Return the base URL
+	 * Remove unwanted content from the given URL
 	 *
-	 * @param string $url
-	 * @return string base URL
+	 * @param string $dirtyUrl
+	 *
+	 * @return string cleaned URL
+	 * @throws Exception
+	 * @deprecated since 2023.03 Use cleanUri instead
 	 */
-	private static function getBaseURL(string $url)
+	public static function cleanURL(string $dirtyUrl): string
 	{
-		$urlparts = parse_url(self::cleanURL($url));
-		unset($urlparts['path']);
-		return Network::unparseURL($urlparts);
+		try {
+			return (string)self::cleanUri(new Uri($dirtyUrl));
+		} catch (\Throwable $e) {
+			Logger::warning('Invalid URL', ['dirtyUrl' => $dirtyUrl]);
+			return '';
+		}
+	}
+
+	/**
+	 * Remove unwanted content from the given URI
+	 *
+	 * @param UriInterface $dirtyUri
+	 *
+	 * @return UriInterface cleaned URI
+	 * @throws Exception
+	 */
+	public static function cleanUri(UriInterface $dirtyUri): string
+	{
+		return $dirtyUri
+			->withUserInfo('')
+			->withQuery('')
+			->withFragment('')
+			->withPath(
+				preg_replace(
+					'#(?:^|/)index\.php#',
+					'',
+					rtrim($dirtyUri->getPath(), '/')
+				)
+			);
 	}
 
 	/**
@@ -291,167 +544,187 @@ class GServer
 	 *
 	 * @return boolean 'true' if server could be detected
 	 */
-	public static function detect(string $url, string $network = '', bool $only_nodeinfo = false)
+	private static function detect(string $url, string $network = '', bool $only_nodeinfo = false): bool
 	{
 		Logger::info('Detect server type', ['server' => $url]);
-		$serverdata = ['detection-method' => self::DETECT_MANUAL];
 
 		$original_url = $url;
 
 		// Remove URL content that is not supposed to exist for a server url
-		$url = self::cleanURL($url);
-
-		// Get base URL
-		$baseurl = self::getBaseURL($url);
-
-		// If the URL missmatches, then we mark the old entry as failure
-		if ($url != $original_url) {
-			/// @todo What to do with "next_contact" here?
-			DBA::update('gserver', ['failed' => true, 'last_failure' => DateTimeFormat::utcNow()],
-				['nurl' => Strings::normaliseLink($original_url)]);
-		}
-
-		// When a nodeinfo is present, we don't need to dig further
-		$xrd_timeout = DI::config()->get('system', 'xrd_timeout');
-		$curlResult = DI::httpRequest()->get($url . '/.well-known/nodeinfo', ['timeout' => $xrd_timeout]);
-		if ($curlResult->isTimeout()) {
-			self::setFailure($url);
+		$url = rtrim(self::cleanURL($url), '/');
+		if (empty($url)) {
+			Logger::notice('Empty URL.');
 			return false;
 		}
 
-		// On a redirect follow the new host but mark the old one as failure
-		if ($curlResult->isSuccess() && (parse_url($url, PHP_URL_HOST) != parse_url($curlResult->getRedirectUrl(), PHP_URL_HOST))) {
-			$curlResult = DI::httpRequest()->get($url, ['timeout' => $xrd_timeout]);
-			if (parse_url($url, PHP_URL_HOST) != parse_url($curlResult->getRedirectUrl(), PHP_URL_HOST)) {
-				Logger::info('Found redirect. Mark old entry as failure', ['old' => $url, 'new' => $curlResult->getRedirectUrl()]);
-				self::setFailure($url);
-				self::detect($curlResult->getRedirectUrl(), $network, $only_nodeinfo);
+		// If the URL mismatches, then we mark the old entry as failure
+		if (!Strings::compareLink($url, $original_url)) {
+			self::setFailureByUrl($original_url);
+			if (!self::getID($url, true) && !Network::isUrlBlocked($url)) {
+				self::detect($url, $network, $only_nodeinfo);
+			}
+			return false;
+		}
+
+		$valid_url = Network::isUrlValid($url);
+		if (!$valid_url) {
+			self::setFailureByUrl($url);
+			return false;
+		} else {
+			$valid_url = rtrim($valid_url, '/');
+		}
+
+		if (!Strings::compareLink($url, $valid_url)) {
+			// We only follow redirects when the path stays the same or the target url has no path.
+			// Some systems have got redirects on their landing page to a single account page. This check handles it.
+			if (((parse_url($url, PHP_URL_HOST) != parse_url($valid_url, PHP_URL_HOST)) && (parse_url($url, PHP_URL_PATH) == parse_url($valid_url, PHP_URL_PATH))) ||
+				(((parse_url($url, PHP_URL_HOST) != parse_url($valid_url, PHP_URL_HOST)) || (parse_url($url, PHP_URL_PATH) != parse_url($valid_url, PHP_URL_PATH))) && empty(parse_url($valid_url, PHP_URL_PATH)))) {
+				Logger::debug('Found redirect. Mark old entry as failure', ['old' => $url, 'new' => $valid_url]);
+				self::setFailureByUrl($url);
+				if (!self::getID($valid_url, true) && !Network::isUrlBlocked($valid_url)) {
+					self::detect($valid_url, $network, $only_nodeinfo);
+				}
 				return false;
 			}
+
+			if ((parse_url($url, PHP_URL_HOST) != parse_url($valid_url, PHP_URL_HOST)) && (parse_url($url, PHP_URL_PATH) != parse_url($valid_url, PHP_URL_PATH)) &&
+				(parse_url($url, PHP_URL_PATH) == '')) {
+				Logger::debug('Found redirect. Mark old entry as failure and redirect to the basepath.', ['old' => $url, 'new' => $valid_url]);
+				$parts = parse_url($valid_url);
+				unset($parts['path']);
+				$valid_url = (string)Uri::fromParts($parts);
+
+				self::setFailureByUrl($url);
+				if (!self::getID($valid_url, true) && !Network::isUrlBlocked($valid_url)) {
+					self::detect($valid_url, $network, $only_nodeinfo);
+				}
+				return false;
+			}
+			Logger::debug('Found redirect, but ignore it.', ['old' => $url, 'new' => $valid_url]);
 		}
 
-		$nodeinfo = self::fetchNodeinfo($url, $curlResult);
-		if ($only_nodeinfo && empty($nodeinfo)) {
-			Logger::info('Invalid nodeinfo in nodeinfo-mode, server is marked as failure', ['url' => $url]);
-			self::setFailure($url);
+		if ((parse_url($url, PHP_URL_HOST) == parse_url($valid_url, PHP_URL_HOST)) &&
+			(parse_url($url, PHP_URL_PATH) == parse_url($valid_url, PHP_URL_PATH)) &&
+			(parse_url($url, PHP_URL_SCHEME) != parse_url($valid_url, PHP_URL_SCHEME))) {
+			$url = $valid_url;
+		}
+
+		$in_webroot = empty(parse_url($url, PHP_URL_PATH));
+
+		// When a nodeinfo is present, we don't need to dig further
+		$curlResult = DI::httpClient()->get($url . '/.well-known/x-nodeinfo2', HttpClientAccept::JSON);
+		if ($curlResult->isTimeout()) {
+			self::setFailureByUrl($url);
 			return false;
 		}
 
-		// When nodeinfo isn't present, we use the older 'statistics.json' endpoint
-		if (empty($nodeinfo)) {
-			$nodeinfo = self::fetchStatistics($url);
+		$serverdata = self::parseNodeinfo210($curlResult);
+		if (empty($serverdata)) {
+			$curlResult = DI::httpClient()->get($url . '/.well-known/nodeinfo', HttpClientAccept::JSON);
+			$serverdata = self::fetchNodeinfo($url, $curlResult);
 		}
 
-		// If that didn't work out well, we use some protocol specific endpoints
-		// For Friendica and Zot based networks we have to dive deeper to reveal more details
-		if (empty($nodeinfo['network']) || in_array($nodeinfo['network'], [Protocol::DFRN, Protocol::ZOT])) {
-			if (!empty($nodeinfo['detection-method'])) {
-				$serverdata['detection-method'] = $nodeinfo['detection-method'];
-			}
+		if ($only_nodeinfo && empty($serverdata)) {
+			Logger::info('Invalid nodeinfo in nodeinfo-mode, server is marked as failure', ['url' => $url]);
+			self::setFailureByUrl($url);
+			return false;
+		} elseif (empty($serverdata)) {
+			$serverdata = ['detection-method' => self::DETECT_MANUAL, 'network' => Protocol::PHANTOM, 'platform' => '', 'version' => '', 'site_name' => '', 'info' => ''];
+		}
 
-			// Fetch the landing page, possibly it reveals some data
-			if (empty($nodeinfo['network'])) {
-				if ($baseurl == $url) {
-					$basedata = $serverdata;
+		// When there is no Nodeinfo, then use some protocol specific endpoints
+		if ($serverdata['network'] == Protocol::PHANTOM) {
+			if ($in_webroot) {
+				// Fetch the landing page, possibly it reveals some data
+				$accept = 'application/activity+json,application/ld+json,application/json,*/*;q=0.9';
+				$curlResult = DI::httpClient()->get($url, $accept);
+				if (!$curlResult->isSuccess() && $curlResult->getReturnCode() == '406') {
+					$curlResult = DI::httpClient()->get($url, HttpClientAccept::HTML);
+					$html_fetched = true;
 				} else {
-					$basedata = ['detection-method' => self::DETECT_MANUAL];
+					$html_fetched = false;
 				}
 
-				$curlResult = DI::httpRequest()->get($baseurl, ['timeout' => $xrd_timeout]);
 				if ($curlResult->isSuccess()) {
-					if ((parse_url($baseurl, PHP_URL_HOST) != parse_url($curlResult->getRedirectUrl(), PHP_URL_HOST))) {
-						Logger::info('Found redirect. Mark old entry as failure', ['old' => $url, 'new' => $curlResult->getRedirectUrl()]);
-						self::setFailure($url);
-						self::detect($curlResult->getRedirectUrl(), $network, $only_nodeinfo);
-						return false;
+					$json = json_decode($curlResult->getBody(), true);
+					if (!empty($json) && is_array($json)) {
+						$data = self::fetchDataFromSystemActor($json, $serverdata);
+						$serverdata = $data['server'];
+						$systemactor = $data['actor'];
+						if (!$html_fetched && !in_array($serverdata['detection-method'], [self::DETECT_SYSTEM_ACTOR, self::DETECT_AP_COLLECTION])) {
+							$curlResult = DI::httpClient()->get($url, HttpClientAccept::HTML);
+						}
+					} elseif (!$html_fetched && (strlen($curlResult->getBody()) < 1000)) {
+						$curlResult = DI::httpClient()->get($url, HttpClientAccept::HTML);
 					}
 
-					$basedata = self::analyseRootHeader($curlResult, $basedata);
-					$basedata = self::analyseRootBody($curlResult, $basedata, $baseurl);
+					if ($serverdata['detection-method'] != self::DETECT_SYSTEM_ACTOR) {
+						$serverdata = self::analyseRootHeader($curlResult, $serverdata);
+						$serverdata = self::analyseRootBody($curlResult, $serverdata);
+					}
 				}
 
-				if (!$curlResult->isSuccess() || empty($curlResult->getBody()) || self::invalidBody($curlResult->getBody())) {
-					self::setFailure($url);
+				if (!$curlResult->isSuccess() || empty($curlResult->getBody())) {
+					self::setFailureByUrl($url);
 					return false;
 				}
 
-				if ($baseurl == $url) {
-					$serverdata = $basedata;
-				} else {
-					// When the base path doesn't seem to contain a social network we try the complete path.
-					// Most detectable system have to be installed in the root directory.
-					// We checked the base to avoid false positives.
-					$curlResult = DI::httpRequest()->get($url, ['timeout' => $xrd_timeout]);
-					if ($curlResult->isSuccess()) {
-						$urldata = self::analyseRootHeader($curlResult, $serverdata);
-						$urldata = self::analyseRootBody($curlResult, $urldata, $url);
-
-						$comparebase = $basedata;
-						unset($comparebase['info']);
-						unset($comparebase['site_name']);
-						$compareurl = $urldata;
-						unset($compareurl['info']);
-						unset($compareurl['site_name']);
-
-						// We assume that no one will install the identical system in the root and a subfolder
-						if (!empty(array_diff($comparebase, $compareurl))) {
-							$serverdata = $urldata;
-						}
-					}
+				if (($serverdata['network'] == Protocol::PHANTOM) || in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
+					$serverdata = self::detectMastodonAlikes($url, $serverdata);
 				}
 			}
 
-			if (empty($serverdata['network']) || ($serverdata['network'] == Protocol::ACTIVITYPUB)) {
-				$serverdata = self::detectMastodonAlikes($url, $serverdata);
-			}
-
 			// All following checks are done for systems that always have got a "host-meta" endpoint.
-			// With this check we don't have to waste time and ressources for dead systems.
+			// With this check we don't have to waste time and resources for dead systems.
 			// Also this hopefully prevents us from receiving abuse messages.
-			if (empty($serverdata['network']) && !self::validHostMeta($url)) {
-				self::setFailure($url);
-				return false;
+			if (($serverdata['network'] == Protocol::PHANTOM) || in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
+				$validHostMeta = self::validHostMeta($url);
+			} else {
+				$validHostMeta = false;
 			}
 
-			if (empty($serverdata['network']) || in_array($serverdata['network'], [Protocol::DFRN, Protocol::ACTIVITYPUB])) {
+			if ($validHostMeta) {
+				if (in_array($serverdata['detection-method'], [self::DETECT_MANUAL, self::DETECT_HEADER, self::DETECT_BODY])) {
+					$serverdata['detection-method'] = self::DETECT_HOST_META;
+				}
+
+				if (($serverdata['network'] == Protocol::PHANTOM) || in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
+					$serverdata = self::detectFriendica($url, $serverdata);
+				}
+
+				// The following systems have to be installed in the root directory.
+				if ($in_webroot) {
+					// the 'siteinfo.json' is some specific endpoint of Hubzilla and Red
+					if (($serverdata['network'] == Protocol::PHANTOM) || in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
+						$serverdata = self::fetchSiteinfo($url, $serverdata);
+					}
+
+					// The 'siteinfo.json' doesn't seem to be present on older Hubzilla installations, so we check other endpoints as well
+					if (($serverdata['network'] == Protocol::PHANTOM) || in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
+						$serverdata = self::detectHubzilla($url, $serverdata);
+					}
+
+					if (($serverdata['network'] == Protocol::PHANTOM) || in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
+						$serverdata = self::detectPeertube($url, $serverdata);
+					}
+
+					if (($serverdata['network'] == Protocol::PHANTOM) || in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
+						$serverdata = self::detectGNUSocial($url, $serverdata);
+					}
+				}
+			} elseif (in_array($serverdata['platform'], ['friendica', 'friendika']) && in_array($serverdata['detection-method'], array_merge(self::DETECT_UNSPECIFIC, [self::DETECT_SYSTEM_ACTOR]))) {
 				$serverdata = self::detectFriendica($url, $serverdata);
 			}
 
-			// the 'siteinfo.json' is some specific endpoint of Hubzilla and Red
-			if (empty($serverdata['network']) || ($serverdata['network'] == Protocol::ZOT)) {
-				$serverdata = self::fetchSiteinfo($url, $serverdata);
+			if (($serverdata['network'] == Protocol::PHANTOM) || in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
+				$serverdata = self::detectNextcloud($url, $serverdata, $validHostMeta);
 			}
 
-			// The 'siteinfo.json' doesn't seem to be present on older Hubzilla installations
-			if (empty($serverdata['network'])) {
-				$serverdata = self::detectHubzilla($url, $serverdata);
+			// When nodeinfo isn't present, we use the older 'statistics.json' endpoint
+			// Since this endpoint is only rarely used, we query it at a later time
+			if (in_array($serverdata['detection-method'], array_merge(self::DETECT_UNSPECIFIC, [self::DETECT_FRIENDICA, self::DETECT_CONFIG_JSON]))) {
+				$serverdata = self::fetchStatistics($url, $serverdata);
 			}
-
-			if (empty($serverdata['network']) || in_array($serverdata['detection-method'], [self::DETECT_MANUAL, self::DETECT_BODY])) {
-				$serverdata = self::detectPeertube($url, $serverdata);
-			}
-
-			if (empty($serverdata['network'])) {
-				$serverdata = self::detectNextcloud($url, $serverdata);
-			}
-
-			if (empty($serverdata['network'])) {
-				$serverdata = self::detectGNUSocial($url, $serverdata);
-			}
-
-			$serverdata = array_merge($nodeinfo, $serverdata);
-		} else {
-			$serverdata = $nodeinfo;
-		}
-
-		// Detect the directory type
-		$serverdata['directory-type'] = self::DT_NONE;
-		$serverdata = self::checkPoCo($url, $serverdata);
-		$serverdata = self::checkMastodonDirectory($url, $serverdata);
-
-		// We can't detect the network type. Possibly it is some system that we don't know yet
-		if (empty($serverdata['network'])) {
-			$serverdata['network'] = Protocol::PHANTOM;
 		}
 
 		// When we hadn't been able to detect the network type, we use the hint from the parameter
@@ -459,57 +732,114 @@ class GServer
 			$serverdata['network'] = $network;
 		}
 
+		// Most servers aren't installed in a subdirectory, so we declare this entry as failed
+		if (($serverdata['network'] == Protocol::PHANTOM) && !empty(parse_url($url, PHP_URL_PATH)) && in_array($serverdata['detection-method'], [self::DETECT_MANUAL])) {
+			self::setFailureByUrl($url);
+			return false;
+		}
+
 		$serverdata['url'] = $url;
 		$serverdata['nurl'] = Strings::normaliseLink($url);
 
-		// We take the highest number that we do find
-		$registeredUsers = $serverdata['registered-users'] ?? 0;
-
-		// On an active server there has to be at least a single user
-		if (($serverdata['network'] != Protocol::PHANTOM) && ($registeredUsers == 0)) {
-			$registeredUsers = 1;
-		}
-
-		if ($serverdata['network'] == Protocol::PHANTOM) {
-			$serverdata['registered-users'] = max($registeredUsers, 1);
+		// We have to prevent an endless loop here.
+		// When a server is new, then there is no gserver entry yet.
+		// But in "detectNetworkViaContacts" it could happen that a contact is updated,
+		// and this can call this function here as well.
+		if (self::getID($url, true) && (in_array($serverdata['network'], [Protocol::PHANTOM, Protocol::FEED]) ||
+			in_array($serverdata['detection-method'], [self::DETECT_MANUAL, self::DETECT_HEADER, self::DETECT_BODY, self::DETECT_HOST_META]))) {
 			$serverdata = self::detectNetworkViaContacts($url, $serverdata);
 		}
 
-		$serverdata['next_contact'] = self::getNextUpdateDate(true);
+		if (($serverdata['network'] == Protocol::PHANTOM) && in_array($serverdata['detection-method'], [self::DETECT_MANUAL, self::DETECT_BODY])) {
+			self::setFailureByUrl($url);
+			return false;
+		}
 
+		if (empty($serverdata['version']) && in_array($serverdata['platform'], ['osada']) && in_array($serverdata['detection-method'], [self::DETECT_CONTACTS, self::DETECT_BODY])) {
+			$serverdata['version'] = self::getNomadVersion($url);
+		}
+
+		// Detect the directory type
+		$serverdata['directory-type'] = self::DT_NONE;
+
+		if (in_array($serverdata['network'], Protocol::FEDERATED)) {
+			$serverdata = self::checkMastodonDirectory($url, $serverdata);
+
+			if ($serverdata['directory-type'] == self::DT_NONE) {
+				$serverdata = self::checkPoCo($url, $serverdata);
+			}
+		}
+
+		if ($serverdata['network'] == Protocol::ACTIVITYPUB) {
+			$serverdata = self::fetchWeeklyUsage($url, $serverdata);
+		}
+
+		$serverdata['registered-users'] = $serverdata['registered-users'] ?? 0;
+
+		// Numbers above a reasonable value (10 millions) are ignored
+		if ($serverdata['registered-users'] > 10000000) {
+			$serverdata['registered-users'] = 0;
+		}
+
+		// On an active server there has to be at least a single user
+		if (!in_array($serverdata['network'], [Protocol::PHANTOM, Protocol::FEED]) && ($serverdata['registered-users'] <= 0)) {
+			$serverdata['registered-users'] = 1;
+		} elseif (in_array($serverdata['network'], [Protocol::PHANTOM, Protocol::FEED])) {
+			$serverdata['registered-users'] = 0;
+		}
+
+		$serverdata['next_contact'] = self::getNextUpdateDate(true, '', '', in_array($serverdata['network'], [Protocol::PHANTOM, Protocol::FEED]));
 		$serverdata['last_contact'] = DateTimeFormat::utcNow();
-		$serverdata['failed'] = false;
+		$serverdata['failed']       = false;
+		$serverdata['blocked']      = false;
 
 		$gserver = DBA::selectFirst('gserver', ['network'], ['nurl' => Strings::normaliseLink($url)]);
 		if (!DBA::isResult($gserver)) {
 			$serverdata['created'] = DateTimeFormat::utcNow();
-			$ret = DBA::insert('gserver', $serverdata);
+			$ret = self::insert($serverdata);
 			$id = DBA::lastInsertId();
 		} else {
-			// Don't override the network with 'unknown' when there had been a valid entry before
-			if (($serverdata['network'] == Protocol::PHANTOM) && !empty($gserver['network'])) {
-				unset($serverdata['network']);
-			}
-
-			$ret = DBA::update('gserver', $serverdata, ['nurl' => $serverdata['nurl']]);
+			$ret = self::update($serverdata, ['nurl' => $serverdata['nurl']]);
 			$gserver = DBA::selectFirst('gserver', ['id'], ['nurl' => $serverdata['nurl']]);
 			if (DBA::isResult($gserver)) {
 				$id = $gserver['id'];
 			}
 		}
 
-		if (!empty($serverdata['network']) && !empty($id) && ($serverdata['network'] != Protocol::PHANTOM)) {
+		// Count the number of known contacts from this server
+		if (!empty($id) && !in_array($serverdata['network'], [Protocol::PHANTOM, Protocol::FEED])) {
 			$apcontacts = DBA::count('apcontact', ['gsid' => $id]);
-			$contacts = DBA::count('contact', ['uid' => 0, 'gsid' => $id]);
-			$max_users = max($apcontacts, $contacts, $registeredUsers, 1);
-			if ($max_users > $registeredUsers) {
+			$contacts = DBA::count('contact', ['uid' => 0, 'gsid' => $id, 'failed' => false]);
+			$max_users = max($apcontacts, $contacts);
+			if ($max_users > $serverdata['registered-users']) {
 				Logger::info('Update registered users', ['id' => $id, 'url' => $serverdata['nurl'], 'registered-users' => $max_users]);
-				DBA::update('gserver', ['registered-users' => $max_users], ['id' => $id]);
+				self::update(['registered-users' => $max_users], ['id' => $id]);
+			}
+
+			if (empty($serverdata['active-month-users'])) {
+				$contacts = DBA::count('contact', ["`uid` = ? AND `gsid` = ? AND NOT `failed` AND `last-item` > ?", 0, $id, DateTimeFormat::utc('now - 30 days')]);
+				if ($contacts > 0) {
+					Logger::info('Update monthly users', ['id' => $id, 'url' => $serverdata['nurl'], 'monthly-users' => $contacts]);
+					self::update(['active-month-users' => $contacts], ['id' => $id]);
+				}
+			}
+
+			if (empty($serverdata['active-halfyear-users'])) {
+				$contacts = DBA::count('contact', ["`uid` = ? AND `gsid` = ? AND NOT `failed` AND `last-item` > ?", 0, $id, DateTimeFormat::utc('now - 180 days')]);
+				if ($contacts > 0) {
+					Logger::info('Update halfyear users', ['id' => $id, 'url' => $serverdata['nurl'], 'halfyear-users' => $contacts]);
+					self::update(['active-halfyear-users' => $contacts], ['id' => $id]);
+				}
 			}
 		}
 
-		if (!empty($serverdata['network']) && in_array($serverdata['network'], [Protocol::DFRN, Protocol::DIASPORA])) {
+		if (in_array($serverdata['network'], [Protocol::DFRN, Protocol::DIASPORA])) {
 			self::discoverRelay($url);
+		}
+
+		if (!empty($systemactor)) {
+			$contact = Contact::getByURL($systemactor, true, ['gsid', 'baseurl', 'id', 'network', 'url', 'name']);
+			Logger::debug('Fetched system actor',  ['url' => $url, 'gsid' => $id, 'contact' => $contact]);
 		}
 
 		return $ret;
@@ -519,13 +849,16 @@ class GServer
 	 * Fetch relay data from a given server url
 	 *
 	 * @param string $server_url address of the server
+	 *
+	 * @return void
+	 *
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
 	private static function discoverRelay(string $server_url)
 	{
 		Logger::info('Discover relay data', ['server' => $server_url]);
 
-		$curlResult = DI::httpRequest()->get($server_url . '/.well-known/x-social-relay');
+		$curlResult = DI::httpClient()->get($server_url . '/.well-known/x-social-relay', HttpClientAccept::JSON);
 		if (!$curlResult->isSuccess()) {
 			return;
 		}
@@ -536,7 +869,7 @@ class GServer
 		}
 
 		// Sanitize incoming data, see https://github.com/friendica/friendica/issues/8565
-		$data['subscribe'] = (bool)$data['subscribe'] ?? false;
+		$data['subscribe'] = (bool)($data['subscribe'] ?? false);
 
 		if (!$data['subscribe'] || empty($data['scope']) || !in_array(strtolower($data['scope']), ['all', 'tags'])) {
 			$data['scope'] = '';
@@ -551,7 +884,7 @@ class GServer
 
 		if (($gserver['relay-subscribe'] != $data['subscribe']) || ($gserver['relay-scope'] != $data['scope'])) {
 			$fields = ['relay-subscribe' => $data['subscribe'], 'relay-scope' => $data['scope']];
-			DBA::update('gserver', $fields, ['id' => $gserver['id']]);
+			self::update($fields, ['id' => $gserver['id']]);
 		}
 
 		DBA::delete('gserver-tag', ['gserver-id' => $gserver['id']]);
@@ -618,21 +951,30 @@ class GServer
 	 *
 	 * @return array server data
 	 */
-	private static function fetchStatistics(string $url)
+	private static function fetchStatistics(string $url, array $serverdata): array
 	{
-		$curlResult = DI::httpRequest()->get($url . '/statistics.json');
+		$curlResult = DI::httpClient()->get($url . '/statistics.json', HttpClientAccept::JSON);
 		if (!$curlResult->isSuccess()) {
-			return [];
+			return $serverdata;
 		}
 
 		$data = json_decode($curlResult->getBody(), true);
 		if (empty($data)) {
-			return [];
+			return $serverdata;
 		}
 
-		$serverdata = ['detection-method' => self::DETECT_STATISTICS_JSON];
+		// Some AP enabled systems return activity data that we don't expect here.
+		if (strpos($curlResult->getContentType(), 'application/activity+json') !== false) {
+			return $serverdata;
+		}
+
+		$valid = false;
+		$old_serverdata = $serverdata;
+
+		$serverdata['detection-method'] = self::DETECT_STATISTICS_JSON;
 
 		if (!empty($data['version'])) {
+			$valid = true;
 			$serverdata['version'] = $data['version'];
 			// Version numbers on statistics.json are presented with additional info, e.g.:
 			// 0.6.3.0-p1702cc1c, 0.6.99.0-p1b9ab160 or 3.4.3-2-1191.
@@ -640,10 +982,12 @@ class GServer
 		}
 
 		if (!empty($data['name'])) {
+			$valid = true;
 			$serverdata['site_name'] = $data['name'];
 		}
 
 		if (!empty($data['network'])) {
+			$valid = true;
 			$serverdata['platform'] = strtolower($data['network']);
 
 			if ($serverdata['platform'] == 'diaspora') {
@@ -657,11 +1001,34 @@ class GServer
 			}
 		}
 
+		if (!empty($data['total_users'])) {
+			$valid = true;
+			$serverdata['registered-users'] = max($data['total_users'], 1);
+		}
+
+		if (!empty($data['active_users_monthly'])) {
+			$valid = true;
+			$serverdata['active-month-users'] = max($data['active_users_monthly'], 0);
+		}
+
+		if (!empty($data['active_users_halfyear'])) {
+			$valid = true;
+			$serverdata['active-halfyear-users'] = max($data['active_users_halfyear'], 0);
+		}
+
+		if (!empty($data['local_posts'])) {
+			$valid = true;
+			$serverdata['local-posts'] = max($data['local_posts'], 0);
+		}
 
 		if (!empty($data['registrations_open'])) {
 			$serverdata['register_policy'] = Register::OPEN;
 		} else {
 			$serverdata['register_policy'] = Register::CLOSED;
+		}
+
+		if (!$valid) {
+			return $old_serverdata;
 		}
 
 		return $serverdata;
@@ -670,18 +1037,20 @@ class GServer
 	/**
 	 * Detect server type by using the nodeinfo data
 	 *
-	 * @param string     $url        address of the server
-	 * @param CurlResult $curlResult
+	 * @param string                  $url        address of the server
+	 * @param ICanHandleHttpResponses $httpResult
+	 *
 	 * @return array Server data
+	 *
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	private static function fetchNodeinfo(string $url, CurlResult $curlResult)
+	private static function fetchNodeinfo(string $url, ICanHandleHttpResponses $httpResult): array
 	{
-		if (!$curlResult->isSuccess()) {
+		if (!$httpResult->isSuccess()) {
 			return [];
 		}
 
-		$nodeinfo = json_decode($curlResult->getBody(), true);
+		$nodeinfo = json_decode($httpResult->getBody(), true);
 
 		if (!is_array($nodeinfo) || empty($nodeinfo['links'])) {
 			return [];
@@ -695,10 +1064,11 @@ class GServer
 				Logger::info('Invalid nodeinfo format', ['url' => $url]);
 				continue;
 			}
+
 			if ($link['rel'] == 'http://nodeinfo.diaspora.software/ns/schema/1.0') {
-				$nodeinfo1_url = $link['href'];
+				$nodeinfo1_url = Network::addBasePath($link['href'], $httpResult->getUrl());
 			} elseif ($link['rel'] == 'http://nodeinfo.diaspora.software/ns/schema/2.0') {
-				$nodeinfo2_url = $link['href'];
+				$nodeinfo2_url = Network::addBasePath($link['href'], $httpResult->getUrl());
 			}
 		}
 
@@ -708,13 +1078,11 @@ class GServer
 
 		$server = [];
 
-		// When the nodeinfo url isn't on the same host, then there is obviously something wrong
-		if (!empty($nodeinfo2_url) && (parse_url($url, PHP_URL_HOST) == parse_url($nodeinfo2_url, PHP_URL_HOST))) {
+		if (!empty($nodeinfo2_url)) {
 			$server = self::parseNodeinfo2($nodeinfo2_url);
 		}
 
-		// When the nodeinfo url isn't on the same host, then there is obviously something wrong
-		if (empty($server) && !empty($nodeinfo1_url) && (parse_url($url, PHP_URL_HOST) == parse_url($nodeinfo1_url, PHP_URL_HOST))) {
+		if (empty($server) && !empty($nodeinfo1_url)) {
 			$server = self::parseNodeinfo1($nodeinfo1_url);
 		}
 
@@ -725,13 +1093,14 @@ class GServer
 	 * Parses Nodeinfo 1
 	 *
 	 * @param string $nodeinfo_url address of the nodeinfo path
+	 *
 	 * @return array Server data
+	 *
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	private static function parseNodeinfo1(string $nodeinfo_url)
+	private static function parseNodeinfo1(string $nodeinfo_url): array
 	{
-		$curlResult = DI::httpRequest()->get($nodeinfo_url);
-
+		$curlResult = DI::httpClient()->get($nodeinfo_url, HttpClientAccept::JSON);
 		if (!$curlResult->isSuccess()) {
 			return [];
 		}
@@ -770,6 +1139,22 @@ class GServer
 			$server['registered-users'] = max($nodeinfo['usage']['users']['total'], 1);
 		}
 
+		if (!empty($nodeinfo['usage']['users']['activeMonth'])) {
+			$server['active-month-users'] = max($nodeinfo['usage']['users']['activeMonth'], 0);
+		}
+
+		if (!empty($nodeinfo['usage']['users']['activeHalfyear'])) {
+			$server['active-halfyear-users'] = max($nodeinfo['usage']['users']['activeHalfyear'], 0);
+		}
+
+		if (!empty($nodeinfo['usage']['localPosts'])) {
+			$server['local-posts'] = max($nodeinfo['usage']['localPosts'], 0);
+		}
+
+		if (!empty($nodeinfo['usage']['localComments'])) {
+			$server['local-comments'] = max($nodeinfo['usage']['localComments'], 0);
+		}
+
 		if (!empty($nodeinfo['protocols']['inbound']) && is_array($nodeinfo['protocols']['inbound'])) {
 			$protocols = [];
 			foreach ($nodeinfo['protocols']['inbound'] as $protocol) {
@@ -795,46 +1180,61 @@ class GServer
 			return [];
 		}
 
+		if (empty($server['network'])) {
+			$server['network'] = Protocol::PHANTOM;
+		}
+
 		return $server;
 	}
 
 	/**
 	 * Parses Nodeinfo 2
 	 *
+	 * @see https://git.feneas.org/jaywink/nodeinfo2
+	 *
 	 * @param string $nodeinfo_url address of the nodeinfo path
+	 *
 	 * @return array Server data
+	 *
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	private static function parseNodeinfo2(string $nodeinfo_url)
+	private static function parseNodeinfo2(string $nodeinfo_url): array
 	{
-		$curlResult = DI::httpRequest()->get($nodeinfo_url);
+		$curlResult = DI::httpClient()->get($nodeinfo_url, HttpClientAccept::JSON);
 		if (!$curlResult->isSuccess()) {
 			return [];
 		}
 
 		$nodeinfo = json_decode($curlResult->getBody(), true);
-
 		if (!is_array($nodeinfo)) {
 			return [];
 		}
 
-		$server = ['detection-method' => self::DETECT_NODEINFO_2,
-			'register_policy' => Register::CLOSED];
+		$server = [
+			'detection-method' => self::DETECT_NODEINFO_2,
+			'register_policy' => Register::CLOSED,
+			'platform' => 'unknown',
+		];
 
 		if (!empty($nodeinfo['openRegistrations'])) {
 			$server['register_policy'] = Register::OPEN;
 		}
 
-		if (is_array($nodeinfo['software'])) {
-			if (!empty($nodeinfo['software']['name'])) {
+		if (!empty($nodeinfo['software'])) {
+			if (isset($nodeinfo['software']['name'])) {
 				$server['platform'] = strtolower($nodeinfo['software']['name']);
 			}
 
-			if (!empty($nodeinfo['software']['version'])) {
+			if (!empty($nodeinfo['software']['version']) && isset($server['platform'])) {
 				$server['version'] = $nodeinfo['software']['version'];
 				// Version numbers on Nodeinfo are presented with additional info, e.g.:
 				// 0.6.3.0-p1702cc1c, 0.6.99.0-p1b9ab160 or 3.4.3-2-1191.
 				$server['version'] = preg_replace('=(.+)-(.{4,})=ism', '$1', $server['version']);
+
+				// qoto advertises itself as Mastodon
+				if (($server['platform'] == 'mastodon') && substr($nodeinfo['software']['version'], -5) == '-qoto') {
+					$server['platform'] = 'qoto';
+				}
 			}
 		}
 
@@ -846,10 +1246,28 @@ class GServer
 			$server['registered-users'] = max($nodeinfo['usage']['users']['total'], 1);
 		}
 
+		if (!empty($nodeinfo['usage']['users']['activeMonth'])) {
+			$server['active-month-users'] = max($nodeinfo['usage']['users']['activeMonth'], 0);
+		}
+
+		if (!empty($nodeinfo['usage']['users']['activeHalfyear'])) {
+			$server['active-halfyear-users'] = max($nodeinfo['usage']['users']['activeHalfyear'], 0);
+		}
+
+		if (!empty($nodeinfo['usage']['localPosts'])) {
+			$server['local-posts'] = max($nodeinfo['usage']['localPosts'], 0);
+		}
+
+		if (!empty($nodeinfo['usage']['localComments'])) {
+			$server['local-comments'] = max($nodeinfo['usage']['localComments'], 0);
+		}
+
 		if (!empty($nodeinfo['protocols'])) {
 			$protocols = [];
 			foreach ($nodeinfo['protocols'] as $protocol) {
-				$protocols[$protocol] = true;
+				if (is_string($protocol)) {
+					$protocols[$protocol] = true;
+				}
 			}
 
 			if (!empty($protocols['dfrn'])) {
@@ -871,6 +1289,111 @@ class GServer
 			return [];
 		}
 
+		if (empty($server['network'])) {
+			$server['network'] = Protocol::PHANTOM;
+		}
+
+		return $server;
+	}
+
+	/**
+	 * Parses NodeInfo2 protocol 1.0
+	 *
+	 * @see https://github.com/jaywink/nodeinfo2/blob/master/PROTOCOL.md
+	 *
+	 * @param string $nodeinfo_url address of the nodeinfo path
+	 *
+	 * @return array Server data
+	 *
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 */
+	private static function parseNodeinfo210(ICanHandleHttpResponses $httpResult): array
+	{
+		if (!$httpResult->isSuccess()) {
+			return [];
+		}
+
+		$nodeinfo = json_decode($httpResult->getBody(), true);
+
+		if (!is_array($nodeinfo)) {
+			return [];
+		}
+
+		$server = ['detection-method' => self::DETECT_NODEINFO_210,
+			'register_policy' => Register::CLOSED];
+
+		if (!empty($nodeinfo['openRegistrations'])) {
+			$server['register_policy'] = Register::OPEN;
+		}
+
+		if (!empty($nodeinfo['server'])) {
+			if (!empty($nodeinfo['server']['software'])) {
+				$server['platform'] = strtolower($nodeinfo['server']['software']);
+			}
+
+			if (!empty($nodeinfo['server']['version'])) {
+				$server['version'] = $nodeinfo['server']['version'];
+				// Version numbers on Nodeinfo are presented with additional info, e.g.:
+				// 0.6.3.0-p1702cc1c, 0.6.99.0-p1b9ab160 or 3.4.3-2-1191.
+				$server['version'] = preg_replace('=(.+)-(.{4,})=ism', '$1', $server['version']);
+			}
+
+			if (!empty($nodeinfo['server']['name'])) {
+				$server['site_name'] = $nodeinfo['server']['name'];
+			}
+		}
+
+		if (!empty($nodeinfo['usage']['users']['total'])) {
+			$server['registered-users'] = max($nodeinfo['usage']['users']['total'], 1);
+		}
+
+		if (!empty($nodeinfo['usage']['users']['activeMonth'])) {
+			$server['active-month-users'] = max($nodeinfo['usage']['users']['activeMonth'], 0);
+		}
+
+		if (!empty($nodeinfo['usage']['users']['activeHalfyear'])) {
+			$server['active-halfyear-users'] = max($nodeinfo['usage']['users']['activeHalfyear'], 0);
+		}
+
+		if (!empty($nodeinfo['usage']['localPosts'])) {
+			$server['local-posts'] = max($nodeinfo['usage']['localPosts'], 0);
+		}
+
+		if (!empty($nodeinfo['usage']['localComments'])) {
+			$server['local-comments'] = max($nodeinfo['usage']['localComments'], 0);
+		}
+
+		if (!empty($nodeinfo['protocols'])) {
+			$protocols = [];
+			foreach ($nodeinfo['protocols'] as $protocol) {
+				if (is_string($protocol)) {
+					$protocols[$protocol] = true;
+				}
+			}
+
+			if (!empty($protocols['dfrn'])) {
+				$server['network'] = Protocol::DFRN;
+			} elseif (!empty($protocols['activitypub'])) {
+				$server['network'] = Protocol::ACTIVITYPUB;
+			} elseif (!empty($protocols['diaspora'])) {
+				$server['network'] = Protocol::DIASPORA;
+			} elseif (!empty($protocols['ostatus'])) {
+				$server['network'] = Protocol::OSTATUS;
+			} elseif (!empty($protocols['gnusocial'])) {
+				$server['network'] = Protocol::OSTATUS;
+			} elseif (!empty($protocols['zot'])) {
+				$server['network'] = Protocol::ZOT;
+			}
+		}
+
+		if (empty($server) || empty($server['platform'])) {
+			return [];
+		}
+
+		if (empty($server['network'])) {
+			$server['network'] = Protocol::PHANTOM;
+		}
+
 		return $server;
 	}
 
@@ -882,9 +1405,9 @@ class GServer
 	 *
 	 * @return array server data
 	 */
-	private static function fetchSiteinfo(string $url, array $serverdata)
+	private static function fetchSiteinfo(string $url, array $serverdata): array
 	{
-		$curlResult = DI::httpRequest()->get($url . '/siteinfo.json');
+		$curlResult = DI::httpClient()->get($url . '/siteinfo.json', HttpClientAccept::JSON);
 		if (!$curlResult->isSuccess()) {
 			return $serverdata;
 		}
@@ -894,13 +1417,13 @@ class GServer
 			return $serverdata;
 		}
 
-		if (in_array($serverdata['detection-method'], [self::DETECT_HEADER, self::DETECT_BODY, self::DETECT_MANUAL])) {
+		if (in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
 			$serverdata['detection-method'] = self::DETECT_SITEINFO_JSON;
 		}
 
-		if (!empty($data['url'])) {
+		if (!empty($data['platform'])) {
 			$serverdata['platform'] = strtolower($data['platform']);
-			$serverdata['version'] = $data['version'];
+			$serverdata['version'] = $data['version'] ?? 'N/A';
 		}
 
 		if (!empty($data['plugins'])) {
@@ -921,6 +1444,22 @@ class GServer
 
 		if (!empty($data['channels_total'])) {
 			$serverdata['registered-users'] = max($data['channels_total'], 1);
+		}
+
+		if (!empty($data['channels_active_monthly'])) {
+			$serverdata['active-month-users'] = max($data['channels_active_monthly'], 0);
+		}
+
+		if (!empty($data['channels_active_halfyear'])) {
+			$serverdata['active-halfyear-users'] = max($data['channels_active_halfyear'], 0);
+		}
+
+		if (!empty($data['local_posts'])) {
+			$serverdata['local-posts'] = max($data['local_posts'], 0);
+		}
+
+		if (!empty($data['local_comments'])) {
+			$serverdata['local-comments'] = max($data['local_comments'], 0);
 		}
 
 		if (!empty($data['register_policy'])) {
@@ -944,21 +1483,136 @@ class GServer
 	}
 
 	/**
+	 * Fetches server data via an ActivityPub account with url of that server
+	 *
+	 * @param string $url        URL of the given server
+	 * @param array  $serverdata array with server data
+	 *
+	 * @return array server data
+	 *
+	 * @throws Exception
+	 */
+	private static function fetchDataFromSystemActor(array $data, array $serverdata): array
+	{
+		if (empty($data)) {
+			return ['server' => $serverdata, 'actor' => ''];
+		}
+
+		$actor = JsonLD::compact($data, false);
+		if (in_array(JsonLD::fetchElement($actor, '@type'), ActivityPub\Receiver::ACCOUNT_TYPES)) {
+			$serverdata['network'] = Protocol::ACTIVITYPUB;
+			$serverdata['site_name'] = JsonLD::fetchElement($actor, 'as:name', '@value');
+			$serverdata['info'] = JsonLD::fetchElement($actor, 'as:summary', '@value');
+			if (self::isNomad($actor)) {
+				$serverdata['platform'] = self::getNomadName($actor['@id']);
+				$serverdata['version'] = self::getNomadVersion($actor['@id']);
+				$serverdata['detection-method'] = self::DETECT_SYSTEM_ACTOR;
+			} elseif (!empty($actor['as:generator'])) {
+				$generator = explode(' ', JsonLD::fetchElement($actor['as:generator'], 'as:name', '@value'));
+				$serverdata['platform'] = strtolower(array_shift($generator));
+				$serverdata['version'] = self::getNomadVersion($actor['@id']);
+				$serverdata['detection-method'] = self::DETECT_SYSTEM_ACTOR;
+			} else {
+				$serverdata['detection-method'] = self::DETECT_AP_ACTOR;
+			}
+			return ['server' => $serverdata, 'actor' => $actor['@id']];
+		} elseif ((JsonLD::fetchElement($actor, '@type') == 'as:Collection')) {
+			// By now only Ktistec seems to provide collections this way
+			$serverdata['platform'] = 'ktistec';
+			$serverdata['network'] = Protocol::ACTIVITYPUB;
+			$serverdata['detection-method'] = self::DETECT_AP_COLLECTION;
+
+			$actors = JsonLD::fetchElementArray($actor, 'as:items');
+			if (!empty($actors) && !empty($actors[0]['@id'])) {
+				$actor_url = $actor['@id'] . $actors[0]['@id'];
+			} else {
+				$actor_url = '';
+			}
+
+			return ['server' => $serverdata, 'actor' => $actor_url];
+		}
+		return ['server' => $serverdata, 'actor' => ''];
+	}
+
+	/**
+	 * Detect if the given actor is a nomad account
+	 *
+	 * @param array $actor
+	 * @return boolean
+	 */
+	private static function isNomad(array $actor): bool
+	{
+		$tags = JsonLD::fetchElementArray($actor, 'as:tag');
+		if (empty($tags)) {
+			return false;
+		}
+
+		foreach ($tags as $tag) {
+			if ((($tag['as:name'] ?? '') == 'Protocol') && (($tag['sc:value'] ?? '') == 'nomad')) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Fetch the name of Nomad implementation
+	 *
+	 * @param string $url
+	 * @return string
+	 */
+	private static function getNomadName(string $url): string
+	{
+		$name = 'nomad';
+		$curlResult = DI::httpClient()->get($url . '/manifest', 'application/manifest+json');
+		if (!$curlResult->isSuccess() || ($curlResult->getBody() == '')) {
+			return $name;
+		}
+
+		$data = json_decode($curlResult->getBody(), true);
+		if (empty($data)) {
+			return $name;
+		}
+
+		return $data['name'] ?? $name;
+	}
+
+	/**
+	 * Fetch the version of the Nomad installation
+	 *
+	 * @param string $url
+	 * @return string
+	 */
+	private static function getNomadVersion(string $url): string
+	{
+		$curlResult = DI::httpClient()->get($url . '/api/z/1.0/version', HttpClientAccept::JSON);
+		if (!$curlResult->isSuccess() || ($curlResult->getBody() == '')) {
+			return '';
+		}
+
+		$data = json_decode($curlResult->getBody(), true);
+		if (empty($data)) {
+			return '';
+		}
+		return $data ?? '';
+	}
+
+	/**
 	 * Checks if the server contains a valid host meta file
 	 *
 	 * @param string $url URL of the given server
 	 *
 	 * @return boolean 'true' if the server seems to be vital
 	 */
-	private static function validHostMeta(string $url)
+	private static function validHostMeta(string $url): bool
 	{
 		$xrd_timeout = DI::config()->get('system', 'xrd_timeout');
-		$curlResult = DI::httpRequest()->get($url . '/.well-known/host-meta', ['timeout' => $xrd_timeout]);
+		$curlResult = DI::httpClient()->get($url . Probe::HOST_META, HttpClientAccept::XRD_XML, [HttpClientOptions::TIMEOUT => $xrd_timeout]);
 		if (!$curlResult->isSuccess()) {
 			return false;
 		}
 
-		$xrd = XML::parseString($curlResult->getBody());
+		$xrd = XML::parseString($curlResult->getBody(), true);
 		if (!is_object($xrd)) {
 			return false;
 		}
@@ -996,17 +1650,19 @@ class GServer
 	 *
 	 * @return array server data
 	 */
-	private static function detectNetworkViaContacts(string $url, array $serverdata)
+	private static function detectNetworkViaContacts(string $url, array $serverdata): array
 	{
 		$contacts = [];
 
-		$apcontacts = DBA::select('apcontact', ['url'], ['baseurl' => [$url, $serverdata['nurl']]]);
+		$nurl = Strings::normaliseLink($url);
+
+		$apcontacts = DBA::select('apcontact', ['url'], ['baseurl' => [$url, $nurl]]);
 		while ($apcontact = DBA::fetch($apcontacts)) {
 			$contacts[Strings::normaliseLink($apcontact['url'])] = $apcontact['url'];
 		}
 		DBA::close($apcontacts);
 
-		$pcontacts = DBA::select('contact', ['url', 'nurl'], ['uid' => 0, 'baseurl' => [$url, $serverdata['nurl']]]);
+		$pcontacts = DBA::select('contact', ['url', 'nurl'], ['uid' => 0, 'baseurl' => [$url, $nurl]]);
 		while ($pcontact = DBA::fetch($pcontacts)) {
 			$contacts[$pcontact['nurl']] = $pcontact['url'];
 		}
@@ -1016,15 +1672,22 @@ class GServer
 			return $serverdata;
 		}
 
+		$time = time();
 		foreach ($contacts as $contact) {
-			$probed = Contact::getByURL($contact);
-			if (!empty($probed) && in_array($probed['network'], Protocol::FEDERATED)) {
-				$serverdata['network'] = $probed['network'];
+			// Endlosschleife verhindern wegen gsid!
+			$data = Probe::uri($contact);
+			if (in_array($data['network'], Protocol::FEDERATED)) {
+				$serverdata['network'] = $data['network'];
+
+				if (in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
+					$serverdata['detection-method'] = self::DETECT_CONTACTS;
+				}
+				break;
+			} elseif ((time() - $time) > 10) {
+				// To reduce the stress on remote systems we probe a maximum of 10 seconds
 				break;
 			}
 		}
-
-		$serverdata['registered-users'] = max($serverdata['registered-users'], count($contacts), 1);
 
 		return $serverdata;
 	}
@@ -1039,11 +1702,11 @@ class GServer
 	 *
 	 * @return array server data
 	 */
-	private static function checkPoCo(string $url, array $serverdata)
+	private static function checkPoCo(string $url, array $serverdata): array
 	{
 		$serverdata['poco'] = '';
 
-		$curlResult = DI::httpRequest()->get($url . '/poco');
+		$curlResult = DI::httpClient()->get($url . '/poco', HttpClientAccept::JSON);
 		if (!$curlResult->isSuccess()) {
 			return $serverdata;
 		}
@@ -1071,9 +1734,9 @@ class GServer
 	 *
 	 * @return array server data
 	 */
-	public static function checkMastodonDirectory(string $url, array $serverdata)
+	public static function checkMastodonDirectory(string $url, array $serverdata): array
 	{
-		$curlResult = DI::httpRequest()->get($url . '/api/v1/directory?limit=1');
+		$curlResult = DI::httpClient()->get($url . '/api/v1/directory?limit=1', HttpClientAccept::JSON);
 		if (!$curlResult->isSuccess()) {
 			return $serverdata;
 		}
@@ -1098,10 +1761,9 @@ class GServer
 	 *
 	 * @return array server data
 	 */
-	private static function detectPeertube(string $url, array $serverdata)
+	private static function detectPeertube(string $url, array $serverdata): array
 	{
-		$curlResult = DI::httpRequest()->get($url . '/api/v1/config');
-
+		$curlResult = DI::httpClient()->get($url . '/api/v1/config', HttpClientAccept::JSON);
 		if (!$curlResult->isSuccess() || ($curlResult->getBody() == '')) {
 			return $serverdata;
 		}
@@ -1130,7 +1792,7 @@ class GServer
 				}
 			}
 
-			if (in_array($serverdata['detection-method'], [self::DETECT_HEADER, self::DETECT_BODY, self::DETECT_MANUAL])) {
+			if (in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
 				$serverdata['detection-method'] = self::DETECT_V1_CONFIG;
 			}
 		}
@@ -1143,13 +1805,13 @@ class GServer
 	 *
 	 * @param string $url        URL of the given server
 	 * @param array  $serverdata array with server data
+	 * @param bool   $validHostMeta
 	 *
 	 * @return array server data
 	 */
-	private static function detectNextcloud(string $url, array $serverdata)
+	private static function detectNextcloud(string $url, array $serverdata, bool $validHostMeta): array
 	{
-		$curlResult = DI::httpRequest()->get($url . '/status.php');
-
+		$curlResult = DI::httpClient()->get($url . '/status.php', HttpClientAccept::JSON);
 		if (!$curlResult->isSuccess() || ($curlResult->getBody() == '')) {
 			return $serverdata;
 		}
@@ -1162,11 +1824,54 @@ class GServer
 		if (!empty($data['version'])) {
 			$serverdata['platform'] = 'nextcloud';
 			$serverdata['version'] = $data['version'];
-			$serverdata['network'] = Protocol::ACTIVITYPUB;
 
-			if (in_array($serverdata['detection-method'], [self::DETECT_HEADER, self::DETECT_BODY, self::DETECT_MANUAL])) {
+			if ($validHostMeta) {
+				$serverdata['network'] = Protocol::ACTIVITYPUB;
+			}
+
+			if (in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
 				$serverdata['detection-method'] = self::DETECT_STATUS_PHP;
 			}
+		}
+
+		return $serverdata;
+	}
+
+	/**
+	 * Fetches weekly usage data
+	 *
+	 * @param string $url        URL of the given server
+	 * @param array  $serverdata array with server data
+	 *
+	 * @return array server data
+	 */
+	private static function fetchWeeklyUsage(string $url, array $serverdata): array
+	{
+		$curlResult = DI::httpClient()->get($url . '/api/v1/instance/activity', HttpClientAccept::JSON);
+		if (!$curlResult->isSuccess() || ($curlResult->getBody() == '')) {
+			return $serverdata;
+		}
+
+		$data = json_decode($curlResult->getBody(), true);
+		if (empty($data)) {
+			return $serverdata;
+		}
+
+		$current_week = [];
+		foreach ($data as $week) {
+			// Use only data from a full week
+			if (empty($week['week']) || (time() - $week['week']) < 7 * 24 * 60 * 60) {
+				continue;
+			}
+
+			// Most likely the data is sorted correctly. But we better are safe than sorry
+			if (empty($current_week['week']) || ($current_week['week'] < $week['week'])) {
+				$current_week = $week;
+			}
+		}
+
+		if (!empty($current_week['logins'])) {
+			$serverdata['active-week-users'] = max($current_week['logins'], 0);
 		}
 
 		return $serverdata;
@@ -1180,10 +1885,9 @@ class GServer
 	 *
 	 * @return array server data
 	 */
-	private static function detectMastodonAlikes(string $url, array $serverdata)
+	private static function detectMastodonAlikes(string $url, array $serverdata): array
 	{
-		$curlResult = DI::httpRequest()->get($url . '/api/v1/instance');
-
+		$curlResult = DI::httpClient()->get($url . '/api/v1/instance', HttpClientAccept::JSON);
 		if (!$curlResult->isSuccess() || ($curlResult->getBody() == '')) {
 			return $serverdata;
 		}
@@ -1193,23 +1897,23 @@ class GServer
 			return $serverdata;
 		}
 
-		if (in_array($serverdata['detection-method'], [self::DETECT_HEADER, self::DETECT_BODY, self::DETECT_MANUAL])) {
-			$serverdata['detection-method'] = self::DETECT_MASTODON_API;
-		}
+		$valid = false;
 
 		if (!empty($data['version'])) {
 			$serverdata['platform'] = 'mastodon';
 			$serverdata['version'] = $data['version'] ?? '';
 			$serverdata['network'] = Protocol::ACTIVITYPUB;
+			$valid = true;
 		}
 
 		if (!empty($data['title'])) {
 			$serverdata['site_name'] = $data['title'];
 		}
 
-		if (!empty($data['title']) && empty($serverdata['platform']) && empty($serverdata['network'])) {
+		if (!empty($data['title']) && empty($serverdata['platform']) && ($serverdata['network'] == Protocol::PHANTOM)) {
 			$serverdata['platform'] = 'mastodon';
 			$serverdata['network'] = Protocol::ACTIVITYPUB;
+			$valid = true;
 		}
 
 		if (!empty($data['description'])) {
@@ -1223,16 +1927,23 @@ class GServer
 		if (!empty($serverdata['version']) && preg_match('/.*?\(compatible;\s(.*)\s(.*)\)/ism', $serverdata['version'], $matches)) {
 			$serverdata['platform'] = strtolower($matches[1]);
 			$serverdata['version'] = $matches[2];
+			$valid = true;
 		}
 
 		if (!empty($serverdata['version']) && strstr(strtolower($serverdata['version']), 'pleroma')) {
 			$serverdata['platform'] = 'pleroma';
 			$serverdata['version'] = trim(str_ireplace('pleroma', '', $serverdata['version']));
+			$valid = true;
 		}
 
 		if (!empty($serverdata['platform']) && strstr($serverdata['platform'], 'pleroma')) {
 			$serverdata['version'] = trim(str_ireplace('pleroma', '', $serverdata['platform']));
 			$serverdata['platform'] = 'pleroma';
+			$valid = true;
+		}
+
+		if ($valid && in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
+			$serverdata['detection-method'] = self::DETECT_MASTODON_API;
 		}
 
 		return $serverdata;
@@ -1246,9 +1957,9 @@ class GServer
 	 *
 	 * @return array server data
 	 */
-	private static function detectHubzilla(string $url, array $serverdata)
+	private static function detectHubzilla(string $url, array $serverdata): array
 	{
-		$curlResult = DI::httpRequest()->get($url . '/api/statusnet/config.json');
+		$curlResult = DI::httpClient()->get($url . '/api/statusnet/config.json', HttpClientAccept::JSON);
 		if (!$curlResult->isSuccess() || ($curlResult->getBody() == '')) {
 			return $serverdata;
 		}
@@ -1309,8 +2020,7 @@ class GServer
 			$serverdata['register_policy'] = Register::CLOSED;
 		}
 
-		if (!empty($serverdata['network']) && in_array($serverdata['detection-method'],
-			[self::DETECT_HEADER, self::DETECT_BODY, self::DETECT_MANUAL])) {
+		if (($serverdata['network'] != Protocol::PHANTOM) && in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
 			$serverdata['detection-method'] = self::DETECT_CONFIG_JSON;
 		}
 
@@ -1324,7 +2034,7 @@ class GServer
 	 *
 	 * @return boolean
 	 */
-	private static function toBoolean($val)
+	private static function toBoolean($val): bool
 	{
 		if (($val == 'true') || ($val == 1)) {
 			return true;
@@ -1333,7 +2043,7 @@ class GServer
 		}
 
 		return $val;
-        }
+	}
 
 	/**
 	 * Detect if the URL belongs to a GNU Social server
@@ -1343,10 +2053,10 @@ class GServer
 	 *
 	 * @return array server data
 	 */
-	private static function detectGNUSocial(string $url, array $serverdata)
+	private static function detectGNUSocial(string $url, array $serverdata): array
 	{
 		// Test for GNU Social
-		$curlResult = DI::httpRequest()->get($url . '/api/gnusocial/version.json');
+		$curlResult = DI::httpClient()->get($url . '/api/gnusocial/version.json', HttpClientAccept::JSON);
 		if ($curlResult->isSuccess() && ($curlResult->getBody() != '{"error":"not implemented"}') &&
 			($curlResult->getBody() != '') && (strlen($curlResult->getBody()) < 30)) {
 			$serverdata['platform'] = 'gnusocial';
@@ -1356,15 +2066,15 @@ class GServer
 			$serverdata['version'] = trim($serverdata['version'], '"');
 			$serverdata['network'] = Protocol::OSTATUS;
 
-			if (in_array($serverdata['detection-method'], [self::DETECT_HEADER, self::DETECT_BODY, self::DETECT_MANUAL])) {
+			if (in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
 				$serverdata['detection-method'] = self::DETECT_GNUSOCIAL;
 			}
-	
+
 			return $serverdata;
 		}
 
 		// Test for Statusnet
-		$curlResult = DI::httpRequest()->get($url . '/api/statusnet/version.json');
+		$curlResult = DI::httpClient()->get($url . '/api/statusnet/version.json', HttpClientAccept::JSON);
 		if ($curlResult->isSuccess() && ($curlResult->getBody() != '{"error":"not implemented"}') &&
 			($curlResult->getBody() != '') && (strlen($curlResult->getBody()) < 30)) {
 
@@ -1382,7 +2092,7 @@ class GServer
 				$serverdata['network'] = Protocol::OSTATUS;
 			}
 
-			if (in_array($serverdata['detection-method'], [self::DETECT_HEADER, self::DETECT_BODY, self::DETECT_MANUAL])) {
+			if (in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
 				$serverdata['detection-method'] = self::DETECT_STATUSNET;
 			}
 		}
@@ -1398,11 +2108,13 @@ class GServer
 	 *
 	 * @return array server data
 	 */
-	private static function detectFriendica(string $url, array $serverdata)
+	private static function detectFriendica(string $url, array $serverdata): array
 	{
-		$curlResult = DI::httpRequest()->get($url . '/friendica/json');
+		// There is a bug in some versions of Friendica that will return an ActivityStream actor when the content type "application/json" is requested.
+		// Because of this me must not use ACCEPT_JSON here.
+		$curlResult = DI::httpClient()->get($url . '/friendica/json');
 		if (!$curlResult->isSuccess()) {
-			$curlResult = DI::httpRequest()->get($url . '/friendika/json');
+			$curlResult = DI::httpClient()->get($url . '/friendika/json');
 			$friendika = true;
 			$platform = 'Friendika';
 		} else {
@@ -1419,7 +2131,7 @@ class GServer
 			return $serverdata;
 		}
 
-		if (in_array($serverdata['detection-method'], [self::DETECT_HEADER, self::DETECT_BODY, self::DETECT_MANUAL])) {			
+		if (in_array($serverdata['detection-method'], self::DETECT_UNSPECIFIC)) {
 			$serverdata['detection-method'] = $friendika ? self::DETECT_FRIENDIKA : self::DETECT_FRIENDICA;
 		}
 
@@ -1468,15 +2180,34 @@ class GServer
 	 *
 	 * @param object $curlResult result of curl execution
 	 * @param array  $serverdata array with server data
-	 * @param string $url        Server URL
 	 *
 	 * @return array server data
 	 */
-	private static function analyseRootBody($curlResult, array $serverdata, string $url)
+	private static function analyseRootBody($curlResult, array $serverdata): array
 	{
+		if (empty($curlResult->getBody())) {
+			return $serverdata;
+		}
+
+		if (file_exists(__DIR__ . '/../../static/platforms.config.php')) {
+			require __DIR__ . '/../../static/platforms.config.php';
+		} else {
+			throw new HTTPException\InternalServerErrorException('Invalid platform file');
+		}
+
+		$platforms = array_merge($ap_platforms, $dfrn_platforms, $zap_platforms, $platforms);
+
 		$doc = new DOMDocument();
 		@$doc->loadHTML($curlResult->getBody());
 		$xpath = new DOMXPath($doc);
+		$assigned = false;
+
+		// We can only detect honk via some HTML element on their page
+		if ($xpath->query('//div[@id="honksonpage"]')->count() == 1) {
+			$serverdata['platform'] = 'honk';
+			$serverdata['network'] = Protocol::ACTIVITYPUB;
+			$assigned = true;
+		}
 
 		$title = trim(XML::getFirstNodeValue($xpath, '//head/title/text()'));
 		if (!empty($title)) {
@@ -1507,37 +2238,24 @@ class GServer
 			}
 
 			if (in_array($attr['name'], ['application-name', 'al:android:app_name', 'al:ios:app_name',
-				'twitter:app:name:googleplay', 'twitter:app:name:iphone', 'twitter:app:name:ipad'])) {
-				$serverdata['platform'] = strtolower($attr['content']);
- 				if (in_array($attr['content'], ['Misskey', 'Write.as'])) {
-					$serverdata['network'] = Protocol::ACTIVITYPUB;
+				'twitter:app:name:googleplay', 'twitter:app:name:iphone', 'twitter:app:name:ipad', 'generator'])) {
+				$platform = str_ireplace(array_keys($platforms), array_values($platforms), $attr['content']);
+				$platform = str_replace('/', ' ', $platform);
+				$platform_parts = explode(' ', $platform);
+				if ((count($platform_parts) >= 2) && in_array(strtolower($platform_parts[0]), array_values($platforms))) {
+					$platform = $platform_parts[0];
+					$serverdata['version'] = $platform_parts[1];
 				}
-			}
-			if (($attr['name'] == 'generator') && (empty($serverdata['platform']) || (substr(strtolower($attr['content']), 0, 9) == 'wordpress'))) {
-				$serverdata['platform'] = strtolower($attr['content']);
-				$version_part = explode(' ', $attr['content']);
-
-				if (count($version_part) == 2) {
-					if (in_array($version_part[0], ['WordPress'])) {
-						$serverdata['platform'] = 'wordpress';
-						$serverdata['version'] = $version_part[1];
-
-						// We still do need a reliable test if some AP plugin is activated
-						if (DBA::exists('apcontact', ['baseurl' => $url])) {
-							$serverdata['network'] = Protocol::ACTIVITYPUB;
-						} else {
-							$serverdata['network'] = Protocol::FEED;
-						}
-
-						if ($serverdata['detection-method'] == self::DETECT_MANUAL) {
-							$serverdata['detection-method'] = self::DETECT_BODY;
-						}
-					}
-					if (in_array($version_part[0], ['Friendika', 'Friendica'])) {
-						$serverdata['platform'] = strtolower($version_part[0]);
-						$serverdata['version'] = $version_part[1];
-						$serverdata['network'] = Protocol::DFRN;
-					}
+				if (in_array($platform, array_values($dfrn_platforms))) {
+					$serverdata['network'] = Protocol::DFRN;
+				} elseif (in_array($platform, array_values($ap_platforms))) {
+					$serverdata['network'] = Protocol::ACTIVITYPUB;
+				} elseif (in_array($platform, array_values($zap_platforms))) {
+					$serverdata['network'] = Protocol::ZOT;
+				}
+				if (in_array($platform, array_values($platforms))) {
+					$serverdata['platform'] = $platform;
+					$assigned = true;
 				}
 			}
 		}
@@ -1569,25 +2287,47 @@ class GServer
 				$serverdata['info'] = $attr['content'];
 			}
 
-			if ($attr['property'] == 'og:platform') {
-				$serverdata['platform'] = strtolower($attr['content']);
-
-				if (in_array($attr['content'], ['PeerTube'])) {
-					$serverdata['network'] = Protocol::ACTIVITYPUB;
+			if (in_array($attr['property'], ['og:platform', 'generator'])) {
+				if (in_array($attr['content'], array_keys($platforms))) {
+					$serverdata['platform'] = $platforms[$attr['content']];
+					$assigned = true;
 				}
-			}
 
-			if ($attr['property'] == 'generator') {
-				$serverdata['platform'] = strtolower($attr['content']);
-
-				if (in_array($attr['content'], ['hubzilla'])) {
-					// We later check which compatible protocol modules are loaded.
+				if (in_array($attr['content'], array_keys($ap_platforms))) {
+					$serverdata['network'] = Protocol::ACTIVITYPUB;
+				} elseif (in_array($attr['content'], array_values($zap_platforms))) {
 					$serverdata['network'] = Protocol::ZOT;
 				}
 			}
 		}
 
-		if (!empty($serverdata['network']) && ($serverdata['detection-method'] == self::DETECT_MANUAL)) {
+		$list = $xpath->query('//link[@rel="me"]');
+		foreach ($list as $node) {
+			foreach ($node->attributes as $attribute) {
+				if (parse_url(trim($attribute->value), PHP_URL_HOST) == 'micro.blog') {
+					$serverdata['version'] = trim($serverdata['platform'] . ' ' . $serverdata['version']);
+					$serverdata['platform'] = 'microblog';
+					$serverdata['network'] = Protocol::ACTIVITYPUB;
+					$assigned = true;
+				}
+			}
+		}
+
+		if ($serverdata['platform'] != 'microblog') {
+			$list = $xpath->query('//link[@rel="micropub"]');
+			foreach ($list as $node) {
+				foreach ($node->attributes as $attribute) {
+					if (trim($attribute->value) == 'https://micro.blog/micropub') {
+						$serverdata['version'] = trim($serverdata['platform'] . ' ' . $serverdata['version']);
+						$serverdata['platform'] = 'microblog';
+						$serverdata['network'] = Protocol::ACTIVITYPUB;
+						$assigned = true;
+					}
+				}
+			}
+		}
+
+		if ($assigned && in_array($serverdata['detection-method'], [self::DETECT_MANUAL, self::DETECT_HEADER])) {
 			$serverdata['detection-method'] = self::DETECT_BODY;
 		}
 
@@ -1602,7 +2342,7 @@ class GServer
 	 *
 	 * @return array server data
 	 */
-	private static function analyseRootHeader($curlResult, array $serverdata)
+	private static function analyseRootHeader($curlResult, array $serverdata): array
 	{
 		if ($curlResult->getHeader('server') == 'Mastodon') {
 			$serverdata['platform'] = 'mastodon';
@@ -1610,11 +2350,11 @@ class GServer
 		} elseif ($curlResult->inHeader('x-diaspora-version')) {
 			$serverdata['platform'] = 'diaspora';
 			$serverdata['network'] = Protocol::DIASPORA;
-			$serverdata['version'] = $curlResult->getHeader('x-diaspora-version');
+			$serverdata['version'] = $curlResult->getHeader('x-diaspora-version')[0] ?? '';
 		} elseif ($curlResult->inHeader('x-friendica-version')) {
 			$serverdata['platform'] = 'friendica';
 			$serverdata['network'] = Protocol::DFRN;
-			$serverdata['version'] = $curlResult->getHeader('x-friendica-version');
+			$serverdata['version'] = $curlResult->getHeader('x-friendica-version')[0] ?? '';
 		} else {
 			return $serverdata;
 		}
@@ -1624,19 +2364,6 @@ class GServer
 		}
 
 		return $serverdata;
-	}
-
-	/**
-	 * Test if the body contains valid content
-	 *
-	 * @param string $body
-	 * @return boolean
-	 */
-	private static function invalidBody(string $body)
-	{
-		// Currently we only test for a HTML element.
-		// Possibly we enhance this in the future.
-		return !strpos($body, '>');
 	}
 
 	/**
@@ -1657,24 +2384,20 @@ class GServer
 
 		$last_update = date('c', time() - (60 * 60 * 24 * $requery_days));
 
-		$gservers = DBA::p("SELECT `id`, `url`, `nurl`, `network`, `poco`, `directory-type`
-			FROM `gserver`
-			WHERE NOT `failed`
-			AND `directory-type` != ?
-			AND `last_poco_query` < ?
-			ORDER BY RAND()", self::DT_NONE, $last_update
-		);
+		$gservers = DBA::select('gserver', ['id', 'url', 'nurl', 'network', 'poco', 'directory-type'],
+			["NOT `blocked` AND NOT `failed` AND `directory-type` != ? AND `last_poco_query` < ?", GServer::DT_NONE, $last_update],
+			['order' => ['RAND()']]);
 
 		while ($gserver = DBA::fetch($gservers)) {
 			Logger::info('Update peer list', ['server' => $gserver['url'], 'id' => $gserver['id']]);
-			Worker::add(PRIORITY_LOW, 'UpdateServerPeers', $gserver['url']);
+			Worker::add(Worker::PRIORITY_LOW, 'UpdateServerPeers', $gserver['url']);
 
 			Logger::info('Update directory', ['server' => $gserver['url'], 'id' => $gserver['id']]);
-			Worker::add(PRIORITY_LOW, 'UpdateServerDirectory', $gserver);
+			Worker::add(Worker::PRIORITY_LOW, 'UpdateServerDirectory', $gserver);
 
 			$fields = ['last_poco_query' => DateTimeFormat::utcNow()];
-			DBA::update('gserver', $fields, ['nurl' => $gserver['nurl']]);
-	
+			self::update($fields, ['nurl' => $gserver['nurl']]);
+
 			if (--$no_of_queries == 0) {
 				break;
 			}
@@ -1688,7 +2411,7 @@ class GServer
 	 */
 	private static function discoverFederation()
 	{
-		$last = DI::config()->get('poco', 'last_federation_discovery');
+		$last = DI::keyValue()->get('poco_last_federation_discovery');
 
 		if ($last) {
 			$next = $last + (24 * 60 * 60);
@@ -1702,7 +2425,7 @@ class GServer
 		$protocols = ['activitypub', 'diaspora', 'dfrn', 'ostatus'];
 		foreach ($protocols as $protocol) {
 			$query = '{nodes(protocol:"' . $protocol . '"){host}}';
-			$curlResult = DI::httpRequest()->fetch('https://the-federation.info/graphql?query=' . urlencode($query));
+			$curlResult = DI::httpClient()->fetch('https://the-federation.info/graphql?query=' . urlencode($query), HttpClientAccept::JSON);
 			if (!empty($curlResult)) {
 				$data = json_decode($curlResult, true);
 				if (!empty($data['data']['nodes'])) {
@@ -1714,24 +2437,144 @@ class GServer
 			}
 		}
 
-		// Disvover Mastodon servers
+		// Discover Mastodon servers
 		$accesstoken = DI::config()->get('system', 'instances_social_key');
 
 		if (!empty($accesstoken)) {
 			$api = 'https://instances.social/api/1.0/instances/list?count=0';
-			$header = ['Authorization: Bearer '.$accesstoken];
-			$curlResult = DI::httpRequest()->get($api, ['header' => $header]);
-
+			$curlResult = DI::httpClient()->get($api, HttpClientAccept::JSON, [HttpClientOptions::HEADERS => ['Authorization' => ['Bearer ' . $accesstoken]]]);
 			if ($curlResult->isSuccess()) {
 				$servers = json_decode($curlResult->getBody(), true);
 
-				foreach ($servers['instances'] as $server) {
-					$url = (is_null($server['https_score']) ? 'http' : 'https') . '://' . $server['name'];
-					self::add($url);
+				if (!empty($servers['instances'])) {
+					foreach ($servers['instances'] as $server) {
+						$url = (is_null($server['https_score']) ? 'http' : 'https') . '://' . $server['name'];
+						self::add($url);
+					}
 				}
 			}
 		}
 
-		DI::config()->set('poco', 'last_federation_discovery', time());
+		DI::keyValue()->set('poco_last_federation_discovery', time());
+	}
+
+	/**
+	 * Set the protocol for the given server
+	 *
+	 * @param int $gsid     Server id
+	 * @param int $protocol Protocol id
+	 *
+	 * @throws Exception
+	 */
+	public static function setProtocol(int $gsid, int $protocol)
+	{
+		if (empty($gsid)) {
+			return;
+		}
+
+		$gserver = DBA::selectFirst('gserver', ['protocol', 'url'], ['id' => $gsid]);
+		if (!DBA::isResult($gserver)) {
+			return;
+		}
+
+		$old = $gserver['protocol'];
+
+		if (!is_null($old)) {
+			/*
+			The priority for the protocols is:
+				1. ActivityPub
+				2. DFRN via Diaspora
+				3. Legacy DFRN
+				4. Diaspora
+				5. OStatus
+			*/
+
+			// We don't need to change it when nothing is to be changed
+			if ($old == $protocol) {
+				return;
+			}
+
+			// We don't want to mark a server as OStatus when it had been marked with any other protocol before
+			if ($protocol == Post\DeliveryData::OSTATUS) {
+				return;
+			}
+
+			// If the server is marked as ActivityPub then we won't change it to anything different
+			if ($old == Post\DeliveryData::ACTIVITYPUB) {
+				return;
+			}
+
+			// Don't change it to anything lower than DFRN if the new one wasn't ActivityPub
+			if (($old == Post\DeliveryData::DFRN) && ($protocol != Post\DeliveryData::ACTIVITYPUB)) {
+				return;
+			}
+
+			// Don't change it to Diaspora when it is a legacy DFRN server
+			if (($old == Post\DeliveryData::LEGACY_DFRN) && ($protocol == Post\DeliveryData::DIASPORA)) {
+				return;
+			}
+		}
+
+		Logger::info('Protocol for server', ['protocol' => $protocol, 'old' => $old, 'id' => $gsid, 'url' => $gserver['url'], 'callstack' => System::callstack(20)]);
+		self::update(['protocol' => $protocol], ['id' => $gsid]);
+	}
+
+	/**
+	 * Fetch the protocol of the given server
+	 *
+	 * @param int $gsid Server id
+	 *
+	 * @return ?int One of Post\DeliveryData protocol constants or null if unknown or gserver is missing
+	 *
+	 * @throws Exception
+	 */
+	public static function getProtocol(int $gsid): ?int
+	{
+		if (empty($gsid)) {
+			return null;
+		}
+
+		$gserver = DBA::selectFirst('gserver', ['protocol'], ['id' => $gsid]);
+		if (DBA::isResult($gserver)) {
+			return $gserver['protocol'];
+		}
+
+		return null;
+	}
+
+	/**
+	 * Update rows in the gserver table.
+	 * Enforces gserver table field maximum sizes to avoid "Data too long" database errors
+	 *
+	 * @param array $fields
+	 * @param array $condition
+	 *
+	 * @return bool
+	 *
+	 * @throws Exception
+	 */
+	public static function update(array $fields, array $condition): bool
+	{
+		$fields = DI::dbaDefinition()->truncateFieldsForTable('gserver', $fields);
+
+		return DBA::update('gserver', $fields, $condition);
+	}
+
+	/**
+	 * Insert a row into the gserver table.
+	 * Enforces gserver table field maximum sizes to avoid "Data too long" database errors
+	 *
+	 * @param array $fields
+	 * @param int   $duplicate_mode What to do on a duplicated entry
+	 *
+	 * @return bool
+	 *
+	 * @throws Exception
+	 */
+	public static function insert(array $fields, int $duplicate_mode = Database::INSERT_DEFAULT): bool
+	{
+		$fields = DI::dbaDefinition()->truncateFieldsForTable('gserver', $fields);
+
+		return DBA::insert('gserver', $fields, $duplicate_mode);
 	}
 }

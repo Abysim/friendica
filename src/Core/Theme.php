@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,14 +25,12 @@ use Friendica\DI;
 use Friendica\Model\Profile;
 use Friendica\Util\Strings;
 
-require_once 'boot.php';
-
 /**
  * Some functions to handle themes
  */
 class Theme
 {
-	public static function getAllowedList()
+	public static function getAllowedList(): array
 	{
 		$allowed_themes_str = DI::config()->get('system', 'allowed_themes');
 		$allowed_themes_raw = explode(',', str_replace(' ', '', $allowed_themes_str));
@@ -69,7 +67,7 @@ class Theme
 	 * @param string $theme the name of the theme
 	 * @return array
 	 */
-	public static function getInfo($theme)
+	public static function getInfo(string $theme): array
 	{
 		$theme = Strings::sanitizeFilePathItem($theme);
 
@@ -88,9 +86,9 @@ class Theme
 			return $info;
 		}
 
-		$stamp1 = microtime(true);
+		DI::profiler()->startRecording('file');
 		$theme_file = file_get_contents("view/theme/$theme/theme.php");
-		DI::profiler()->saveTimestamp($stamp1, "file");
+		DI::profiler()->stopRecording();
 
 		$result = preg_match("|/\*.*\*/|msU", $theme_file, $matches);
 
@@ -133,7 +131,7 @@ class Theme
 	 * @return string
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function getScreenshot($theme)
+	public static function getScreenshot(string $theme): string
 	{
 		$theme = Strings::sanitizeFilePathItem($theme);
 
@@ -146,7 +144,13 @@ class Theme
 		return DI::baseUrl() . '/images/blank.png';
 	}
 
-	public static function uninstall($theme)
+	/**
+	 * Uninstalls given theme name
+	 *
+	 * @param string $theme Name of theme
+	 * @return bool true on success
+	 */
+	public static function uninstall(string $theme)
 	{
 		$theme = Strings::sanitizeFilePathItem($theme);
 
@@ -167,10 +171,18 @@ class Theme
 		if ($key !== false) {
 			unset($allowed_themes[$key]);
 			Theme::setAllowedList($allowed_themes);
+			return true;
 		}
+		return false;
 	}
 
-	public static function install($theme)
+	/**
+	 * Installs given theme name
+	 *
+	 * @param string $theme Name of theme
+	 * @return bool true on success
+	 */
+	public static function install(string $theme): bool
 	{
 		$theme = Strings::sanitizeFilePathItem($theme);
 
@@ -208,13 +220,13 @@ class Theme
 	 * @return string Path to the file or empty string if the file isn't found
 	 * @throws \Exception
 	 */
-	public static function getPathForFile($file)
+	public static function getPathForFile(string $file): string
 	{
 		$a = DI::app();
 
 		$theme = $a->getCurrentTheme();
 
-		$parent = Strings::sanitizeFilePathItem($a->theme_info['extends'] ?? $theme);
+		$parent = Strings::sanitizeFilePathItem($a->getThemeInfoValue('extends', $theme));
 
 		$paths = [
 			"view/theme/$theme/$file",
@@ -237,10 +249,9 @@ class Theme
 	 * Provide a sane default if nothing is chosen or the specified theme does not exist.
 	 *
 	 * @param string $theme Theme name
-	 *
 	 * @return string
 	 */
-	public static function getStylesheetPath($theme)
+	public static function getStylesheetPath(string $theme): string
 	{
 		$theme = Strings::sanitizeFilePathItem($theme);
 
@@ -263,15 +274,15 @@ class Theme
 	/**
 	 * Returns the path of the provided theme
 	 *
-	 * @param $theme
+	 * @param string $theme Theme name
 	 * @return string|null
 	 */
-	public static function getConfigFile($theme)
+	public static function getConfigFile(string $theme)
 	{
 		$theme = Strings::sanitizeFilePathItem($theme);
 
 		$a = DI::app();
-		$base_theme = $a->theme_info['extends'] ?? '';
+		$base_theme = $a->getThemeInfoValue('extends') ?? '';
 
 		if (file_exists("view/theme/$theme/config.php")) {
 			return "view/theme/$theme/config.php";
@@ -281,15 +292,15 @@ class Theme
 		}
 		return null;
 	}
-	
+
 	/**
 	 * Returns the background color of the provided theme if available.
 	 *
-	 * @param string   $theme
+	 * @param string   $theme Theme name
 	 * @param int|null $uid   Current logged-in user id
 	 * @return string|null
 	 */
-	public static function getBackgroundColor(string $theme, $uid = null)
+	public static function getBackgroundColor(string $theme, int $uid = null)
 	{
 		$theme = Strings::sanitizeFilePathItem($theme);
 

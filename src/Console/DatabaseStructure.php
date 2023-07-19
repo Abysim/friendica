@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,10 +21,16 @@
 
 namespace Friendica\Console;
 
-use Friendica\Core\Config\Cache;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\Core\Update;
 use Friendica\Database\Database;
 use Friendica\Database\DBStructure;
+use Friendica\Database\Definition\DbaDefinition;
+use Friendica\Database\Definition\ViewDefinition;
+use Friendica\Util\BasePath;
+use Friendica\Util\Writer\DbaDefinitionSqlWriter;
+use Friendica\Util\Writer\DocWriter;
+use Friendica\Util\Writer\ViewDefinitionSqlWriter;
 use RuntimeException;
 
 /**
@@ -34,14 +40,20 @@ class DatabaseStructure extends \Asika\SimpleConsole\Console
 {
 	protected $helpOptions = ['h', 'help', '?'];
 
-	/**
-	 * @var Database
-	 */
+	/** @var Database */
 	private $dba;
-	/**
-	 * @var Cache
-	 */
-	private $configCache;
+
+	/** @var IManageConfigValues */
+	private $config;
+
+	/** @var DbaDefinition */
+	private $dbaDefinition;
+
+	/** @var ViewDefinition */
+	private $viewDefinition;
+
+	/** @var string */
+	private $basePath;
 
 	protected function getHelp()
 	{
@@ -52,7 +64,7 @@ Usage
 
 Commands
     drop     Show tables that aren't in use by Friendica anymore and can be dropped
-       -e|--execute    Execute the dropping
+       -e|--execute    Execute the removal
 
     update   Update database schema
        -f|--force      Force the update command (Even if the database structure matches)
@@ -71,15 +83,18 @@ HELP;
 		return $help;
 	}
 
-	public function __construct(Database $dba, Cache $configCache, $argv = null)
+	public function __construct(Database $dba, DbaDefinition $dbaDefinition, ViewDefinition $viewDefinition, BasePath $basePath, IManageConfigValues $config, $argv = null)
 	{
 		parent::__construct($argv);
 
 		$this->dba = $dba;
-		$this->configCache = $configCache;
+		$this->dbaDefinition = $dbaDefinition;
+		$this->viewDefinition = $viewDefinition;
+		$this->config = $config;
+		$this->basePath = $basePath->getPath();
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		if ($this->getOption('v')) {
 			$this->out('Class: ' . __CLASS__);
@@ -102,11 +117,11 @@ HELP;
 			throw new RuntimeException('Unable to connect to database');
 		}
 
-		$basePath = $this->configCache->get('system', 'basepath');
+		$basePath = $this->config->get('system', 'basepath');
 
 		switch ($this->getArgument(0)) {
 			case "dryrun":
-				$output = DBStructure::update($basePath, true, false);
+				$output = DBStructure::dryRun();
 				break;
 			case "update":
 				$force    = $this->getOption(['f', 'force'], false);
@@ -120,9 +135,9 @@ HELP;
 				$output = ob_get_clean();
 				break;
 			case "dumpsql":
-				ob_start();
-				DBStructure::printStructure($basePath);
-				$output = ob_get_clean();
+				DocWriter::writeDbDefinition($this->dbaDefinition, $this->basePath);
+				$output = DbaDefinitionSqlWriter::create($this->dbaDefinition);
+				$output .= ViewDefinitionSqlWriter::create($this->viewDefinition);
 				break;
 			case "toinnodb":
 				ob_start();

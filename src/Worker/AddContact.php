@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,9 +21,10 @@
 
 namespace Friendica\Worker;
 
-use Friendica\Core\Logger;
+use Friendica\DI;
 use Friendica\Model\Contact;
-use Friendica\Model\User;
+use Friendica\Network\HTTPException\InternalServerErrorException;
+use Friendica\Network\HTTPException\NotFoundException;
 
 class AddContact
 {
@@ -34,18 +35,22 @@ class AddContact
 	 */
 	public static function execute(int $uid, string $url)
 	{
-		if ($uid == 0) {
-			// Adding public contact
-			$result = Contact::getIdForURL($url);
-			Logger::info('Added public contact', ['url' => $url, 'result' => $result]);
-			return;
-		}
+		try {
+			if ($uid == 0) {
+				// Adding public contact
+				$result = Contact::getIdForURL($url);
+				DI::logger()->info('Added public contact', ['url' => $url, 'result' => $result]);
+				return;
+			}
 
-		$user = User::getById($uid);
-		if (empty($user)) {
-			return;
+			$result = Contact::createFromProbeForUser($uid, $url);
+			DI::logger()->info('Added contact for user', ['uid' => $uid, 'url' => $url, 'result' => $result]);
+		} catch (InternalServerErrorException $e) {
+			DI::logger()->warning('Internal server error.', ['exception' => $e, 'uid' => $uid, 'url' => $url]);
+		} catch (NotFoundException $e) {
+			DI::logger()->notice('uid not found.', ['exception' => $e, 'uid' => $uid, 'url' => $url]);
+		} catch (\ImagickException $e) {
+			DI::logger()->notice('Imagick not found.', ['exception' => $e, 'uid' => $uid, 'url' => $url]);
 		}
-		$result = Contact::createFromProbe($user, $url, '', false);
-		Logger::info('Added contact', ['uid' => $uid, 'url' => $url, 'result' => $result]);
 	}
 }

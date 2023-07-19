@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -27,4 +27,18 @@ namespace Friendica\Test;
 abstract class DatabaseTest extends MockedTest
 {
 	use DatabaseTestTrait;
+
+	protected function setUp(): void
+	{
+		$this->setUpDb();
+
+		parent::setUp();
+	}
+
+	protected function tearDown(): void
+	{
+		$this->tearDownDb();
+
+		parent::tearDown();
+	}
 }

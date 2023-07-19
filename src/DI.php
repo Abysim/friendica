@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,6 +22,9 @@
 namespace Friendica;
 
 use Dice\Dice;
+use Friendica\Core\Session\Capability\IHandleSessions;
+use Friendica\Core\Session\Capability\IHandleUserSessions;
+use Friendica\Navigation\SystemMessages;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -34,9 +37,45 @@ abstract class DI
 	/** @var Dice */
 	private static $dice;
 
-	public static function init(Dice $dice)
+	/**
+	 * Initialize the singleton DI container with the Dice instance
+	 *
+	 * @param Dice $dice             The Dice instance
+	 * @param bool $disableDepByHand If true, the database dependencies aren't set, thus any occurrence of logging or
+	 *                               profiling in database methods would lead to an error. This flag is for testing only.
+	 *
+	 * @return void
+	 */
+	public static function init(Dice $dice, bool $disableDepByHand = false)
 	{
 		self::$dice = $dice;
+
+		if (!$disableDepByHand) {
+			self::setCompositeRootDependencyByHand();
+		}
+	}
+
+	/**
+	 * I HATE this method, but everything else needs refactoring at the database itself
+	 * Set the database dependencies manually, because of current, circular dependencies between the database and the config table
+	 *
+	 * @todo Instead of this madness, split the database in a core driver-dependent (mysql, mariadb, postgresql, ..) part without any other dependency unlike credentials and in the full-featured, driver-independent database class with all dependencies
+	 */
+	public static function setCompositeRootDependencyByHand()
+	{
+		$database = static::dba();
+		$database->setDependency(static::config(), static::profiler(), static::logger());
+	}
+
+	/**
+	 * Returns a clone of the current dice instance
+	 * This useful for overloading the current instance with mocked methods during tests
+	 *
+	 * @return Dice
+	 */
+	public static function getDice()
+	{
+		return clone self::$dice;
 	}
 
 	//
@@ -54,9 +93,25 @@ abstract class DI
 	/**
 	 * @return Database\Database
 	 */
-	public static function dba()
+	public static function dba(): Database\Database
 	{
 		return self::$dice->create(Database\Database::class);
+	}
+
+	/**
+	 * @return \Friendica\Database\Definition\DbaDefinition
+	 */
+	public static function dbaDefinition(): Database\Definition\DbaDefinition
+	{
+		return self::$dice->create(Database\Definition\DbaDefinition::class);
+	}
+
+	/**
+	 * @return \Friendica\Database\Definition\ViewDefinition
+	 */
+	public static function viewDefinition(): Database\Definition\ViewDefinition
+	{
+		return self::$dice->create(Database\Definition\ViewDefinition::class);
 	}
 
 	//
@@ -71,10 +126,7 @@ abstract class DI
 		return self::$dice->create(App\Arguments::class);
 	}
 
-	/**
-	 * @return App\BaseURL
-	 */
-	public static function baseUrl()
+	public static function baseUrl(): App\BaseURL
 	{
 		return self::$dice->create(App\BaseURL::class);
 	}
@@ -85,14 +137,6 @@ abstract class DI
 	public static function mode()
 	{
 		return self::$dice->create(App\Mode::class);
-	}
-
-	/**
-	 * @return App\Module
-	 */
-	public static function module()
-	{
-		return self::$dice->create(App\Module::class);
 	}
 
 	/**
@@ -124,6 +168,14 @@ abstract class DI
 	}
 
 	/**
+	 * @return Content\Conversation
+	 */
+	public static function conversation()
+	{
+		return self::$dice->create(Content\Conversation::class);
+	}
+
+	/**
 	 * @return Content\Text\BBCode\Video
 	 */
 	public static function bbCodeVideo()
@@ -136,35 +188,45 @@ abstract class DI
 	//
 
 	/**
-	 * @return Core\Cache\ICache
+	 * @return Core\Cache\Capability\ICanCache
 	 */
 	public static function cache()
 	{
-		return self::$dice->create(Core\Cache\ICache::class);
+		return self::$dice->create(Core\Cache\Capability\ICanCache::class);
 	}
 
 	/**
-	 * @return Core\Config\IConfig
+	 * @return Core\Config\Capability\IManageConfigValues
 	 */
 	public static function config()
 	{
-		return self::$dice->create(Core\Config\IConfig::class);
+		return self::$dice->create(Core\Config\Capability\IManageConfigValues::class);
+	}
+
+	public static function configFileManager(): Core\Config\Util\ConfigFileManager
+	{
+		return self::$dice->create(Core\Config\Util\ConfigFileManager::class);
+	}
+
+	public static function keyValue(): Core\KeyValueStorage\Capabilities\IManageKeyValuePairs
+	{
+		return self::$dice->create(Core\KeyValueStorage\Capabilities\IManageKeyValuePairs::class);
 	}
 
 	/**
-	 * @return Core\PConfig\IPConfig
+	 * @return Core\PConfig\Capability\IManagePersonalConfigValues
 	 */
 	public static function pConfig()
 	{
-		return self::$dice->create(Core\PConfig\IPConfig::class);
+		return self::$dice->create(Core\PConfig\Capability\IManagePersonalConfigValues::class);
 	}
 
 	/**
-	 * @return Core\Lock\ILock
+	 * @return Core\Lock\Capability\ICanLock
 	 */
 	public static function lock()
 	{
-		return self::$dice->create(Core\Lock\ILock::class);
+		return self::$dice->create(Core\Lock\Capability\ICanLock::class);
 	}
 
 	/**
@@ -176,32 +238,62 @@ abstract class DI
 	}
 
 	/**
-	 * @return Core\Process
+	 * @return Core\Worker\Repository\Process
 	 */
 	public static function process()
 	{
-		return self::$dice->create(Core\Process::class);
+		return self::$dice->create(Core\Worker\Repository\Process::class);
 	}
 
-	/**
-	 * @return Core\Session\ISession
-	 */
-	public static function session()
+	public static function session(): IHandleSessions
 	{
-		return self::$dice->create(Core\Session\ISession::class);
+		return self::$dice->create(Core\Session\Capability\IHandleSessions::class);
+	}
+
+	public static function userSession(): IHandleUserSessions
+	{
+		return self::$dice->create(Core\Session\Capability\IHandleUserSessions::class);
 	}
 
 	/**
-	 * @return Core\StorageManager
+	 * @return \Friendica\Core\Storage\Repository\StorageManager
 	 */
 	public static function storageManager()
 	{
-		return self::$dice->create(Core\StorageManager::class);
+		return self::$dice->create(Core\Storage\Repository\StorageManager::class);
+	}
+
+	/**
+	 * @return \Friendica\Core\System
+	 */
+	public static function system()
+	{
+		return self::$dice->create(Core\System::class);
+	}
+
+	/**
+	 * @return \Friendica\Navigation\SystemMessages
+	 */
+	public static function sysmsg()
+	{
+		return self::$dice->create(SystemMessages::class);
 	}
 
 	//
 	// "LoggerInterface" instances
 	//
+
+	/**
+	 * Flushes the Logger instance, so the factory is called again
+	 * (creates a new id and retrieves the current PID)
+	 */
+	public static function flushLogger()
+	{
+		$flushDice = self::$dice
+			->addRule(LoggerInterface::class, self::$dice->getRule(LoggerInterface::class))
+			->addRule('$devLogger', self::$dice->getRule('$devLogger'));
+		static::init($flushDice);
+	}
 
 	/**
 	 * @return LoggerInterface
@@ -224,7 +316,7 @@ abstract class DI
 	 */
 	public static function workerLogger()
 	{
-		return self::$dice->create(Util\Logger\WorkerLogger::class);
+		return self::$dice->create(Core\Logger\Type\WorkerLogger::class);
 	}
 
 	//
@@ -240,11 +332,35 @@ abstract class DI
 	}
 
 	/**
+	 * @return Factory\Api\Mastodon\Application
+	 */
+	public static function mstdnApplication()
+	{
+		return self::$dice->create(Factory\Api\Mastodon\Application::class);
+	}
+
+	/**
 	 * @return Factory\Api\Mastodon\Attachment
 	 */
 	public static function mstdnAttachment()
 	{
 		return self::$dice->create(Factory\Api\Mastodon\Attachment::class);
+	}
+
+	/**
+	 * @return Factory\Api\Mastodon\Card
+	 */
+	public static function mstdnCard()
+	{
+		return self::$dice->create(Factory\Api\Mastodon\Card::class);
+	}
+
+	/**
+	 * @return Factory\Api\Mastodon\Conversation
+	 */
+	public static function mstdnConversation()
+	{
+		return self::$dice->create(Factory\Api\Mastodon\Conversation::class);
 	}
 
 	/**
@@ -264,19 +380,11 @@ abstract class DI
 	}
 
 	/**
-	 * @return Factory\Api\Mastodon\Field
+	 * @return Factory\Api\Mastodon\Poll
 	 */
-	public static function mstdnField()
+	public static function mstdnPoll()
 	{
-		return self::$dice->create(Factory\Api\Mastodon\Field::class);
-	}
-
-	/**
-	 * @return Factory\Api\Mastodon\FollowRequest
-	 */
-	public static function mstdnFollowRequest()
-	{
-		return self::$dice->create(Factory\Api\Mastodon\FollowRequest::class);
+		return self::$dice->create(Factory\Api\Mastodon\Poll::class);
 	}
 
 	/**
@@ -296,19 +404,51 @@ abstract class DI
 	}
 
 	/**
-	 * @return Factory\Api\Mastodon\Mention
+	 * @return Factory\Api\Mastodon\StatusSource
 	 */
-	public static function mstdnMention()
+	public static function mstdnStatusSource()
 	{
-		return self::$dice->create(Factory\Api\Mastodon\Mention::class);
+		return self::$dice->create(Factory\Api\Mastodon\StatusSource::class);
 	}
 
 	/**
-	 * @return Factory\Api\Mastodon\Tag
+	 * @return Factory\Api\Mastodon\ScheduledStatus
 	 */
-	public static function mstdnTag()
+	public static function mstdnScheduledStatus()
 	{
-		return self::$dice->create(Factory\Api\Mastodon\Tag::class);
+		return self::$dice->create(Factory\Api\Mastodon\ScheduledStatus::class);
+	}
+
+	/**
+	 * @return Factory\Api\Mastodon\Subscription
+	 */
+	public static function mstdnSubscription()
+	{
+		return self::$dice->create(Factory\Api\Mastodon\Subscription::class);
+	}
+
+	/**
+	 * @return Factory\Api\Mastodon\ListEntity
+	 */
+	public static function mstdnList()
+	{
+		return self::$dice->create(Factory\Api\Mastodon\ListEntity::class);
+	}
+
+	/**
+	 * @return Factory\Api\Mastodon\Notification
+	 */
+	public static function mstdnNotification()
+	{
+		return self::$dice->create(Factory\Api\Mastodon\Notification::class);
+	}
+
+	/**
+	 * @return Factory\Api\Twitter\Status
+	 */
+	public static function twitterStatus()
+	{
+		return self::$dice->create(Factory\Api\Twitter\Status::class);
 	}
 
 	/**
@@ -319,31 +459,20 @@ abstract class DI
 		return self::$dice->create(Factory\Api\Twitter\User::class);
 	}
 
-	/**
-	 * @return Factory\Notification\Notification
-	 */
-	public static function notification()
+	public static function notificationIntro(): Navigation\Notifications\Factory\Introduction
 	{
-		return self::$dice->create(Factory\Notification\Notification::class);
-	}
-
-	/**
-	 * @return Factory\Notification\Introduction
-	 */
-	public static function notificationIntro()
-	{
-		return self::$dice->create(Factory\Notification\Introduction::class);
+		return self::$dice->create(Navigation\Notifications\Factory\Introduction::class);
 	}
 
 	//
 	// "Model" namespace instances
 	//
 	/**
-	 * @return Model\Process
+	 * @return \Friendica\Core\Worker\Repository\Process
 	 */
 	public static function modelProcess()
 	{
-		return self::$dice->create(Model\Process::class);
+		return self::$dice->create(Core\Worker\Repository\Process::class);
 	}
 
 	/**
@@ -355,11 +484,28 @@ abstract class DI
 	}
 
 	/**
-	 * @return Model\Storage\IStorage
+	 * @return Core\Storage\Capability\ICanWriteToStorage
 	 */
 	public static function storage()
 	{
-		return self::$dice->create(Model\Storage\IStorage::class);
+		return self::$dice->create(Core\Storage\Capability\ICanWriteToStorage::class);
+	}
+
+	/**
+	 * @return Model\Log\ParsedLogIterator
+	 */
+	public static function parsedLogIterator()
+	{
+		return self::$dice->create(Model\Log\ParsedLogIterator::class);
+	}
+
+	//
+	// "Module" namespace
+	//
+
+	public static function apiResponse(): Module\Api\ApiResponse
+	{
+		return self::$dice->create(Module\Api\ApiResponse::class);
 	}
 
 	//
@@ -367,11 +513,11 @@ abstract class DI
 	//
 
 	/**
-	 * @return Network\IHTTPRequest
+	 * @return Network\HTTPClient\Capability\ICanSendHttpRequests
 	 */
-	public static function httpRequest()
+	public static function httpClient()
 	{
-		return self::$dice->create(Network\IHTTPRequest::class);
+		return self::$dice->create(Network\HTTPClient\Capability\ICanSendHttpRequests::class);
 	}
 
 	//
@@ -379,43 +525,114 @@ abstract class DI
 	//
 
 	/**
-	 * @return Repository\FSuggest;
+	 * @return Contact\FriendSuggest\Repository\FriendSuggest;
 	 */
 	public static function fsuggest()
 	{
-		return self::$dice->create(Repository\FSuggest::class);
+		return self::$dice->create(Contact\FriendSuggest\Repository\FriendSuggest::class);
 	}
 
 	/**
-	 * @return Repository\Introduction
+	 * @return Contact\FriendSuggest\Factory\FriendSuggest;
+	 */
+	public static function fsuggestFactory()
+	{
+		return self::$dice->create(Contact\FriendSuggest\Factory\FriendSuggest::class);
+	}
+
+	/**
+	 * @return Contact\Introduction\Repository\Introduction
 	 */
 	public static function intro()
 	{
-		return self::$dice->create(Repository\Introduction::class);
+		return self::$dice->create(Contact\Introduction\Repository\Introduction::class);
 	}
 
 	/**
-	 * @return Repository\PermissionSet
+	 * @return Contact\Introduction\Factory\Introduction
 	 */
-	public static function permissionSet()
+	public static function introFactory()
 	{
-		return self::$dice->create(Repository\PermissionSet::class);
+		return self::$dice->create(Contact\Introduction\Factory\Introduction::class);
 	}
 
-	/**
-	 * @return Repository\ProfileField
-	 */
-	public static function profileField()
+	public static function report(): Moderation\Repository\Report
 	{
-		return self::$dice->create(Repository\ProfileField::class);
+		return self::$dice->create(Moderation\Repository\Report::class);
 	}
 
-	/**
-	 * @return Repository\Notify
-	 */
-	public static function notify()
+	public static function reportFactory(): Moderation\Factory\Report
 	{
-		return self::$dice->create(Repository\Notify::class);
+		return self::$dice->create(Moderation\Factory\Report::class);
+	}
+
+	public static function localRelationship(): Contact\LocalRelationship\Repository\LocalRelationship
+	{
+		return self::$dice->create(Contact\LocalRelationship\Repository\LocalRelationship::class);
+	}
+
+	public static function permissionSet(): Security\PermissionSet\Repository\PermissionSet
+	{
+		return self::$dice->create(Security\PermissionSet\Repository\PermissionSet::class);
+	}
+
+	public static function permissionSetFactory(): Security\PermissionSet\Factory\PermissionSet
+	{
+		return self::$dice->create(Security\PermissionSet\Factory\PermissionSet::class);
+	}
+
+	public static function profileField(): Profile\ProfileField\Repository\ProfileField
+	{
+		return self::$dice->create(Profile\ProfileField\Repository\ProfileField::class);
+	}
+
+	public static function profileFieldFactory(): Profile\ProfileField\Factory\ProfileField
+	{
+		return self::$dice->create(Profile\ProfileField\Factory\ProfileField::class);
+	}
+
+	public static function notification(): Navigation\Notifications\Repository\Notification
+	{
+		return self::$dice->create(Navigation\Notifications\Repository\Notification::class);
+	}
+
+	public static function notificationFactory(): Navigation\Notifications\Factory\Notification
+	{
+		return self::$dice->create(Navigation\Notifications\Factory\Notification::class);
+	}
+
+	public static function notify(): Navigation\Notifications\Repository\Notify
+	{
+		return self::$dice->create(Navigation\Notifications\Repository\Notify::class);
+	}
+
+	public static function notifyFactory(): Navigation\Notifications\Factory\Notify
+	{
+		return self::$dice->create(Navigation\Notifications\Factory\Notify::class);
+	}
+
+	public static function formattedNotificationFactory(): Navigation\Notifications\Factory\FormattedNotify
+	{
+		return self::$dice->create(Navigation\Notifications\Factory\FormattedNotify::class);
+	}
+
+	public static function formattedNavNotificationFactory(): Navigation\Notifications\Factory\FormattedNavNotification
+	{
+		return self::$dice->create(Navigation\Notifications\Factory\FormattedNavNotification::class);
+	}
+
+	//
+	// "Federation" namespace instances
+	//
+
+	public static function deliveryQueueItemFactory(): Federation\Factory\DeliveryQueueItem
+	{
+		return self::$dice->create(Federation\Factory\DeliveryQueueItem::class);
+	}
+
+	public static function deliveryQueueItemRepo(): Federation\Repository\DeliveryQueueItem
+	{
+		return self::$dice->create(Federation\Repository\DeliveryQueueItem::class);
 	}
 
 	//
@@ -428,6 +645,11 @@ abstract class DI
 	public static function activity()
 	{
 		return self::$dice->create(Protocol\Activity::class);
+	}
+
+	public static function dsprContact(): Protocol\Diaspora\Repository\DiasporaContact
+	{
+		return self::$dice->create(Protocol\Diaspora\Repository\DiasporaContact::class);
 	}
 
 	//

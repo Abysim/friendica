@@ -1,11 +1,30 @@
 <?php
+/**
+ * @copyright Copyright (C) 2010-2023, the Friendica project
+ *
+ * @license GNU AGPL version 3 or any later version
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
+ */
 
 namespace Friendica\Test\src\Util;
 
 use Friendica\App\BaseURL;
-use Friendica\Core\Config\IConfig;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\Core\L10n;
-use Friendica\Core\PConfig\IPConfig;
+use Friendica\Core\PConfig\Capability\IManagePersonalConfigValues;
 use Friendica\Object\EMail\IEmail;
 use Friendica\Test\MockedTest;
 use Friendica\Test\Util\EmailerSpy;
@@ -26,34 +45,34 @@ class EMailerTest extends MockedTest
 	use VFSTrait;
 	use HookMockTrait;
 
-	/** @var IConfig|MockInterface */
+	/** @var IManageConfigValues|MockInterface */
 	private $config;
-	/** @var IPConfig|MockInterface */
+	/** @var IManagePersonalConfigValues|MockInterface */
 	private $pConfig;
 	/** @var L10n|MockInterface */
 	private $l10n;
 	/** @var BaseURL|MockInterface */
 	private $baseUrl;
 
-	protected function setUp()
+	protected function setUp(): void
 	{
 		parent::setUp();
 
 		$this->setUpVfsDir();
 
-		$this->config  = \Mockery::mock(IConfig::class);
+		$this->config  = \Mockery::mock(IManageConfigValues::class);
 		$this->config->shouldReceive('get')->withArgs(['config', 'sender_email'])->andReturn('test@friendica.local')->once();
 		$this->config->shouldReceive('get')->withArgs(['config', 'sitename', 'Friendica Social Network'])->andReturn('Friendica Social Network')->once();
 		$this->config->shouldReceive('get')->withArgs(['system', 'sendmail_params', true])->andReturn(true);
 
-		$this->pConfig = \Mockery::mock(IPConfig::class);
+		$this->pConfig = \Mockery::mock(IManagePersonalConfigValues::class);
 		$this->l10n    = \Mockery::mock(L10n::class);
 		$this->baseUrl = \Mockery::mock(BaseURL::class);
-		$this->baseUrl->shouldReceive('getHostname')->andReturn('friendica.local');
-		$this->baseUrl->shouldReceive('get')->andReturn('http://friendica.local');
+		$this->baseUrl->shouldReceive('getHost')->andReturn('friendica.local');
+		$this->baseUrl->shouldReceive('__toString')->andReturn('http://friendica.local');
 	}
 
-	protected function tearDown()
+	protected function tearDown(): void
 	{
 		EmailerSpy::$MAIL_DATA = [];
 
@@ -78,16 +97,16 @@ class EMailerTest extends MockedTest
 
 		self::assertTrue($emailer->send($testEmail));
 
-		self::assertContains("X-Friendica-Host: friendica.local", EmailerSpy::$MAIL_DATA['headers']);
-		self::assertContains("X-Friendica-Platform: Friendica", EmailerSpy::$MAIL_DATA['headers']);
-		self::assertContains("List-ID: <notification.friendica.local>", EmailerSpy::$MAIL_DATA['headers']);
-		self::assertContains("List-Archive: <http://friendica.local/notifications/system>", EmailerSpy::$MAIL_DATA['headers']);
-		self::assertContains("Reply-To: Sender <sender@friendica.local>", EmailerSpy::$MAIL_DATA['headers']);
-		self::assertContains("MIME-Version: 1.0", EmailerSpy::$MAIL_DATA['headers']);
+		self::assertStringContainsString("X-Friendica-Host: friendica.local", EmailerSpy::$MAIL_DATA['headers']);
+		self::assertStringContainsString("X-Friendica-Platform: Friendica", EmailerSpy::$MAIL_DATA['headers']);
+		self::assertStringContainsString("List-ID: <notification.friendica.local>", EmailerSpy::$MAIL_DATA['headers']);
+		self::assertStringContainsString("List-Archive: <http://friendica.local/notifications/system>", EmailerSpy::$MAIL_DATA['headers']);
+		self::assertStringContainsString("Reply-To: Sender <sender@friendica.local>", EmailerSpy::$MAIL_DATA['headers']);
+		self::assertStringContainsString("MIME-Version: 1.0", EmailerSpy::$MAIL_DATA['headers']);
 		// Base64 "Test Text"
-		self::assertContains(chunk_split(base64_encode('Test Text')), EmailerSpy::$MAIL_DATA['body']);
+		self::assertStringContainsString(chunk_split(base64_encode('Test Text')), EmailerSpy::$MAIL_DATA['body']);
 		// Base64 "Test Message<b>Bold</b>"
-		self::assertContains(chunk_split(base64_encode("Test Message<b>Bold</b>")), EmailerSpy::$MAIL_DATA['body']);
+		self::assertStringContainsString(chunk_split(base64_encode("Test Message<b>Bold</b>")), EmailerSpy::$MAIL_DATA['body']);
 		self::assertEquals("Test Subject", EmailerSpy::$MAIL_DATA['subject']);
 		self::assertEquals("recipient@friendica.local", EmailerSpy::$MAIL_DATA['to']);
 		self::assertEquals("-f sender@friendica.local", EmailerSpy::$MAIL_DATA['parameters']);

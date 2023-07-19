@@ -20,16 +20,15 @@
 
 <script language="javascript" type="text/javascript">
 	// This js part changes the state of page-flags radio buttons according
-	// to the selected account type. For a translation of the different
-	// account-types and page-flags have a look in the define section in boot.php
+	// to the selected account type.
 	var accountType = {{$account_type}};
 
 	$(document).ready(function(){
-		// Hide all DIV for page-flags expet the one which belongs to the present
+		// Hide all DIV for page-flags except the one which belongs to the present
 		// account-type
 		showPageFlags(accountType);
 
-		// Save the ID of the active page-flage
+		// Save the ID of the active page-flags
 		var activeFlag = $('[id^=id_page-flags_]:checked');
 
 		$("[id^=id_account-type_]").change(function(){

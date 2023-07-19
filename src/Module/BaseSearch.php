@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,6 +23,7 @@ namespace Friendica\Module;
 
 use Friendica\BaseModule;
 use Friendica\Content\Pager;
+use Friendica\Core\Logger;
 use Friendica\Core\Renderer;
 use Friendica\Core\Search;
 use Friendica\DI;
@@ -30,6 +31,7 @@ use Friendica\Model;
 use Friendica\Network\HTTPException;
 use Friendica\Object\Search\ContactResult;
 use Friendica\Object\Search\ResultList;
+use Friendica\Util\Network;
 
 /**
  * Base class for search modules
@@ -46,9 +48,8 @@ class BaseSearch extends BaseModule
 	 * @throws HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	public static function performContactSearch($search, $prefix = '')
+	public static function performContactSearch(string $search, string $prefix = ''): string
 	{
-		$a      = DI::app();
 		$config = DI::config();
 
 		$type = Search::TYPE_ALL;
@@ -62,39 +63,42 @@ class BaseSearch extends BaseModule
 		}
 
 		$header = '';
+		$results = new ResultList();
 
 		if (strpos($search, '@') === 0) {
-			$search  = substr($search, 1);
+			$search  = trim(substr($search, 1));
 			$type    = Search::TYPE_PEOPLE;
 			$header  = DI::l10n()->t('People Search - %s', $search);
-
-			if (strrpos($search, '@') > 0) {
-				$results = Search::getContactsFromProbe($search);
-			}
-		}
-
-		if (strpos($search, '!') === 0) {
-			$search = substr($search, 1);
+		} elseif (strpos($search, '!') === 0) {
+			$search = trim(substr($search, 1));
 			$type   = Search::TYPE_FORUM;
 			$header = DI::l10n()->t('Forum Search - %s', $search);
 		}
 
+		$search = Network::convertToIdn($search);
+
 		if (DI::mode()->isMobile()) {
-			$itemsPerPage = DI::pConfig()->get(local_user(), 'system', 'itemspage_mobile_network',
+			$itemsPerPage = DI::pConfig()->get(DI::userSession()->getLocalUserId(), 'system', 'itemspage_mobile_network',
 				DI::config()->get('system', 'itemspage_network_mobile'));
 		} else {
-			$itemsPerPage = DI::pConfig()->get(local_user(), 'system', 'itemspage_network',
+			$itemsPerPage = DI::pConfig()->get(DI::userSession()->getLocalUserId(), 'system', 'itemspage_network',
 				DI::config()->get('system', 'itemspage_network'));
 		}
 
 		$pager = new Pager(DI::l10n(), DI::args()->getQueryString(), $itemsPerPage);
 
-		if ($localSearch && empty($results)) {
-			$pager->setItemsPerPage(80);
-			$results = Search::getContactsFromLocalDirectory($search, $type, $pager->getStart(), $pager->getItemsPerPage());
-		} elseif (strlen($config->get('system', 'directory')) && empty($results)) {
+		if (!$results->getTotal() && !$localSearch && Search::getGlobalDirectory()) {
 			$results = Search::getContactsFromGlobalDirectory($search, $type, $pager->getPage());
 			$pager->setItemsPerPage($results->getItemsPage());
+		}
+
+		if (!$results->getTotal()) {
+			$pager->setItemsPerPage(80);
+			$results = Search::getContactsFromLocalDirectory($search, $type, $pager->getStart(), $pager->getItemsPerPage());
+		}
+
+		if (!$results->getTotal()) {
+			$results = Search::getContactsFromProbe(Network::convertToIdn($search), $type == Search::TYPE_FORUM);
 		}
 
 		return self::printResult($results, $pager, $header);
@@ -111,28 +115,38 @@ class BaseSearch extends BaseModule
 	 * @throws HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	protected static function printResult(ResultList $results, Pager $pager, $header = '')
+	protected static function printResult(ResultList $results, Pager $pager, string $header = ''): string
 	{
 		if ($results->getTotal() == 0) {
-			notice(DI::l10n()->t('No matches'));
+			DI::sysmsg()->addNotice(DI::l10n()->t('No matches'));
 			return '';
 		}
 
+		$filtered = 0;
+
 		$entries = [];
 		foreach ($results->getResults() as $result) {
-
 			// in case the result is a contact result, add a contact-specific entry
 			if ($result instanceof ContactResult) {
-				$contact = Model\Contact::getByURLForUser($result->getUrl(), local_user());
+				if (Network::isUriBlocked($result->getUrl())) {
+					$filtered++;
+					continue;
+				}
+
+				$contact = Model\Contact::getByURLForUser($result->getUrl(), DI::userSession()->getLocalUserId());
 				if (!empty($contact)) {
 					$entries[] = Contact::getContactTemplateVars($contact);
 				}
 			}
 		}
 
-		$tpl = Renderer::getMarkupTemplate('viewcontact_template.tpl');
+		$tpl = Renderer::getMarkupTemplate('contact/list.tpl');
 		return Renderer::replaceMacros($tpl, [
-			'title'     => $header,
+			'$title'    => $header,
+			'$filtered' => $filtered ? DI::l10n()->tt(
+				'%d result was filtered out because your node blocks the domain it is registered on. You can review the list of domains your node is currently blocking in the <a href="/friendica">About page</a>.',
+				'%d results were filtered out because your node blocks the domain they are registered on. You can review the list of domains your node is currently blocking in the <a href="/friendica">About page</a>.',
+				$filtered) : '',
 			'$contacts' => $entries,
 			'$paginate' => $pager->renderFull($results->getTotal()),
 		]);

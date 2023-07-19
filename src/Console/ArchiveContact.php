@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,6 +24,7 @@ namespace Friendica\Console;
 use Friendica\App;
 use Friendica\Database\Database;
 use Friendica\DI;
+use Friendica\Model\Contact;
 use Friendica\Util\Strings;
 use RuntimeException;
 
@@ -79,7 +80,7 @@ HELP;
 		$this->l10n = $l10n;
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		if ($this->getOption('v')) {
 			$this->out('Class: ' . __CLASS__);
@@ -104,7 +105,7 @@ HELP;
 		if (!$this->dba->exists('contact', ['nurl' => $nurl, 'archive' => false])) {
 			throw new RuntimeException(DI::l10n()->t('Could not find any unarchived contact entry for this URL (%s)', $nurl));
 		}
-		if ($this->dba->update('contact', ['archive' => true], ['nurl' => $nurl])) {
+		if (Contact::update(['archive' => true], ['nurl' => $nurl])) {
 			$this->out($this->l10n->t('The contact entries have been archived'));
 		} else {
 			throw new RuntimeException('The contact archival failed.');

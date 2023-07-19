@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,19 +22,24 @@
 namespace Friendica\Model;
 
 use Friendica\Content\Text\HTML;
-use Friendica\Core\Cache\Duration;
+use Friendica\Core\Cache\Enum\Duration;
 use Friendica\Core\Logger;
+use Friendica\Core\Protocol;
 use Friendica\Core\System;
 use Friendica\Database\DBA;
 use Friendica\DI;
+use Friendica\Model\Item;
+use Friendica\Network\HTTPException;
 use Friendica\Network\Probe;
 use Friendica\Protocol\ActivityNamespace;
 use Friendica\Protocol\ActivityPub;
+use Friendica\Protocol\ActivityPub\Transmitter;
 use Friendica\Util\Crypto;
 use Friendica\Util\DateTimeFormat;
 use Friendica\Util\HTTPSignature;
 use Friendica\Util\JsonLD;
 use Friendica\Util\Network;
+use GuzzleHttp\Psr7\Uri;
 
 class APContact
 {
@@ -44,28 +49,35 @@ class APContact
 	 * @param string $addr Address
 	 * @return array webfinger data
 	 */
-	private static function fetchWebfingerData(string $addr)
+	private static function fetchWebfingerData(string $addr): array
 	{
 		$addr_parts = explode('@', $addr);
 		if (count($addr_parts) != 2) {
 			return [];
 		}
 
-		$data = ['addr' => $addr];
-		$template = 'https://' . $addr_parts[1] . '/.well-known/webfinger?resource=acct:' . urlencode($addr);
-		$webfinger = Probe::webfinger(str_replace('{uri}', urlencode($addr), $template), 'application/jrd+json');
-		if (empty($webfinger['links'])) {
-			$template = 'http://' . $addr_parts[1] . '/.well-known/webfinger?resource=acct:' . urlencode($addr);
-			$webfinger = Probe::webfinger(str_replace('{uri}', urlencode($addr), $template), 'application/jrd+json');
-			if (empty($webfinger['links'])) {
-				return [];
+		if (Contact::isLocal($addr) && ($local_uid = User::getIdForURL($addr)) && ($local_owner = User::getOwnerDataById($local_uid))) {
+			$data = [
+				'addr'      => $local_owner['addr'],
+				'baseurl'   => $local_owner['baseurl'],
+				'url'       => $local_owner['url'],
+				'subscribe' => $local_owner['baseurl'] . '/contact/follow?url={uri}'];
+
+			if (!empty($local_owner['alias']) && ($local_owner['url'] != $local_owner['alias'])) {
+				$data['alias'] = $local_owner['alias'];
 			}
-			$data['baseurl'] = 'http://' . $addr_parts[1];
-		} else {
-			$data['baseurl'] = 'https://' . $addr_parts[1];
+
+			return $data;
 		}
 
-		foreach ($webfinger['links'] as $link) {
+		$webfinger = Probe::getWebfingerArray($addr);
+		if (empty($webfinger['webfinger']['links'])) {
+			return [];
+		}
+
+		$data['baseurl'] = $webfinger['baseurl'];
+
+		foreach ($webfinger['webfinger']['links'] as $link) {
 			if (empty($link['rel'])) {
 				continue;
 			}
@@ -98,14 +110,16 @@ class APContact
 	 * @return array profile array
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
+	 * @todo Rewrite parameter $update to avoid true|false|null (boolean is binary, null adds a third case)
 	 */
-	public static function getByURL($url, $update = null)
+	public static function getByURL(string $url, $update = null): array
 	{
-		if (empty($url)) {
+		if (empty($url) || Network::isUrlBlocked($url)) {
+			Logger::info('Domain is blocked', ['url' => $url]);
 			return [];
 		}
 
-		$fetched_contact = false;
+		$fetched_contact = [];
 
 		if (empty($update)) {
 			if (is_null($update)) {
@@ -123,7 +137,7 @@ class APContact
 				$apcontact = DBA::selectFirst('apcontact', [], ['addr' => $url]);
 			}
 
-			if (DBA::isResult($apcontact) && ($apcontact['updated'] > $ref_update) && !empty($apcontact['pubkey'])) {
+			if (DBA::isResult($apcontact) && ($apcontact['updated'] > $ref_update) && !empty($apcontact['pubkey']) && !empty($apcontact['uri-id'])) {
 				return $apcontact;
 			}
 
@@ -145,24 +159,57 @@ class APContact
 				return $fetched_contact;
 			}
 			$url = $apcontact['url'];
+		} elseif (empty(parse_url($url, PHP_URL_PATH))) {
+			$apcontact['baseurl'] = $url;
 		}
 
-		$curlResult = HTTPSignature::fetchRaw($url);
-		$failed = empty($curlResult) || empty($curlResult->getBody()) ||
-			(!$curlResult->isSuccess() && ($curlResult->getReturnCode() != 410));
-
-		if (!$failed) {
-			$data = json_decode($curlResult->getBody(), true);
-			$failed = empty($data) || !is_array($data);
+		// Detect multiple fast repeating request to the same address
+		// See https://github.com/friendica/friendica/issues/9303
+		$cachekey = 'apcontact:' . ItemURI::getIdByURI($url);
+		$result = DI::cache()->get($cachekey);
+		if (!is_null($result)) {
+			Logger::info('Multiple requests for the address', ['url' => $url, 'update' => $update, 'callstack' => System::callstack(20), 'result' => $result]);
+			if (!empty($fetched_contact)) {
+				return $fetched_contact;
+			}
+		} else {
+			DI::cache()->set($cachekey, System::callstack(20), Duration::FIVE_MINUTES);
 		}
 
-		if (!$failed && ($curlResult->getReturnCode() == 410)) {
-			$data = ['@context' => ActivityPub::CONTEXT, 'id' => $url, 'type' => 'Tombstone'];
+		if (Network::isLocalLink($url) && ($local_uid = User::getIdForURL($url))) {
+			try {
+				$data = Transmitter::getProfile($local_uid);
+				$local_owner = User::getOwnerDataById($local_uid);
+			} catch(HTTPException\NotFoundException $e) {
+				$data = null;
+			}
 		}
 
-		if ($failed) {
-			self::markForArchival($fetched_contact ?: []);
-			return $fetched_contact;
+		if (empty($data)) {
+			$local_owner = [];
+
+			try {
+				$curlResult = HTTPSignature::fetchRaw($url);
+				$failed = empty($curlResult) || empty($curlResult->getBody()) ||
+					(!$curlResult->isSuccess() && ($curlResult->getReturnCode() != 410));
+	
+				if (!$failed) {
+					$data = json_decode($curlResult->getBody(), true);
+					$failed = empty($data) || !is_array($data);
+				}
+
+				if (!$failed && ($curlResult->getReturnCode() == 410)) {
+					$data = ['@context' => ActivityPub::CONTEXT, 'id' => $url, 'type' => 'Tombstone'];
+				}
+			} catch (\Exception $exception) {
+				Logger::notice('Error fetching url', ['url' => $url, 'exception' => $exception]);
+				$failed = true;
+			}
+
+			if ($failed) {
+				self::markForArchival($fetched_contact ?: []);
+				return $fetched_contact;
+			}
 		}
 
 		$compacted = JsonLD::compact($data);
@@ -170,31 +217,21 @@ class APContact
 			return $fetched_contact;
 		}
 
-		// Detect multiple fast repeating request to the same address
-		// See https://github.com/friendica/friendica/issues/9303
-		$cachekey = 'apcontact:getByURL:' . $url;
-		$result = DI::cache()->get($cachekey);
-		if (!is_null($result)) {
-			Logger::notice('Multiple requests for the address', ['url' => $url, 'update' => $update, 'callstack' => System::callstack(20), 'result' => $result]);
-		} else {
-			DI::cache()->set($cachekey, System::callstack(20), Duration::FIVE_MINUTES);
-		}
-
 		$apcontact['url'] = $compacted['@id'];
 		$apcontact['uuid'] = JsonLD::fetchElement($compacted, 'diaspora:guid', '@value');
 		$apcontact['type'] = str_replace('as:', '', JsonLD::fetchElement($compacted, '@type'));
 		$apcontact['following'] = JsonLD::fetchElement($compacted, 'as:following', '@id');
 		$apcontact['followers'] = JsonLD::fetchElement($compacted, 'as:followers', '@id');
-		$apcontact['inbox'] = JsonLD::fetchElement($compacted, 'ldp:inbox', '@id');
-		self::unarchiveInbox($apcontact['inbox'], false);
-
+		$apcontact['inbox'] = (JsonLD::fetchElement($compacted, 'ldp:inbox', '@id') ?? '');
 		$apcontact['outbox'] = JsonLD::fetchElement($compacted, 'as:outbox', '@id');
 
 		$apcontact['sharedinbox'] = '';
 		if (!empty($compacted['as:endpoints'])) {
-			$apcontact['sharedinbox'] = JsonLD::fetchElement($compacted['as:endpoints'], 'as:sharedInbox', '@id');
-			self::unarchiveInbox($apcontact['sharedinbox'], true);
+			$apcontact['sharedinbox'] = (JsonLD::fetchElement($compacted['as:endpoints'], 'as:sharedInbox', '@id') ?? '');
 		}
+
+		$apcontact['featured']      = JsonLD::fetchElement($compacted, 'toot:featured', '@id');
+		$apcontact['featured-tags'] = JsonLD::fetchElement($compacted, 'toot:featuredTags', '@id');
 
 		$apcontact['nick'] = JsonLD::fetchElement($compacted, 'as:preferredUsername', '@value') ?? '';
 		$apcontact['name'] = JsonLD::fetchElement($compacted, 'as:name', '@value');
@@ -203,11 +240,34 @@ class APContact
 			$apcontact['name'] = $apcontact['nick'];
 		}
 
-		$apcontact['about'] = HTML::toBBCode(JsonLD::fetchElement($compacted, 'as:summary', '@value'));
+		$apcontact['about'] = HTML::toBBCode(JsonLD::fetchElement($compacted, 'as:summary', '@value') ?? '');
+
+		$ims = JsonLD::fetchElementArray($compacted, 'vcard:hasInstantMessage');
+
+		if (!empty($ims)) {
+			foreach ($ims as $link) {
+				if (substr($link, 0, 5) == 'xmpp:') {
+					$apcontact['xmpp'] = substr($link, 5);
+				}
+				if (substr($link, 0, 7) == 'matrix:') {
+					$apcontact['matrix'] = substr($link, 7);
+				}
+			}
+		}
 
 		$apcontact['photo'] = JsonLD::fetchElement($compacted, 'as:icon', '@id');
 		if (is_array($apcontact['photo']) || !empty($compacted['as:icon']['as:url']['@id'])) {
 			$apcontact['photo'] = JsonLD::fetchElement($compacted['as:icon'], 'as:url', '@id');
+		} elseif (empty($apcontact['photo'])) {
+			$photo = JsonLD::fetchElementArray($compacted, 'as:icon', 'as:url');
+			if (!empty($photo[0]['@id'])) {
+				$apcontact['photo'] = $photo[0]['@id'];
+			}
+		}
+
+		$apcontact['header'] = JsonLD::fetchElement($compacted, 'as:image', '@id');
+		if (is_array($apcontact['header']) || !empty($compacted['as:image']['as:url']['@id'])) {
+			$apcontact['header'] = JsonLD::fetchElement($compacted['as:image'], 'as:url', '@id');
 		}
 
 		if (empty($apcontact['alias'])) {
@@ -230,27 +290,26 @@ class APContact
 			return $fetched_contact;
 		}
 
-		$parts = parse_url($apcontact['url']);
-		unset($parts['scheme']);
-		unset($parts['path']);
-
 		if (empty($apcontact['addr'])) {
-			if (!empty($apcontact['nick'])) {
-				$apcontact['addr'] = $apcontact['nick'] . '@' . str_replace('//', '', Network::unparseURL($parts));
-			} else {
+			try {
+				$apcontact['addr'] = $apcontact['nick'] . '@' . (new Uri($apcontact['url']))->getAuthority();
+			} catch (\Throwable $e) {
+				Logger::warning('Unable to coerce APContact URL into a UriInterface object', ['url' => $apcontact['url'], 'error' => $e->getMessage()]);
 				$apcontact['addr'] = '';
 			}
 		}
 
 		$apcontact['pubkey'] = null;
 		if (!empty($compacted['w3id:publicKey'])) {
-			$apcontact['pubkey'] = trim(JsonLD::fetchElement($compacted['w3id:publicKey'], 'w3id:publicKeyPem', '@value'));
-			if (strstr($apcontact['pubkey'], 'RSA ')) {
+			$apcontact['pubkey'] = trim(JsonLD::fetchElement($compacted['w3id:publicKey'], 'w3id:publicKeyPem', '@value') ?? '');
+			if (strpos($apcontact['pubkey'], 'RSA ') !== false) {
 				$apcontact['pubkey'] = Crypto::rsaToPem($apcontact['pubkey']);
 			}
 		}
 
 		$apcontact['manually-approve'] = (int)JsonLD::fetchElement($compacted, 'as:manuallyApprovesFollowers');
+
+		$apcontact['suspended'] = (int)JsonLD::fetchElement($compacted, 'toot:suspended');
 
 		if (!empty($compacted['as:generator'])) {
 			$apcontact['baseurl'] = JsonLD::fetchElement($compacted['as:generator'], 'as:url', '@id');
@@ -258,52 +317,74 @@ class APContact
 		}
 
 		if (!empty($apcontact['following'])) {
-			$data = ActivityPub::fetchContent($apcontact['following']);
-			if (!empty($data)) {
-				if (!empty($data['totalItems'])) {
-					$apcontact['following_count'] = $data['totalItems'];
+			if (!empty($local_owner)) {
+				$following = ActivityPub\Transmitter::getContacts($local_owner, [Contact::SHARING, Contact::FRIEND], 'following');
+			} else {
+				$following = ActivityPub::fetchContent($apcontact['following']);
+			}
+			if (!empty($following['totalItems'])) {
+				// Mastodon seriously allows for this condition?
+				// Jul 14 2021 - See https://mastodon.social/@BLUW for a negative following count
+				if ($following['totalItems'] < 0) {
+					$following['totalItems'] = 0;
 				}
+				$apcontact['following_count'] = $following['totalItems'];
 			}
 		}
 
 		if (!empty($apcontact['followers'])) {
-			$data = ActivityPub::fetchContent($apcontact['followers']);
-			if (!empty($data)) {
-				if (!empty($data['totalItems'])) {
-					$apcontact['followers_count'] = $data['totalItems'];
+			if (!empty($local_owner)) {
+				$followers = ActivityPub\Transmitter::getContacts($local_owner, [Contact::FOLLOWER, Contact::FRIEND], 'followers');
+			} else {
+				$followers = ActivityPub::fetchContent($apcontact['followers']);
+			}
+			if (!empty($followers['totalItems'])) {
+				// Mastodon seriously allows for this condition?
+				// Jul 14 2021 - See https://mastodon.online/@goes11 for a negative followers count
+				if ($followers['totalItems'] < 0) {
+					$followers['totalItems'] = 0;
 				}
+				$apcontact['followers_count'] = $followers['totalItems'];
 			}
 		}
 
 		if (!empty($apcontact['outbox'])) {
-			$data = ActivityPub::fetchContent($apcontact['outbox']);
-			if (!empty($data)) {
-				if (!empty($data['totalItems'])) {
-					$apcontact['statuses_count'] = $data['totalItems'];
+			if (!empty($local_owner)) {
+				$statuses_count = self::getStatusesCount($local_owner);
+			} else {
+				$outbox = ActivityPub::fetchContent($apcontact['outbox']);
+				$statuses_count = $outbox['totalItems'] ?? 0;
+			}
+			if (!empty($statuses_count)) {
+				// Mastodon seriously allows for this condition?
+				// Jul 20 2021 - See https://chaos.social/@m11 for a negative posts count
+				if ($statuses_count < 0) {
+					$statuses_count = 0;
 				}
+				$apcontact['statuses_count'] = $statuses_count;
 			}
 		}
 
-		// To-Do
+		$apcontact['discoverable'] = JsonLD::fetchElement($compacted, 'toot:discoverable', '@value');
 
-		// Unhandled
-		// tag, attachment, image, nomadicLocations, signature, featured, movedTo, liked
+		if (!empty($apcontact['photo'])) {
+			$apcontact['photo'] = Network::addBasePath($apcontact['photo'], $apcontact['url']);
 
-		// Unhandled from Misskey
-		// sharedInbox, isCat
-
-		// Unhandled from Kroeg
-		// kroeg:blocks, updated
+			if (!Network::isValidHttpUrl($apcontact['photo'])) {
+				Logger::warning('Invalid URL for photo', ['url' => $apcontact['url'], 'photo' => $apcontact['photo']]);
+				$apcontact['photo'] = '';
+			}
+		}
 
 		// When the photo is too large, try to shorten it by removing parts
-		if (strlen($apcontact['photo']) > 255) {
+		if (strlen($apcontact['photo'] ?? '') > 255) {
 			$parts = parse_url($apcontact['photo']);
 			unset($parts['fragment']);
-			$apcontact['photo'] = Network::unparseURL($parts);
+			$apcontact['photo'] = (string)Uri::fromParts($parts);
 
 			if (strlen($apcontact['photo']) > 255) {
 				unset($parts['query']);
-				$apcontact['photo'] = Network::unparseURL($parts);
+				$apcontact['photo'] = (string)Uri::fromParts($parts);
 			}
 
 			if (strlen($apcontact['photo']) > 255) {
@@ -333,7 +414,7 @@ class APContact
 
 		if (empty($apcontact['subscribe'])) {
 			$apcontact['subscribe'] = null;
-		}		
+		}
 
 		if (!empty($apcontact['baseurl']) && empty($fetched_contact['gsid'])) {
 			$apcontact['gsid'] = GServer::getID($apcontact['baseurl']);
@@ -343,8 +424,44 @@ class APContact
 			$apcontact['gsid'] = null;
 		}
 
+		self::unarchiveInbox($apcontact['inbox'], false, $apcontact['gsid']);
+
+		if (!empty($apcontact['sharedinbox'])) {
+			self::unarchiveInbox($apcontact['sharedinbox'], true, $apcontact['gsid']);
+		}
+
 		if ($apcontact['url'] == $apcontact['alias']) {
 			$apcontact['alias'] = null;
+		}
+
+		if (empty($apcontact['uuid'])) {
+			$apcontact['uri-id'] = ItemURI::getIdByURI($apcontact['url']);
+		} else {
+			$apcontact['uri-id'] = ItemURI::insert(['uri' => $apcontact['url'], 'guid' => $apcontact['uuid']]);
+		}
+
+		foreach (APContact\Endpoint::ENDPOINT_NAMES as $type => $name) {
+			$value = JsonLD::fetchElement($compacted, $name, '@id');
+			if (empty($value)) {
+				continue;
+			}
+			APContact\Endpoint::update($apcontact['uri-id'], $type, $value);
+		}
+
+		if (!empty($compacted['as:endpoints'])) {
+			foreach ($compacted['as:endpoints'] as $name => $endpoint) {
+				if (empty($endpoint['@id']) || !is_string($endpoint['@id'])) {
+					continue;
+				}
+
+				if (in_array($name, APContact\Endpoint::ENDPOINT_NAMES)) {
+					$key = array_search($name, APContact\Endpoint::ENDPOINT_NAMES);
+					APContact\Endpoint::update($apcontact['uri-id'], $key, $endpoint['@id']);
+					Logger::debug('Store endpoint', ['key' => $key, 'name' => $name, 'endpoint' => $endpoint['@id']]);
+				} elseif (!in_array($name, ['as:sharedInbox', 'as:uploadMedia', 'as:oauthTokenEndpoint', 'as:oauthAuthorizationEndpoint', 'litepub:oauthRegistrationEndpoint'])) {
+					Logger::debug('Unknown endpoint', ['name' => $name, 'endpoint' => $endpoint['@id']]);
+				}
+			}
 		}
 
 		$apcontact['updated'] = DateTimeFormat::utcNow();
@@ -355,6 +472,9 @@ class APContact
 			DBA::delete('apcontact', ['url' => $url]);
 		}
 
+		// Limit the length on incoming fields
+		$apcontact = DI::dbaDefinition()->truncateFieldsForTable('apcontact', $apcontact);
+
 		if (DBA::exists('apcontact', ['url' => $apcontact['url']])) {
 			DBA::update('apcontact', $apcontact, ['url' => $apcontact['url']]);
 		} else {
@@ -363,7 +483,31 @@ class APContact
 
 		Logger::info('Updated profile', ['url' => $url]);
 
-		return $apcontact;
+		return DBA::selectFirst('apcontact', [], ['url' => $apcontact['url']]) ?: [];
+	}
+
+	/**
+	 * Fetch the number of statuses for the given owner
+	 *
+	 * @param array $owner
+	 *
+	 * @return integer
+	 */
+	private static function getStatusesCount(array $owner): int
+	{
+		$condition = [
+			'private'        => [Item::PUBLIC, Item::UNLISTED],
+			'author-id'      => Contact::getIdForURL($owner['url'], 0, false),
+			'gravity'        => [Item::GRAVITY_PARENT, Item::GRAVITY_COMMENT],
+			'network'        => Protocol::DFRN,
+			'parent-network' => Protocol::FEDERATED,
+			'deleted'        => false,
+			'visible'        => true,
+		];
+
+		$count = Post::countPosts($condition);
+
+		return $count;
 	}
 
 	/**
@@ -376,7 +520,7 @@ class APContact
 	{
 		if (!empty($apcontact['inbox'])) {
 			Logger::info('Set inbox status to failure', ['inbox' => $apcontact['inbox']]);
-			HTTPSignature::setInboxStatus($apcontact['inbox'], false);
+			HTTPSignature::setInboxStatus($apcontact['inbox'], false, false, $apcontact['gsid']);
 		}
 
 		if (!empty($apcontact['sharedinbox'])) {
@@ -386,7 +530,7 @@ class APContact
 			if (!$available) {
 				// If all known personal inboxes are failing then set their shared inbox to failure as well
 				Logger::info('Set shared inbox status to failure', ['sharedinbox' => $apcontact['sharedinbox']]);
-				HTTPSignature::setInboxStatus($apcontact['sharedinbox'], false, true);
+				HTTPSignature::setInboxStatus($apcontact['sharedinbox'], false, true, $apcontact['gsid']);
 			}
 		}
 	}
@@ -401,11 +545,11 @@ class APContact
 	{
 		if (!empty($apcontact['inbox'])) {
 			Logger::info('Set inbox status to success', ['inbox' => $apcontact['inbox']]);
-			HTTPSignature::setInboxStatus($apcontact['inbox'], true);
+			HTTPSignature::setInboxStatus($apcontact['inbox'], true, false, $apcontact['gsid']);
 		}
 		if (!empty($apcontact['sharedinbox'])) {
 			Logger::info('Set shared inbox status to success', ['sharedinbox' => $apcontact['sharedinbox']]);
-			HTTPSignature::setInboxStatus($apcontact['sharedinbox'], true, true);
+			HTTPSignature::setInboxStatus($apcontact['sharedinbox'], true, true, $apcontact['gsid']);
 		}
 	}
 
@@ -414,13 +558,39 @@ class APContact
 	 *
 	 * @param string  $url    inbox url
 	 * @param boolean $shared Shared Inbox
+	 * @param int     $gsid   Global server id
+	 * @return void
 	 */
-	private static function unarchiveInbox($url, $shared)
+	private static function unarchiveInbox(string $url, bool $shared, int $gsid = null)
 	{
 		if (empty($url)) {
 			return;
 		}
 
-		HTTPSignature::setInboxStatus($url, true, $shared);
+		HTTPSignature::setInboxStatus($url, true, $shared, $gsid);
+	}
+
+	/**
+	 * Check if the apcontact is a relay account
+	 *
+	 * @param array $apcontact
+	 *
+	 * @return bool
+	 */
+	public static function isRelay(array $apcontact): bool
+	{
+		if (empty($apcontact['nick']) || $apcontact['nick'] != 'relay') {
+			return false;
+		}
+
+		if (!empty($apcontact['type']) && $apcontact['type'] == 'Application') {
+			return true;
+		}
+
+		if (!empty($apcontact['type']) && in_array($apcontact['type'], ['Group', 'Service']) && is_null($apcontact['outbox'])) {
+			return true;
+		}
+
+		return false;
 	}
 }

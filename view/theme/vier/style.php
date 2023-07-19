@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,17 +21,18 @@
 
 use Friendica\Core\Logger;
 use Friendica\DI;
+use Friendica\Network\HTTPException\NotModifiedException;
 
-$uid = $_REQUEST['puid'] ?? 0;
+/*
+ * This script can be included when the maintenance mode is on, which requires us to avoid any config call and
+ * use the following hardcoded default
+ */
+$style = 'plus';
 
-$style = DI::pConfig()->get($uid, 'vier', 'style');
+if (DI::mode()->has(\Friendica\App\Mode::MAINTENANCEDISABLED)) {
+	$uid = $_REQUEST['puid'] ?? 0;
 
-if (empty($style)) {
-	$style = DI::config()->get('vier', 'style');
-}
-
-if (empty($style)) {
-	$style = "plus";
+	$style = DI::pConfig()->get($uid, 'vier', 'style', DI::config()->get('vier', 'style', $style));
 }
 
 $stylecss = '';
@@ -48,8 +49,7 @@ foreach (['style', $style] as $file) {
 			$modified = $stylemodified;
 		}
 	} else {
-		//TODO: use Logger::ERROR?
-		Logger::log('Error: missing file: "' . $stylecssfile .'" (userid: '. $uid .')');
+		Logger::warning('Missing CSS file', ['file' => $stylecssfile, 'uid' => $uid]);
 	}
 }
 $modified = gmdate('r', $modified);
@@ -67,8 +67,7 @@ if (isset($_SERVER['HTTP_IF_MODIFIED_SINCE']) && isset($_SERVER['HTTP_IF_NONE_MA
 				stripslashes($_SERVER['HTTP_IF_NONE_MATCH']));
 
 	if (($cached_modified == $modified) && ($cached_etag == $etag)) {
-		header('HTTP/1.1 304 Not Modified');
-		exit();
+		throw new NotModifiedException();
 	}
 }
 echo $stylecss;

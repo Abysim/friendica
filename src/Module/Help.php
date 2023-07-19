@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -26,30 +26,28 @@ use Friendica\Content\Nav;
 use Friendica\Content\Text\Markdown;
 use Friendica\DI;
 use Friendica\Network\HTTPException;
-use Friendica\Util\Strings;
 
 /**
  * Shows the friendica help based on the /doc/ directory
  */
 class Help extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
 		Nav::setSelected('help');
 
 		$text = '';
 		$filename = '';
 
-		$a = DI::app();
 		$config = DI::config();
-		$lang = $config->get('system', 'language');
+		$lang = DI::session()->get('language', $config->get('system', 'language'));
 
 		// @TODO: Replace with parameter from router
-		if ($a->argc > 1) {
+		if (DI::args()->getArgc() > 1) {
 			$path = '';
 			// looping through the argv keys bigger than 0 to build
 			// a path relative to /help
-			for ($x = 1; $x < $a->argc; $x ++) {
+			for ($x = 1; $x < DI::args()->getArgc(); $x ++) {
 				if (strlen($path)) {
 					$path .= '/';
 				}
@@ -59,7 +57,7 @@ class Help extends BaseModule
 			$title = basename($path);
 			$filename = $path;
 			$text = self::loadDocFile('doc/' . $path . '.md', $lang);
-			DI::page()['title'] = DI::l10n()->t('Help:') . ' ' . str_replace('-', ' ', Strings::escapeTags($title));
+			DI::page()['title'] = DI::l10n()->t('Help:') . ' ' . str_replace('-', ' ', $title);
 		}
 
 		$home = self::loadDocFile('doc/Home.md', $lang);
@@ -104,7 +102,7 @@ class Help extends BaseModule
 
 					$idNum[$level] ++;
 
-					$href = DI::baseUrl()->get() . "/help/{$filename}#{$anchor}";
+					$href = "help/{$filename}#{$anchor}";
 					$toc .= "<li><a href=\"{$href}\">" . strip_tags($line) . "</a></li>";
 					$id = implode("_", array_slice($idNum, 1, $level));
 					$line = "<a name=\"{$id}\"></a>" . $line;

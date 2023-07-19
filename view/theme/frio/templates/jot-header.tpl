@@ -56,19 +56,18 @@
 			jotTextOpenUI(document.getElementById("profile-jot-text"));
 		});
 
-
 		/* show images / file browser window
 		 *
 		 **/
 
 		/* callback */
-		$('body').on('fbrowser.image.main', function(e, filename, embedcode, id) {
+		$('body').on('fbrowser.photo.main', function(e, filename, embedcode, id) {
 			///@todo this part isn't ideal and need to be done in a better way
 			jotTextOpenUI(document.getElementById("profile-jot-text"));
 			jotActive();
 			addeditortext(embedcode);
 		})
-		.on('fbrowser.file.main', function(e, filename, embedcode, id) {
+		.on('fbrowser.attachment.main', function(e, filename, embedcode, id) {
 			jotTextOpenUI(document.getElementById("profile-jot-text"));
 			jotActive();
 			addeditortext(embedcode);
@@ -125,6 +124,24 @@
 			Dialog.doFileBrowser("main");
 			jotActive();
 		});
+
+		$('body').on('click', '.p-category .filerm', function(e){
+			e.preventDefault();
+
+			let $href = $(e.target).attr('href');
+			// Prevents arbitrary Ajax requests
+			if ($href.substr(0, 7) === 'filerm/') {
+				$(e.target).parent().removeClass('btn-success btn-danger');
+				$.post($href)
+				.done(function() {
+					liking = 1;
+					force_update = true;
+				})
+				.always(function () {
+					NavUpdate();
+				});
+			}
+		});
 	});
 
 	function deleteCheckedItems() {
@@ -153,7 +170,7 @@
 				}
 			});
 
-			// Fade the the the container from the items we want to delete
+			// Fade the container from the items we want to delete
 			for(var key in  ItemsToDelete) {
 				$(ItemsToDelete[key]).fadeTo('fast', 0.33);
 			};
@@ -193,7 +210,7 @@
 	}
 
 	function jotShare(id) {
-		$.get('share/' + id, function(data) {
+		$.get('post/' + id + '/share', function(data) {
 			// remove the former content of the text input
 			$("#profile-jot-text").val("");
 			initEditor(function(){
@@ -223,7 +240,7 @@
 			if (currentText.includes("[attachment") && currentText.includes("[/attachment]")) {
 				noAttachment = '&noAttachment=1';
 			}
-			$.get('parse_url?binurl=' + reply + noAttachment, function(data) {
+			$.get('parseurl?binurl=' + reply + noAttachment, function(data) {
 				if (!editor) $("#profile-jot-text").val("");
 				initEditor(function(){
 					addeditortext(data);
@@ -243,7 +260,7 @@
 				commentBusy = true;
 				$('body').css('cursor', 'wait');
 
-				$.get('tagger/' + id + '?term=' + reply);
+				$.post('post/' + id + '/tag/add', {term: reply});
 				if(timer) clearTimeout(timer);
 				timer = setTimeout(NavUpdate,3000);
 				liking = 1;
@@ -273,6 +290,7 @@
 //					if(timer) clearTimeout(timer);
 //					timer = setTimeout(NavUpdate,3000);
 					liking = 1;
+					force_update = true;
 					$.colorbox.close();
 				} else {
 					$("#id_term").css("border-color","#FF0000");
@@ -280,7 +298,6 @@
 				return false;
 			});
 		});
-
 	}
 
 	function jotClearLocation() {

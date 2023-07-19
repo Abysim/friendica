@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,7 +25,9 @@ use Friendica\Core\Logger;
 use Friendica\Core\Worker;
 use Friendica\Database\DBA;
 use Friendica\DI;
+use Friendica\Util\DateTimeFormat;
 use Friendica\Util\Strings;
+use GuzzleHttp\Psr7\Uri;
 
 class UpdateGServers
 {
@@ -47,7 +49,7 @@ class UpdateGServers
 		}
 
 		$total = DBA::count('gserver');
-		$condition = ["`next_contact` < UTC_TIMESTAMP() AND (`nurl` != ? OR `url` != ?)", '', ''];
+		$condition = ["NOT `blocked` AND `next_contact` < ? AND (`nurl` != ? OR `url` != ?)",  DateTimeFormat::utcNow(), '', ''];
 		$outdated = DBA::count('gserver', $condition);
 		Logger::info('Server status', ['total' => $total, 'outdated' => $outdated, 'updating' => $limit]);
 
@@ -62,15 +64,16 @@ class UpdateGServers
 			// There are duplicated "url" but not "nurl". So we check both addresses instead of just overwriting them,
 			// since that would mean loosing data.
 			if (!empty($gserver['url'])) {
-				if (Worker::add(PRIORITY_LOW, 'UpdateGServer', $gserver['url'])) {
+				if (UpdateGServer::add(Worker::PRIORITY_LOW, $gserver['url'])) {
 					$count++;
 				}
 			}
 			if (!empty($gserver['nurl']) && ($gserver['nurl'] != Strings::normaliseLink($gserver['url']))) {
-				if (Worker::add(PRIORITY_LOW, 'UpdateGServer', $gserver['nurl'])) {
+				if (UpdateGServer::add(Worker::PRIORITY_LOW, $gserver['nurl'])) {
 					$count++;
 				}
 			}
+			Worker::coolDown();
 		}
 		DBA::close($gservers);
 		Logger::info('Updated servers', ['count' => $count]);

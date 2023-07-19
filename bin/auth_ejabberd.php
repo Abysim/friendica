@@ -1,7 +1,7 @@
 #!/usr/bin/env php
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -81,6 +81,10 @@ $dice = (new Dice())->addRules(include __DIR__ . '/../static/dependencies.config
 $dice = $dice->addRule(LoggerInterface::class,['constructParams' => ['auth_ejabberd']]);
 
 \Friendica\DI::init($dice);
+\Friendica\Core\Logger\Handler\ErrorHandler::register($dice->create(\Psr\Log\LoggerInterface::class));
+
+// Check the database structure and possibly fixes it
+\Friendica\Core\Update::check(\Friendica\DI::basePath(), true);
 
 $appMode = $dice->create(Mode::class);
 

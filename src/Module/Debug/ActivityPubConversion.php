@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,19 +22,14 @@
 namespace Friendica\Module\Debug;
 
 use Friendica\BaseModule;
-use Friendica\Content\Text;
-use Friendica\Core\Logger;
 use Friendica\Core\Renderer;
 use Friendica\DI;
-use Friendica\Model\Item;
-use Friendica\Model\Tag;
 use Friendica\Protocol\ActivityPub;
 use Friendica\Util\JsonLD;
-use Friendica\Util\XML;
 
 class ActivityPubConversion extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
 		function visible_whitespace($s)
 		{
@@ -46,7 +41,7 @@ class ActivityPubConversion extends BaseModule
 			try {
 				$source = json_decode($_REQUEST['source'], true);
 				$trust_source = true;
-				$uid = local_user();
+				$uid = DI::userSession()->getLocalUserId();
 				$push = false;
 
 				if (!$source) {
@@ -114,12 +109,16 @@ class ActivityPubConversion extends BaseModule
 					$object_data['thread-completion'] = $activity['thread-completion'];
 				}
 
+				if (!empty($activity['completion-mode'])) {
+					$object_data['completion-mode'] = $activity['completion-mode'];
+				}
+
 				$results[] = [
 					'title'   => DI::l10n()->t('Object data'),
 					'content' => visible_whitespace(var_export($object_data, true))
 				];
 
-				$item = ActivityPub\Processor::createItem($object_data);
+				$item = ActivityPub\Processor::createItem($object_data, true);
 
 				$results[] = [
 					'title'   => DI::l10n()->t('Result Item'),
@@ -127,7 +126,7 @@ class ActivityPubConversion extends BaseModule
 				];
 			} catch (\Throwable $e) {
 				$results[] = [
-					'title'   => DI::l10n()->t('Error'),
+					'title'   => DI::l10n()->tt('Error', 'Errors', 1),
 					'content' => $e->getMessage(),
 				];
 			}
@@ -135,8 +134,10 @@ class ActivityPubConversion extends BaseModule
 
 		$tpl = Renderer::getMarkupTemplate('debug/activitypubconversion.tpl');
 		$o = Renderer::replaceMacros($tpl, [
-			'$source'          => ['source', DI::l10n()->t('Source activity'), $_REQUEST['source'] ?? '', ''],
-			'$results'       => $results
+			'$title'   => DI::l10n()->t('ActivityPub Conversion'),
+			'$source'  => ['source', DI::l10n()->t('Source activity'), $_REQUEST['source'] ?? '', ''],
+			'$results' => $results,
+			'$submit' => DI::l10n()->t('Submit'),
 		]);
 
 		return $o;

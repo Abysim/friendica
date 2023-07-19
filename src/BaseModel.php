@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -31,7 +31,7 @@ use Psr\Log\LoggerInterface;
  *
  * @property int id
  */
-abstract class BaseModel extends BaseEntity
+abstract class BaseModel extends BaseDataTransferObject
 {
 	/** @var Database */
 	protected $dba;
@@ -67,7 +67,7 @@ abstract class BaseModel extends BaseEntity
 		$this->originalData = $data;
 	}
 
-	public function getOriginalData()
+	public function getOriginalData(): array
 	{
 		return $this->originalData;
 	}
@@ -84,7 +84,7 @@ abstract class BaseModel extends BaseEntity
 	 * @param array     $data
 	 * @return BaseModel
 	 */
-	public static function createFromPrototype(BaseModel $prototype, array $data)
+	public static function createFromPrototype(BaseModel $prototype, array $data): BaseModel
 	{
 		$model = clone $prototype;
 		$model->data = $data;
@@ -94,13 +94,13 @@ abstract class BaseModel extends BaseEntity
 	}
 
 	/**
-	 * Magic isset method. Returns true if the field exists, either in the data prperty array or in any of the local properties.
+	 * Magic isset method. Returns true if the field exists, either in the data property array or in any of the local properties.
 	 * Used by array_column() on an array of objects.
 	 *
 	 * @param $name
 	 * @return bool
 	 */
-	public function __isset($name)
+	public function __isset($name): bool
 	{
 		return in_array($name, array_merge(array_keys($this->data), array_keys(get_object_vars($this))));
 	}
@@ -110,11 +110,11 @@ abstract class BaseModel extends BaseEntity
 	 * - $model->field (outside of class)
 	 * - $this->field (inside of class)
 	 *
-	 * @param $name
+	 * @param string $name Name of data to fetch
 	 * @return mixed
 	 * @throws HTTPException\InternalServerErrorException
 	 */
-	public function __get($name)
+	public function __get(string $name)
 	{
 		$this->checkValid();
 
@@ -126,15 +126,19 @@ abstract class BaseModel extends BaseEntity
 	}
 
 	/**
+	 * * Magic setter. This allows to set model fields with the following syntax:
+	 * - $model->field = $value (outside of class)
+	 * - $this->field = $value (inside of class)
+	 *
 	 * @param string $name
-	 * @param mixed $value
+	 * @param mixed  $value
 	 */
-	public function __set($name, $value)
+	public function __set(string $name, $value)
 	{
 		$this->data[$name] = $value;
 	}
 
-	public function toArray()
+	public function toArray(): array
 	{
 		return $this->data;
 	}

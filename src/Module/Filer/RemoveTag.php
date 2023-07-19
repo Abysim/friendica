@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,51 +21,101 @@
 
 namespace Friendica\Module\Filer;
 
+use Friendica\App;
 use Friendica\BaseModule;
-use Friendica\DI;
-use Friendica\Model\FileTag;
+use Friendica\Core\L10n;
+use Friendica\Core\Session\Capability\IHandleUserSessions;
+use Friendica\Core\System;
+use Friendica\Database\DBA;
+use Friendica\Model\Post;
+use Friendica\Module\Response;
+use Friendica\Navigation\SystemMessages;
 use Friendica\Network\HTTPException;
-use Friendica\Util\XML;
+use Friendica\Util\Profiler;
+use Psr\Log\LoggerInterface;
 
 /**
  * Remove a tag from a file
  */
 class RemoveTag extends BaseModule
 {
-	public static function content(array $parameters = [])
+	/** @var SystemMessages */
+	private $systemMessages;
+	/** @var IHandleUserSessions */
+	private $userSession;
+
+	public function __construct(SystemMessages $systemMessages, L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, Response $response, IHandleUserSessions $userSession, array $server, array $parameters = [])
 	{
-		if (!local_user()) {
+		parent::__construct($l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
+
+		$this->systemMessages = $systemMessages;
+		$this->userSession    = $userSession;
+	}
+
+	protected function post(array $request = [])
+	{
+		System::httpError($this->removeTag($request));
+	}
+
+	protected function content(array $request = []): string
+	{
+		if (!$this->userSession->getLocalUserId()) {
 			throw new HTTPException\ForbiddenException();
 		}
 
-		$app = DI::app();
-		$logger = DI::logger();
+		$this->removeTag($request, $type, $term);
 
-		$item_id = (($app->argc > 1) ? intval($app->argv[1]) : 0);
-
-		$term = XML::unescape(trim($_GET['term'] ?? ''));
-		$cat = XML::unescape(trim($_GET['cat'] ?? ''));
-
-		$category = (($cat) ? true : false);
-
-		if ($category) {
-			$term = $cat;
+		if ($type == Post\Category::FILE) {
+			$this->baseUrl->redirect('filed?file=' . rawurlencode($term));
 		}
 
-		$logger->info('Filer - Remove Tag', [
-			'term'     => $term,
-			'item'     => $item_id,
-			'category' => ($category ? 'true' : 'false')
+		return '';
+	}
+
+	/**
+	 * @param array       $request The $_REQUEST array
+	 * @param string|null $type    Output parameter with the computed type
+	 * @param string|null $term    Output parameter with the computed term
+	 *
+	 * @return int The relevant HTTP code
+	 *
+	 * @throws \Exception
+	 */
+	private function removeTag(array $request, string &$type = null, string &$term = null): int
+	{
+		$item_id = $this->parameters['id'] ?? 0;
+
+		$term = trim($request['term'] ?? '');
+		$cat = trim($request['cat'] ?? '');
+
+		if (!empty($cat)) {
+			$type = Post\Category::CATEGORY;
+			$term = $cat;
+		} else {
+			$type = Post\Category::FILE;
+		}
+
+		$this->logger->info('Filer - Remove Tag', [
+			'term' => $term,
+			'item' => $item_id,
+			'type' => $type
 		]);
 
-		if ($item_id && strlen($term)) {
-			if (!FileTag::unsaveFile(local_user(), $item_id, $term, $category)) {
-				notice(DI::l10n()->t('Item was not removed'));
-			}
-		} else {
-			notice(DI::l10n()->t('Item was not deleted'));
+		if (!$item_id || !strlen($term)) {
+			$this->systemMessages->addNotice($this->l10n->t('Item was not deleted'));
+			return 401;
 		}
 
-		DI::baseUrl()->redirect('network?file=' . rawurlencode($term));
+		$item = Post::selectFirst(['uri-id'], ['id' => $item_id]);
+		if (!DBA::isResult($item)) {
+			return 404;
+		}
+
+		if (!Post\Category::deleteFileByURIId($item['uri-id'], $this->userSession->getLocalUserId(), $type, $term)) {
+			$this->systemMessages->addNotice($this->l10n->t('Item was not removed'));
+			return 500;
+		}
+
+		return 200;
 	}
 }

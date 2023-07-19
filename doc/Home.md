@@ -9,7 +9,6 @@ Friendica Documentation and Resources
 	* [Creating posts](help/Text_editor)
 	* [BBCode tag reference](help/BBCode)
 	* [Comment, sort and delete posts](help/Text_comment)
-	* [Profiles](help/Profiles)
 	* [Accesskey reference](help/Accesskeys)
 	* [Events](help/events)
 * You and other users
@@ -37,12 +36,13 @@ Friendica Documentation and Resources
 * [Improve Performance](help/Improve-Performance)
 * [Migrate](help/Migrate)
 * [Administration Tools](help/tools)
+* [Admin FAQ](help/FAQ-admin)
 
 **Developer Manual**
 
 * [Get started](help/Developers-Intro)
 * Set up development environment
-	* [Help on Github](help/Github)
+	* [Help on GitHub](help/GitHub)
 	* [Help on Vagrant](help/Vagrant)
 	* [Bugs and Issues](help/Bugs-and-Issues)
 * Code structure
@@ -67,11 +67,12 @@ Friendica Documentation and Resources
 
 * [Main Website](https://friendi.ca)
 * Ways to get Support
-  * [Friendica Support Forum](https://forum.friendi.ca/~helpers)
+  * Friendica Support Forum: [@helpers@forum.friendi.ca](https://forum.friendi.ca/~helpers)
   * [Mailing List Archive](http://mailman.friendi.ca/mailman/listinfo/support-friendi.ca) you can subscribe to the list by sending an email to ``support-request(at)friendi.ca?subject=subscribe``
-  * XMPP/Jabber MUC: support(at)forum.friendi.ca
-  * IRC: #friendica at irc.freenode.net
-  * Matrix: #friendi.ca or #friendica at matrix.org
+  * Community chat rooms (the IRC, Matrix and XMPP rooms are bridged) these public chats are logged [from IRC](https://gnusociarg.nsupdate.info/2021/%23friendica/) and [Matrix](https://view.matrix.org/alias/%23friendi.ca:matrix.org/)
+    * XMPP/Jabber MUC: support(at)forum.friendi.ca
+    * IRC: #friendica at [libera.chat](https://web.libera.chat/?channels=#friendica)
+    * Matrix: [#friendi.ca](https://matrix.to/#/#friendi.ca:matrix.org) or [#friendica-en](https://matrix.to/#/#friendica-en:matrix.org) at matrix.org
 
 **About**
 

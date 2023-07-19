@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,7 +25,7 @@ use Console_Table;
 use Friendica\App;
 use Friendica\Content\Pager;
 use Friendica\Core\L10n;
-use Friendica\Database\Database;
+use Friendica\Core\PConfig\Capability\IManagePersonalConfigValues;
 use Friendica\Model\Register;
 use Friendica\Model\User as UserModel;
 use Friendica\Util\Temporal;
@@ -48,9 +48,9 @@ class User extends \Asika\SimpleConsole\Console
 	 */
 	private $l10n;
 	/**
-	 * @var Database
+	 * @var IManagePersonalConfigValues
 	 */
-	private $dba;
+	private $pConfig;
 
 	protected function getHelp()
 	{
@@ -72,6 +72,10 @@ Usage
 	bin/console user search nick <nick> [-h|--help|-?] [-v]
 	bin/console user search mail <mail> [-h|--help|-?] [-v]
 	bin/console user search guid <GUID> [-h|--help|-?] [-v]
+	bin/console user config list [<nickname>] [<category>] [-h|--help|-?] [-v]
+	bin/console user config get [<nickname>] [<category>] [<key>] [-h|--help|-?] [-v]
+	bin/console user config set [<nickname>] [<category>] [<key>] [<value>] [-h|--help|-?] [-v]
+	bin/console user config delete [<nickname>] [<category>] [<key>] [-h|--help|-?] [-v]
 
 Description
 	Modify user settings per console commands.
@@ -84,16 +88,16 @@ HELP;
 		return $help;
 	}
 
-	public function __construct(App\Mode $appMode, L10n $l10n, Database $dba, array $argv = null)
+	public function __construct(App\Mode $appMode, L10n $l10n, IManagePersonalConfigValues $pConfig, array $argv = null)
 	{
 		parent::__construct($argv);
 
-		$this->appMode     = $appMode;
-		$this->l10n        = $l10n;
-		$this->dba         = $dba;
+		$this->appMode = $appMode;
+		$this->l10n    = $l10n;
+		$this->pConfig = $pConfig;
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		if ($this->getOption('v')) {
 			$this->out('Class: ' . __CLASS__);
@@ -131,9 +135,54 @@ HELP;
 				return $this->listUser();
 			case 'search':
 				return $this->searchUser();
+			case 'config':
+				return $this->configUser();
 			default:
 				throw new \Asika\SimpleConsole\CommandArgsException('Wrong command.');
 		}
+	}
+
+	/**
+	 * Retrieves the user nick, either as an argument or from a prompt
+	 *
+	 * @param int $arg_index Index of the nick argument in the arguments list
+	 *
+	 * @return string nick of the user
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 */
+	private function getNick($arg_index)
+	{
+		$nick = $this->getArgument($arg_index);
+
+		if (!$nick) {
+			$this->out($this->l10n->t('Enter user nickname: '));
+			$nick = CliPrompt::prompt();
+			if (empty($nick)) {
+				throw new RuntimeException('A nick name must be set.');
+			}
+		}
+
+		return $nick;
+	}
+
+	/**
+	 * Retrieves the user from a nick supplied as an argument or from a prompt
+	 *
+	 * @param int $arg_index Index of the nick argument in the arguments list
+	 *
+	 * @return array|boolean User record with uid field, or false if user is not found
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 */
+	private function getUserByNick($arg_index)
+	{
+		$nick = $this->getNick($arg_index);
+
+		$user = UserModel::getByNickname($nick, ['uid']);
+		if (empty($user)) {
+			throw new RuntimeException($this->l10n->t('User not found'));
+		}
+
+		return $user;
 	}
 
 	/**
@@ -145,12 +194,7 @@ HELP;
 	 */
 	private function password()
 	{
-		$nick = $this->getArgument(1);
-
-		$user = $this->dba->selectFirst('user', ['uid'], ['nickname' => $nick]);
-		if (!$this->dba->isResult($user)) {
-			throw new RuntimeException($this->l10n->t('User not found'));
-		}
+		$user = $this->getUserByNick(1);
 
 		$password = $this->getArgument(2);
 
@@ -162,7 +206,7 @@ HELP;
 		try {
 			$result = UserModel::updatePassword($user['uid'], $password);
 
-			if (!$this->dba->isResult($result)) {
+			if (empty($result)) {
 				throw new \Exception($this->l10n->t('Password update failed. Please try again.'));
 			}
 
@@ -226,7 +270,7 @@ HELP;
 	}
 
 	/**
-	 * Allows or denys a user based on it's nickname
+	 * Allows or denies a user based on it's nickname
 	 *
 	 * @param bool $allow True, if the pending user is allowed, false if denies
 	 *
@@ -235,20 +279,7 @@ HELP;
 	 */
 	private function pendingUser(bool $allow = true)
 	{
-		$nick = $this->getArgument(1);
-
-		if (!$nick) {
-			$this->out($this->l10n->t('Enter user nickname: '));
-			$nick = CliPrompt::prompt();
-			if (empty($nick)) {
-				throw new RuntimeException('A nick name must be set.');
-			}
-		}
-
-		$user = $this->dba->selectFirst('user', ['uid'], ['nickname' => $nick]);
-		if (empty($user)) {
-			throw new RuntimeException($this->l10n->t('User not found'));
-		}
+		$user = $this->getUserByNick(1);
 
 		$pending = Register::getPendingForUser($user['uid'] ?? 0);
 		if (empty($pending)) {
@@ -268,20 +299,7 @@ HELP;
 	 */
 	private function blockUser(bool $block = true)
 	{
-		$nick = $this->getArgument(1);
-
-		if (!$nick) {
-			$this->out($this->l10n->t('Enter user nickname: '));
-			$nick = CliPrompt::prompt();
-			if (empty($nick)) {
-				throw new RuntimeException('A nick name must be set.');
-			}
-		}
-
-		$user = $this->dba->selectFirst('user', ['uid'], ['nickname' => $nick]);
-		if (empty($user)) {
-			throw new RuntimeException($this->l10n->t('User not found'));
-		}
+		$user = $this->getUserByNick(1);
 
 		return $block ? UserModel::block($user['uid'] ?? 0) : UserModel::block($user['uid'] ?? 0, false);
 	}
@@ -292,22 +310,9 @@ HELP;
 	 * @return bool True, if the delete was successful
 	 * @throws \Exception
 	 */
-	private function deleteUser()
+	private function deleteUser(): bool
 	{
-		$nick = $this->getArgument(1);
-
-		if (!$nick) {
-			$this->out($this->l10n->t('Enter user nickname: '));
-			$nick = CliPrompt::prompt();
-			if (empty($nick)) {
-				throw new RuntimeException('A nick name must be set.');
-			}
-		}
-
-		$user = $this->dba->selectFirst('user', ['uid', 'account_removed'], ['nickname' => $nick]);
-		if (empty($user)) {
-			throw new RuntimeException($this->l10n->t('User not found'));
-		}
+		$user = $this->getUserByNick(1);
 
 		if (!empty($user['account_removed'])) {
 			$this->out($this->l10n->t('User has already been marked for deletion.'));
@@ -315,7 +320,7 @@ HELP;
 		}
 
 		if (!$this->getOption('y')) {
-			$this->out($this->l10n->t('Type "yes" to delete %s', $nick));
+			$this->out($this->l10n->t('Type "yes" to delete %s', $this->getArgument(1)));
 			if (CliPrompt::prompt() !== 'yes') {
 				throw new RuntimeException($this->l10n->t('Deletion aborted.'));
 			}
@@ -332,8 +337,8 @@ HELP;
 	private function listUser()
 	{
 		$subCmd = $this->getArgument(1);
-		$start = $this->getOption(['s', 'start'], 0);
-		$count = $this->getOption(['c', 'count'], Pager::ITEMS_PER_PAGE);
+		$start  = $this->getOption(['s', 'start'], 0);
+		$count  = $this->getOption(['c', 'count'], Pager::ITEMS_PER_PAGE);
 
 		$table = new Console_Table();
 
@@ -365,7 +370,7 @@ HELP;
 						$contact['url'],
 						$contact['email'],
 						Temporal::getRelativeDate($contact['created']),
-						Temporal::getRelativeDate($contact['login_date']),
+						Temporal::getRelativeDate($contact['last-activity']),
 						Temporal::getRelativeDate($contact['last-item']),
 					]);
 				}
@@ -391,13 +396,13 @@ HELP;
 			'nickname',
 			'email',
 			'register_date',
-			'login_date',
+			'last-activity',
 			'verified',
 			'blocked',
 		];
 
 		$subCmd = $this->getArgument(1);
-		$param = $this->getArgument(2);
+		$param  = $this->getArgument(2);
 
 		$table = new Console_Table();
 		$table->setHeaders(['UID', 'GUID', 'Name', 'Nick', 'E-Mail', 'Register', 'Login', 'Verified', 'Blocked']);
@@ -420,9 +425,100 @@ HELP;
 				return false;
 		}
 
-		$table->addRow($user);
+		if (!empty($user)) {
+			$table->addRow($user);
+		}
 		$this->out($table->getTable());
 
 		return true;
+	}
+
+	/**
+	 * Queries and modifies user-specific configuration
+	 *
+	 * @return bool True, if the command was successful
+	 */
+	private function configUser()
+	{
+		$subCmd = $this->getArgument(1);
+
+		$user = $this->getUserByNick(2);
+
+		$category = $this->getArgument(3);
+
+		if (is_null($category)) {
+			$this->out($this->l10n->t('Enter category: '), false);
+			$category = CliPrompt::prompt();
+			if (empty($category)) {
+				throw new RuntimeException('A category must be selected.');
+			}
+		}
+
+		$key = $this->getArgument(4);
+
+		if ($subCmd != 'list' and is_null($key)) {
+			$this->out($this->l10n->t('Enter key: '), false);
+			$key = CliPrompt::prompt();
+			if (empty($key)) {
+				throw new RuntimeException('A key must be selected.');
+			}
+		}
+
+		$values = $this->pConfig->load($user['uid'], $category);
+
+		switch ($subCmd) {
+			case 'list':
+				$table = new Console_Table();
+				$table->setHeaders(['Key', 'Value']);
+				if (array_key_exists($category, $values)) {
+					foreach (array_keys($values[$category]) as $key) {
+						$table->addRow([$key, $values[$category][$key]]);
+					}
+				}
+				$this->out($table->getTable());
+				break;
+			case 'get':
+				if (!array_key_exists($category, $values)) {
+					throw new RuntimeException('Category does not exist');
+				}
+				if (!array_key_exists($key, $values[$category])) {
+					throw new RuntimeException('Key does not exist');
+				}
+
+				$this->out($this->pConfig->get($user['uid'], $category, $key));
+				break;
+			case 'set':
+				$value = $this->getArgument(5);
+
+				if (is_null($value)) {
+					$this->out($this->l10n->t('Enter value: '), false);
+					$value = CliPrompt::prompt();
+					if (empty($value)) {
+						throw new RuntimeException('A value must be specified.');
+					}
+				}
+
+				if (array_key_exists($category, $values) and
+					array_key_exists($key, $values[$category]) and
+					$values[$category][$key] == $value) {
+					throw new RuntimeException('Value not changed');
+				}
+
+				$this->pConfig->set($user['uid'], $category, $key, $value);
+				break;
+			case 'delete':
+				if (!array_key_exists($category, $values)) {
+					throw new RuntimeException('Category does not exist');
+				}
+				if (!array_key_exists($key, $values[$category])) {
+					throw new RuntimeException('Key does not exist');
+				}
+
+				$this->pConfig->delete($user['uid'], $category, $key);
+				break;
+			default:
+				$this->out($this->getHelp());
+				return false;
+		}
 	}
 }

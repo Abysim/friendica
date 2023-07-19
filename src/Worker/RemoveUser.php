@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,14 +21,22 @@
 
 namespace Friendica\Worker;
 
+use Friendica\Core\Worker;
 use Friendica\Database\DBA;
 use Friendica\Model\Item;
+use Friendica\Model\Post;
 
 /**
  * Removes orphaned data from deleted users
  */
 class RemoveUser {
-	public static function execute($uid)
+	/**
+	 * Removes user by id
+	 *
+	 * @param int $uid User id
+	 * @return void
+	 */
+	public static function execute(int $uid)
 	{
 		// Only delete if the user is archived
 		$condition = ['account_removed' => true, 'uid' => $uid];
@@ -39,11 +47,11 @@ class RemoveUser {
 		// Now we delete all user items
 		$condition = ['uid' => $uid, 'deleted' => false];
 		do {
-			$items = Item::select(['id'], $condition, ['limit' => 100]);
-			while ($item = Item::fetch($items)) {
-				Item::markForDeletionById($item['id'], PRIORITY_NEGLIGIBLE);
+			$items = Post::select(['id'], $condition, ['limit' => 100]);
+			while ($item = Post::fetch($items)) {
+				Item::markForDeletionById($item['id'], Worker::PRIORITY_NEGLIGIBLE);
 			}
 			DBA::close($items);
-		} while (Item::exists($condition));
+		} while (Post::exists($condition));
 	}
 }

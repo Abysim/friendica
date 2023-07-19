@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,13 +22,18 @@
 namespace Friendica\Module;
 
 use Exception;
+use Friendica\App;
+use Friendica\App\Arguments;
 use Friendica\BaseModule;
 use Friendica\Content\Pager;
+use Friendica\Core\L10n;
 use Friendica\Core\Renderer;
+use Friendica\Core\Session\Capability\IHandleUserSessions;
 use Friendica\Core\System;
-use Friendica\DI;
+use Friendica\Navigation\Notifications\ValueObject\FormattedNotify;
 use Friendica\Network\HTTPException\ForbiddenException;
-use Friendica\Object\Notification\Notification;
+use Friendica\Util\Profiler;
+use Psr\Log\LoggerInterface;
 
 /**
  * Base Module for each tab of the notification display
@@ -39,29 +44,29 @@ abstract class BaseNotifications extends BaseModule
 {
 	/** @var array Array of URL parameters */
 	const URL_TYPES = [
-		Notification::NETWORK  => 'network',
-		Notification::SYSTEM   => 'system',
-		Notification::HOME     => 'home',
-		Notification::PERSONAL => 'personal',
-		Notification::INTRO    => 'intros',
+		FormattedNotify::NETWORK  => 'network',
+		FormattedNotify::SYSTEM   => 'system',
+		FormattedNotify::HOME     => 'home',
+		FormattedNotify::PERSONAL => 'personal',
+		FormattedNotify::INTRO    => 'intros',
 	];
 
 	/** @var array Array of the allowed notifications and their printable name */
 	const PRINT_TYPES = [
-		Notification::NETWORK  => 'Network',
-		Notification::SYSTEM   => 'System',
-		Notification::HOME     => 'Home',
-		Notification::PERSONAL => 'Personal',
-		Notification::INTRO    => 'Introductions',
+		FormattedNotify::NETWORK  => 'Network',
+		FormattedNotify::SYSTEM   => 'System',
+		FormattedNotify::HOME     => 'Home',
+		FormattedNotify::PERSONAL => 'Personal',
+		FormattedNotify::INTRO    => 'Introductions',
 	];
 
 	/** @var array The array of access keys for notification pages */
 	const ACCESS_KEYS = [
-		Notification::NETWORK  => 'w',
-		Notification::SYSTEM   => 'y',
-		Notification::HOME     => 'h',
-		Notification::PERSONAL => 'r',
-		Notification::INTRO    => 'i',
+		FormattedNotify::NETWORK  => 'w',
+		FormattedNotify::SYSTEM   => 'y',
+		FormattedNotify::HOME     => 'h',
+		FormattedNotify::PERSONAL => 'r',
+		FormattedNotify::INTRO    => 'i',
 	];
 
 	/** @var int The default count of items per page */
@@ -70,9 +75,12 @@ abstract class BaseNotifications extends BaseModule
 	const DEFAULT_PAGE_LIMIT = 80;
 
 	/** @var boolean True, if ALL entries should get shown */
-	protected static $showAll;
+	protected $showAll;
 	/** @var int The determined start item of the current page */
-	protected static $firstItemNum;
+	protected $firstItemNum;
+
+	/** @var Arguments */
+	protected $args;
 
 	/**
 	 * Collects all notifications from the backend
@@ -80,33 +88,35 @@ abstract class BaseNotifications extends BaseModule
 	 * @return array The determined notification array
 	 *               ['header', 'notifications']
 	 */
-	abstract public static function getNotifications();
+	abstract public function getNotifications();
 
-	public static function init(array $parameters = [])
+	public function __construct(L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, Response $response, IHandleUserSessions $session, array $server, array $parameters = [])
 	{
-		if (!local_user()) {
-			throw new ForbiddenException(DI::l10n()->t('Permission denied.'));
+		parent::__construct($l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
+
+		if (!$session->getLocalUserId()) {
+			throw new ForbiddenException($this->t('Permission denied.'));
 		}
 
 		$page = ($_REQUEST['page'] ?? 0) ?: 1;
 
-		self::$firstItemNum = ($page * self::ITEMS_PER_PAGE) - self::ITEMS_PER_PAGE;
-		self::$showAll      = ($_REQUEST['show'] ?? '') === 'all';
+		$this->firstItemNum = ($page * self::ITEMS_PER_PAGE) - self::ITEMS_PER_PAGE;
+		$this->showAll      = ($_REQUEST['show'] ?? '') === 'all';
 	}
 
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		// If the last argument of the query is NOT json, return
-		if (DI::args()->get(DI::args()->getArgc() - 1) !== 'json') {
+		if ($this->args->get($this->args->getArgc() - 1) !== 'json') {
 			return;
 		}
 
 		// Set the pager
-		$pager = new Pager(DI::l10n(), DI::args()->getQueryString(), self::ITEMS_PER_PAGE);
+		$pager = new Pager($this->l10n, $this->args->getQueryString(), self::ITEMS_PER_PAGE);
 
 		// Add additional informations (needed for json output)
 		$notifications = [
-			'notifications' => static::getNotifications(),
+			'notifications' => $this->getNotifications(),
 			'items_page'    => $pager->getItemsPerPage(),
 			'page'          => $pager->getPage(),
 		];
@@ -126,17 +136,17 @@ abstract class BaseNotifications extends BaseModule
 	 *
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	protected static function printContent(string $header, array $notifications, string $noContent, array $showLink)
+	protected function printContent(string $header, array $notifications, string $noContent, array $showLink)
 	{
 		// Get the nav tabs for the notification pages
-		$tabs = self::getTabs();
+		$tabs = $this->getTabs();
 
 		// Set the pager
-		$pager = new Pager(DI::l10n(), DI::args()->getQueryString(), self::ITEMS_PER_PAGE);
+		$pager = new Pager($this->l10n, $this->args->getQueryString(), self::ITEMS_PER_PAGE);
 
 		$notif_tpl = Renderer::getMarkupTemplate('notifications/notifications.tpl');
 		return Renderer::replaceMacros($notif_tpl, [
-			'$header'        => $header ?? DI::l10n()->t('Notifications'),
+			'$header'        => $header ?? $this->t('Notifications'),
 			'$tabs'          => $tabs,
 			'$notifications' => $notifications,
 			'$noContent'     => $noContent,
@@ -148,18 +158,18 @@ abstract class BaseNotifications extends BaseModule
 	/**
 	 * List of pages for the Notifications TabBar
 	 *
-	 * @return array with with notifications TabBar data
+	 * @return array with notifications TabBar data
 	 * @throws Exception
 	 */
-	private static function getTabs()
+	private function getTabs()
 	{
-		$selected = DI::args()->get(1, '');
+		$selected = $this->args->get(1, '');
 
 		$tabs = [];
 
 		foreach (self::URL_TYPES as $type => $url) {
 			$tabs[] = [
-				'label'     => DI::l10n()->t(self::PRINT_TYPES[$type]),
+				'label'     => $this->t(self::PRINT_TYPES[$type]),
 				'url'       => 'notifications/' . $url,
 				'sel'       => (($selected == $url) ? 'active' : ''),
 				'id'        => $type . '-tab',

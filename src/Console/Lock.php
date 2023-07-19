@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,7 +23,7 @@ namespace Friendica\Console;
 
 use Asika\SimpleConsole\CommandArgsException;
 use Friendica\App;
-use Friendica\Core\Lock\ILock;
+use Friendica\Core\Lock\Capability\ICanLock;
 use RuntimeException;
 
 /**
@@ -42,7 +42,7 @@ class Lock extends \Asika\SimpleConsole\Console
 	private $appMode;
 
 	/**
-	 * @var ILock
+	 * @var ICanLock
 	 */
 	private $lock;
 
@@ -76,7 +76,7 @@ HELP;
 		return $help;
 	}
 
-	public function __construct(App\Mode $appMode, ILock $lock, array $argv = null)
+	public function __construct(App\Mode $appMode, ICanLock $lock, array $argv = null)
 	{
 		parent::__construct($argv);
 
@@ -84,7 +84,7 @@ HELP;
 		$this->lock    = $lock;
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		if ($this->getOption('v')) {
 			$this->out('Executable: ' . $this->executable);
@@ -93,7 +93,7 @@ HELP;
 			$this->out('Options: ' . var_export($this->options, true));
 		}
 
-		if (!$this->appMode->has(App\Mode::DBCONFIGAVAILABLE)) {
+		if (!$this->appMode->has(App\Mode::DBAVAILABLE)) {
 			$this->out('Database isn\'t ready or populated yet, database cache won\'t be available');
 		}
 

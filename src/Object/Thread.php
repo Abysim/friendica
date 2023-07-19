@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -75,15 +75,15 @@ class Thread
 		switch ($mode) {
 			case 'network':
 			case 'notes':
-				$this->profile_owner = local_user();
+				$this->profile_owner = DI::userSession()->getLocalUserId();
 				$this->writable = true;
 				break;
 			case 'profile':
-				$this->profile_owner = $a->profile['uid'];
-				$this->writable = Security::canWriteToUserWall($this->profile_owner);
+				$this->profile_owner = $a->getProfileOwner();
+				$this->writable = Security::canWriteToUserWall($this->profile_owner) || $writable;
 				break;
 			case 'display':
-				$this->profile_owner = $a->profile['uid'];
+				$this->profile_owner = $a->getProfileOwner();
 				$this->writable = Security::canWriteToUserWall($this->profile_owner) || $writable;
 				break;
 			case 'community':
@@ -95,7 +95,7 @@ class Thread
 				$this->writable = $writable;
 				break;
 			default:
-				Logger::log('[ERROR] Conversation::setMode : Unhandled mode ('. $mode .').', Logger::DEBUG);
+				Logger::info('[ERROR] Conversation::setMode : Unhandled mode ('. $mode .').');
 				return false;
 				break;
 		}
@@ -156,25 +156,25 @@ class Thread
 		$item_id = $item->getId();
 
 		if (!$item_id) {
-			Logger::log('[ERROR] Conversation::addThread : Item has no ID!!', Logger::DEBUG);
+			Logger::info('[ERROR] Conversation::addThread : Item has no ID!!');
 			return false;
 		}
 
 		if ($this->getParent($item->getId())) {
-			Logger::log('[WARN] Conversation::addThread : Thread already exists ('. $item->getId() .').', Logger::DEBUG);
+			Logger::info('[WARN] Conversation::addThread : Thread already exists ('. $item->getId() .').');
 			return false;
 		}
 
 		/*
 		 * Only add will be displayed
 		 */
-		if ($item->getDataValue('network') === Protocol::MAIL && local_user() != $item->getDataValue('uid')) {
-			Logger::log('[WARN] Conversation::addThread : Thread is a mail ('. $item->getId() .').', Logger::DEBUG);
+		if ($item->getDataValue('network') === Protocol::MAIL && DI::userSession()->getLocalUserId() != $item->getDataValue('uid')) {
+			Logger::info('[WARN] Conversation::addThread : Thread is a mail ('. $item->getId() .').');
 			return false;
 		}
 
 		if ($item->getDataValue('verb') === Activity::LIKE || $item->getDataValue('verb') === Activity::DISLIKE) {
-			Logger::log('[WARN] Conversation::addThread : Thread is a (dis)like ('. $item->getId() .').', Logger::DEBUG);
+			Logger::info('[WARN] Conversation::addThread : Thread is a (dis)like ('. $item->getId() .').');
 			return false;
 		}
 
@@ -190,24 +190,25 @@ class Thread
 	 * We should find a way to avoid using those arguments (at least most of them)
 	 *
 	 * @param array $conv_responses data
+	 * @param string $formSecurityToken A security Token to avoid CSF attacks
 	 *
 	 * @return mixed The data requested on success
 	 *               false on failure
 	 * @throws \Exception
 	 */
-	public function getTemplateData($conv_responses)
+	public function getTemplateData($conv_responses, string $formSecurityToken)
 	{
 		$result = [];
 
 		foreach ($this->parents as $item) {
-			if ($item->getDataValue('network') === Protocol::MAIL && local_user() != $item->getDataValue('uid')) {
+			if ($item->getDataValue('network') === Protocol::MAIL && DI::userSession()->getLocalUserId() != $item->getDataValue('uid')) {
 				continue;
 			}
 
-			$item_data = $item->getTemplateData($conv_responses);
+			$item_data = $item->getTemplateData($conv_responses, $formSecurityToken);
 
 			if (!$item_data) {
-				Logger::log('[ERROR] Conversation::getTemplateData : Failed to get item template data ('. $item->getId() .').', Logger::DEBUG);
+				Logger::info('[ERROR] Conversation::getTemplateData : Failed to get item template data ('. $item->getId() .').');
 				return false;
 			}
 			$result[] = $item_data;

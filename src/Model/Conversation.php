@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,12 +21,6 @@
 
 namespace Friendica\Model;
 
-use Friendica\Core\Logger;
-use Friendica\Core\Protocol;
-use Friendica\Database\Database;
-use Friendica\Database\DBA;
-use Friendica\Util\DateTimeFormat;
-
 class Conversation
 {
 	/*
@@ -38,11 +32,17 @@ class Conversation
 	const PARCEL_DIASPORA           = 2;
 	const PARCEL_SALMON             = 3;
 	const PARCEL_FEED               = 4; // Deprecated
-	const PARCEL_SPLIT_CONVERSATION = 6;
-	const PARCEL_LEGACY_DFRN        = 7;
+	const PARCEL_SPLIT_CONVERSATION = 6; // @deprecated since version 2022.09
+	const PARCEL_LEGACY_DFRN        = 7; // @deprecated since version 2021.09
 	const PARCEL_DIASPORA_DFRN      = 8;
 	const PARCEL_LOCAL_DFRN         = 9;
 	const PARCEL_DIRECT             = 10;
+	const PARCEL_IMAP               = 11;
+	const PARCEL_RDF                = 12;
+	const PARCEL_RSS                = 13;
+	const PARCEL_ATOM               = 14;
+	const PARCEL_ATOM03             = 15;
+	const PARCEL_OPML               = 16;
 	const PARCEL_TWITTER            = 67;
 	const PARCEL_UNKNOWN            = 255;
 
@@ -51,95 +51,16 @@ class Conversation
 	 */
 	const UNKNOWN = 0;
 	/**
-	 * The message had been pushed to this sytem
+	 * The message had been pushed to this system
 	 */
 	const PUSH    = 1;
 	/**
 	 * The message had been fetched by our system
 	 */
 	const PULL    = 2;
-
-	public static function getByItemUri($item_uri)
-	{
-		return DBA::selectFirst('conversation', [], ['item-uri' => $item_uri]);
-	}
-
 	/**
-	 * Store the conversation data
-	 *
-	 * @param array $arr Item array with conversation data
-	 * @return array Item array with removed conversation data
-	 * @throws \Exception
+	 * The message had been pushed to this system via a relay server
 	 */
-	public static function insert(array $arr)
-	{
-		if (in_array(($arr['network'] ?? '') ?: Protocol::PHANTOM,
-			[Protocol::ACTIVITYPUB, Protocol::DFRN, Protocol::DIASPORA, Protocol::OSTATUS, Protocol::TWITTER]) && !empty($arr['uri'])) {
-			$conversation = ['item-uri' => $arr['uri'], 'received' => DateTimeFormat::utcNow()];
+	const RELAY   = 3;
 
-			if (isset($arr['parent-uri']) && ($arr['parent-uri'] != $arr['uri'])) {
-				$conversation['reply-to-uri'] = $arr['parent-uri'];
-			}
-
-			if (isset($arr['thr-parent']) && ($arr['thr-parent'] != $arr['uri'])) {
-				$conversation['reply-to-uri'] = $arr['thr-parent'];
-			}
-
-			if (isset($arr['conversation-uri'])) {
-				$conversation['conversation-uri'] = $arr['conversation-uri'];
-			}
-
-			if (isset($arr['conversation-href'])) {
-				$conversation['conversation-href'] = $arr['conversation-href'];
-			}
-
-			if (isset($arr['protocol'])) {
-				$conversation['protocol'] = $arr['protocol'];
-			}
-
-			if (isset($arr['direction'])) {
-				$conversation['direction'] = $arr['direction'];
-			}
-
-			if (isset($arr['source'])) {
-				$conversation['source'] = $arr['source'];
-			}
-
-			$fields = ['item-uri', 'reply-to-uri', 'conversation-uri', 'conversation-href', 'protocol', 'source'];
-			$old_conv = DBA::selectFirst('conversation', $fields, ['item-uri' => $conversation['item-uri']]);
-			if (DBA::isResult($old_conv)) {
-				// Don't update when only the source has changed.
-				// Only do this when there had been no source before.
-				if ($old_conv['source'] != '') {
-					unset($old_conv['source']);
-				}
-				// Update structure data all the time but the source only when its from a better protocol.
-				if (
-					empty($conversation['source'])
-					|| (
-						!empty($old_conv['source'])
-						&& ($old_conv['protocol'] < (($conversation['protocol'] ?? '') ?: self::PARCEL_UNKNOWN))
-					)
-				) {
-					unset($conversation['protocol']);
-					unset($conversation['source']);
-				}
-				if (!DBA::update('conversation', $conversation, ['item-uri' => $conversation['item-uri']], $old_conv)) {
-					Logger::log('Conversation: update for ' . $conversation['item-uri'] . ' from ' . $old_conv['protocol'] . ' to ' . $conversation['protocol'] . ' failed',
-						Logger::DEBUG);
-				}
-			} else {
-				if (!DBA::insert('conversation', $conversation, Database::INSERT_UPDATE)) {
-					Logger::log('Conversation: insert for ' . $conversation['item-uri'] . ' (protocol ' . $conversation['protocol'] . ') failed',
-						Logger::DEBUG);
-				}
-			}
-		}
-
-		unset($arr['conversation-uri']);
-		unset($arr['conversation-href']);
-		unset($arr['source']);
-
-		return $arr;
-	}
 }

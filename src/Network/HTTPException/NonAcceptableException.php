@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,7 @@ use Friendica\Network\HTTPException;
 
 class NonAcceptableException extends HTTPException
 {
-	protected $code = 406;
+	protected $code        = 406;
+	protected $httpdesc    = 'Not Acceptable';
+	protected $explanation = 'The requested resource is capable of generating only content not acceptable according to the Accept headers sent in the request.';
 }

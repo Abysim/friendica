@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,6 +22,7 @@
 namespace Friendica\Worker;
 
 use Friendica\Core\Logger;
+use Friendica\Core\System;
 use Friendica\Model\Item;
 
 /**
@@ -29,7 +30,7 @@ use Friendica\Model\Item;
  */
 class SpoolPost {
 	public static function execute() {
-		$path = get_spoolpath();
+		$path = System::getSpoolPath();
 
 		if (($path != '') && is_writable($path)){
 			if ($dh = opendir($path)) {
@@ -37,7 +38,7 @@ class SpoolPost {
 
 					// It is not named like a spool file, so we don't care.
 					if (substr($file, 0, 5) != "item-") {
-						Logger::notice('Spool file does does not start with "item-"', ['file' => $file]);
+						Logger::info('Spool file does not start with "item-"', ['file' => $file]);
 						continue;
 					}
 
@@ -45,13 +46,13 @@ class SpoolPost {
 
 					// We don't care about directories either
 					if (filetype($fullfile) != "file") {
-						Logger::notice('Spool file is no file', ['file' => $file]);
+						Logger::info('Spool file is no file', ['file' => $file]);
 						continue;
 					}
 
 					// We can't read or write the file? So we don't care about it.
 					if (!is_writable($fullfile) || !is_readable($fullfile)) {
-						Logger::notice('Spool file has insufficent permissions', ['file' => $file, 'writable' => is_writable($fullfile), 'readable' => is_readable($fullfile)]);
+						Logger::warning('Spool file has insufficent permissions', ['file' => $file, 'writable' => is_writable($fullfile), 'readable' => is_readable($fullfile)]);
 						continue;
 					}
 
@@ -65,13 +66,13 @@ class SpoolPost {
 
 					// Skip if it doesn't seem to be an item array
 					if (!isset($arr['uid']) && !isset($arr['uri']) && !isset($arr['network'])) {
-						Logger::notice('Spool file does not contain the needed fields', ['file' => $file]);
+						Logger::warning('Spool file does not contain the needed fields', ['file' => $file]);
 						continue;
 					}
 
 					$result = Item::insert($arr);
 
-					Logger::notice('Spool file is stored', ['file' => $file, 'result' => $result]);
+					Logger::info('Spool file is stored', ['file' => $file, 'result' => $result]);
 					unlink($fullfile);
 				}
 				closedir($dh);

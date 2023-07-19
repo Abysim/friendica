@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -85,7 +85,7 @@ HELP;
 		$this->l10n = $l10n;
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		if ($this->getOption('v')) {
 			$this->out('Class: ' . __CLASS__);
@@ -106,7 +106,7 @@ HELP;
 		$this->errored = 0;
 
 		do {
-			$result = $this->dba->p('SELECT `id`, `parameter` FROM `workerqueue` WHERE `command` = "APDelivery" AND `parameter` LIKE "[\"%\",\"\",%" LIMIT ' . $this->examined . ', 100');
+			$result = $this->dba->select('workerqueue', ['id', 'parameter'], ["`command` = ? AND `parameter` LIKE ?", "APDelivery", "[\"%\",\"\",%"], ['limit' => [$this->examined, 100]]);
 			while ($row = $this->dba->fetch($result)) {
 				$this->examined++;
 				$this->processRow($row);
@@ -129,7 +129,7 @@ HELP;
 		if (!$parameters) {
 			$this->errored++;
 			if ($this->getOption('v')) {
-				$this->out('Unabled to parse parameter JSON of the row with id ' . $workerqueueItem['id']);
+				$this->out('Unable to parse parameter JSON of the row with id ' . $workerqueueItem['id']);
 				$this->out('JSON: ' . var_export($workerqueueItem['parameter'], true));
 			}
 		}
@@ -155,7 +155,7 @@ HELP;
 		} else {
 			$this->errored++;
 			if ($this->getOption('v')) {
-				$this->out('Unabled to update the row with id ' . $workerqueueItem['id']);
+				$this->out('Unable to update the row with id ' . $workerqueueItem['id']);
 				$this->out('Fields: ' . var_export($fields, true));
 			}
 		}

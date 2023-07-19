@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -44,9 +44,8 @@ use Friendica\Util\Strings;
  */
 class Owa extends BaseModule
 {
-	public static function init(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-
 		$ret = [ 'success' => false ];
 
 		foreach (['REDIRECT_REMOTE_USER', 'HTTP_AUTHORIZATION'] as $head) {
@@ -81,12 +80,12 @@ class Owa extends BaseModule
 								$ret['success'] = true;
 								$token = Strings::getRandomHex(32);
 
-								// Store the generated token in the databe.
+								// Store the generated token in the database.
 								OpenWebAuthToken::create('owt', 0, $token, $contact['addr']);
 
 								$result = '';
 
-								// Encrypt the token with the public contacts publik key.
+								// Encrypt the token with the public contacts public key.
 								// Only the specific public contact will be able to encrypt it.
 								// At a later time, we will compare weather the token we're getting
 								// is really the same token we have stored in the database.

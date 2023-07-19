@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,104 +22,101 @@
 namespace Friendica\Module\Update;
 
 use Friendica\BaseModule;
-use Friendica\Content\Pager;
-use Friendica\Core\Session;
+use Friendica\Content\Conversation;
 use Friendica\Core\System;
 use Friendica\Database\DBA;
 use Friendica\DI;
 use Friendica\Model\Item;
+use Friendica\Model\Post;
 use Friendica\Model\Profile as ProfileModel;
+use Friendica\Model\User;
 use Friendica\Network\HTTPException\ForbiddenException;
 use Friendica\Util\DateTimeFormat;
 
 class Profile extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		$a = DI::app();
 
-		if (DI::config()->get('system', 'block_public') && !local_user() && !Session::getRemoteContactID($a->profile['uid'])) {
+		// Ensure we've got a profile owner if updating.
+		$a->setProfileOwner((int)($request['p'] ?? 0));
+
+		if (DI::config()->get('system', 'block_public') && !DI::userSession()->getLocalUserId() && !DI::userSession()->getRemoteContactID($a->getProfileOwner())) {
 			throw new ForbiddenException();
 		}
 
-		$profile_uid = intval($_GET['p'] ?? 0);
+		$remote_contact = DI::userSession()->getRemoteContactID($a->getProfileOwner());
+		$is_owner = DI::userSession()->getLocalUserId() == $a->getProfileOwner();
+		$last_updated_key = "profile:" . $a->getProfileOwner() . ":" . DI::userSession()->getLocalUserId() . ":" . $remote_contact;
 
-		// Ensure we've got a profile owner if updating.
-		$a->profile['uid'] = $profile_uid;
-
-		$remote_contact = Session::getRemoteContactID($a->profile['uid']);
-		$is_owner = local_user() == $a->profile['uid'];
-		$last_updated_key = "profile:" . $a->profile['uid'] . ":" . local_user() . ":" . $remote_contact;
-
-		if (!empty($a->profile['hidewall']) && !$is_owner && !$remote_contact) {
-			throw new ForbiddenException(DI::l10n()->t('Access to this profile has been restricted.'));
+		if (!DI::userSession()->isAuthenticated()) {
+			$user = User::getById($a->getProfileOwner(), ['hidewall']);
+			if ($user['hidewall']) {
+				throw new ForbiddenException(DI::l10n()->t('Access to this profile has been restricted.'));
+			}
 		}
 
 		$o = '';
 
-		if (empty($_GET['force']) && DI::pConfig()->get(local_user(), 'system', 'no_auto_update')) {
+		if (empty($request['force'])) {
 			System::htmlUpdateExit($o);
 		}
 
 		// Get permissions SQL - if $remote_contact is true, our remote user has been pre-verified and we already have fetched his/her groups
-		$sql_extra = Item::getPermissionsSQLByUserId($a->profile['uid']);
+		$sql_extra = Item::getPermissionsSQLByUserId($a->getProfileOwner());
 
-		$last_updated_array = Session::get('last_updated', []);
+		$last_updated_array = DI::session()->get('last_updated', []);
 
 		$last_updated = $last_updated_array[$last_updated_key] ?? 0;
 
-		// If the page user is the owner of the page we should query for unseen
-		// items. Otherwise use a timestamp of the last succesful update request.
-		if ($is_owner || !$last_updated) {
-			$sql_extra4 = " AND `item`.`unseen`";
+		$condition = ["`uid` = ? AND NOT `contact-blocked` AND NOT `contact-pending`
+				AND `visible` AND (NOT `deleted` OR `gravity` = ?)
+				AND `wall` " . $sql_extra, $a->getProfileOwner(), Item::GRAVITY_ACTIVITY];
+
+		if ($request['force'] && !empty($request['item'])) {
+			// When the parent is provided, we only fetch this
+			$condition = DBA::mergeConditions($condition, ['parent' => $request['item']]);
+		} elseif ($is_owner || !$last_updated) {
+			// If the page user is the owner of the page we should query for unseen
+			// items. Otherwise use a timestamp of the last succesful update request.
+			$condition = DBA::mergeConditions($condition, ['unseen' => true]);
 		} else {
 			$gmupdate = gmdate(DateTimeFormat::MYSQL, $last_updated);
-			$sql_extra4 = " AND `item`.`received` > '" . $gmupdate . "'";
+			$condition = DBA::mergeConditions($condition, ["`received` > ?", $gmupdate]);
 		}
 
-		$items_stmt = DBA::p(
-			"SELECT DISTINCT(`parent-uri`) AS `uri`, `item`.`created`
-			FROM `item`
-			INNER JOIN `contact`
-			ON `contact`.`id` = `item`.`contact-id`
-				AND NOT `contact`.`blocked`
-				AND NOT `contact`.`pending`
-			WHERE `item`.`uid` = ?
-				AND `item`.`visible`
-				AND	(NOT `item`.`deleted` OR `item`.`gravity` = ?)
-				AND NOT `item`.`moderated`
-				AND `item`.`wall`
-				$sql_extra4
-				$sql_extra
-			ORDER BY `item`.`received` DESC",
-			$a->profile['uid'],
-			GRAVITY_ACTIVITY
-		);
-
-		if (!DBA::isResult($items_stmt)) {
-			return '';
+		$items = Post::selectToArray(['parent-uri-id', 'created', 'received'], $condition, ['group_by' => ['parent-uri-id'], 'order' => ['received' => true]]);
+		if (!DBA::isResult($items)) {
+			return;
 		}
+
+		// @todo the DBA functions should handle "SELECT field AS alias" in the future,
+		// so that this workaround here could be removed.
+		$items = array_map(function ($item) {
+			$item['uri-id'] = $item['parent-uri-id'];
+			unset($item['parent-uri-id']);
+			return $item;
+		}, $items);
 
 		// Set a time stamp for this page. We will make use of it when we
 		// search for new items (update routine)
 		$last_updated_array[$last_updated_key] = time();
-		Session::set('last_updated', $last_updated_array);
+		DI::session()->set('last_updated', $last_updated_array);
 
-		if ($is_owner && !$profile_uid && !DI::config()->get('theme', 'hide_eventlist')) {
+		if ($is_owner && !$a->getProfileOwner() && !DI::config()->get('theme', 'hide_eventlist')) {
 			$o .= ProfileModel::getBirthdays();
 			$o .= ProfileModel::getEventsReminderHTML();
 		}
 
 		if ($is_owner) {
-			$unseen = Item::exists(['wall' => true, 'unseen' => true, 'uid' => local_user()]);
+			$unseen = Post::exists(['wall' => true, 'unseen' => true, 'uid' => DI::userSession()->getLocalUserId()]);
 			if ($unseen) {
-				Item::update(['unseen' => false], ['wall' => true, 'unseen' => true, 'uid' => local_user()]);
+				Item::update(['unseen' => false], ['wall' => true, 'unseen' => true, 'uid' => DI::userSession()->getLocalUserId()]);
 			}
 		}
 
-		$items = DBA::toArray($items_stmt);
-
-		$o .= conversation($a, $items, 'profile', $profile_uid, false, 'received', $a->profile['uid']);
+		$o .= DI::conversation()->create($items, Conversation::MODE_PROFILE, $a->getProfileOwner(), false, 'received', $a->getProfileOwner());
 
 		System::htmlUpdateExit($o);
 	}

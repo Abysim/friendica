@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,74 +23,126 @@ namespace Friendica\Factory\Api\Mastodon;
 
 use Friendica\App\BaseURL;
 use Friendica\BaseFactory;
+use Friendica\Model\Photo;
 use Friendica\Network\HTTPException;
 use Friendica\Model\Post;
-use Friendica\Repository\ProfileField;
+use Friendica\Util\Images;
 use Friendica\Util\Proxy;
 use Psr\Log\LoggerInterface;
 
 class Attachment extends BaseFactory
 {
 	/** @var BaseURL */
-	protected $baseUrl;
-	/** @var ProfileField */
-	protected $profileField;
-	/** @var Field */
-	protected $mstdnField;
+	private $baseUrl;
 
-	public function __construct(LoggerInterface $logger, BaseURL $baseURL, ProfileField $profileField, Field $mstdnField)
+	public function __construct(LoggerInterface $logger, BaseURL $baseURL)
 	{
 		parent::__construct($logger);
 
 		$this->baseUrl = $baseURL;
-		$this->profileField = $profileField;
-		$this->mstdnField = $mstdnField;
 	}
 
 	/**
 	 * @param int $uriId Uri-ID of the attachments
 	 * @return array
 	 * @throws HTTPException\InternalServerErrorException
-	 * @throws \ImagickException
 	 */
-	public function createFromUriId(int $uriId)
+	public function createFromUriId(int $uriId): array
 	{
 		$attachments = [];
-		foreach (Post\Media::getByURIId($uriId) as $attachment) {
-
-			$filetype = !empty($attachment['mimetype']) ? strtolower(substr($attachment['mimetype'], 0, strpos($attachment['mimetype'], '/'))) : '';
-
-			if (($filetype == 'audio') || ($attachment['type'] == Post\Media::AUDIO)) {
-				$type = 'audio';
-			} elseif (($filetype == 'video') || ($attachment['type'] == Post\Media::VIDEO)) {
-				$type = 'video';
-			} elseif ($attachment['mimetype'] == 'image/gif') {
-				$type = 'gifv';
-			} elseif (($filetype == 'image') || ($attachment['type'] == Post\Media::IMAGE)) {
-				$type = 'image';
-			} else {
-				$type = 'unknown';
-			}
-
-			$remote = $attachment['url'];
-			if ($type == 'image') {
-				if (Proxy::isLocalImage($attachment['url'])) {
-					$url = $attachment['url'];
-					$preview = $attachment['preview'] ?? $url;
-					$remote = '';
-				} else {
-					$url = Proxy::proxifyUrl($attachment['url']);
-					$preview = Proxy::proxifyUrl($attachment['url'], false, Proxy::SIZE_SMALL);
-				}
-			} else {
-				$url = '';
-				$preview = '';
-			}
-
-			$object = new \Friendica\Object\Api\Mastodon\Attachment($attachment, $type, $url, $preview, $remote);
-			$attachments[] = $object->toArray();
+		foreach (Post\Media::getByURIId($uriId, [Post\Media::AUDIO, Post\Media::VIDEO, Post\Media::IMAGE]) as $attachment) {
+			$attachments[] = $this->createFromMediaArray($attachment);
 		}
 
 		return $attachments;
+	}
+
+	/**
+	 * @param int $id id of the media
+	 * @return \Friendica\Object\Api\Mastodon\Attachment
+	 * @throws HTTPException\InternalServerErrorException
+	 */
+	public function createFromId(int $id): \Friendica\Object\Api\Mastodon\Attachment
+	{
+		$attachment = Post\Media::getById($id);
+		if (empty($attachment)) {
+			return [];
+		}
+		return $this->createFromMediaArray($attachment);
+	}
+
+	/**
+	 * @param array $attachment
+	 * @return \Friendica\Object\Api\Mastodon\Attachment
+	 * @throws HTTPException\InternalServerErrorException
+	 */
+	private function createFromMediaArray(array $attachment):  \Friendica\Object\Api\Mastodon\Attachment
+	{
+		$filetype = !empty($attachment['mimetype']) ? strtolower(substr($attachment['mimetype'], 0, strpos($attachment['mimetype'], '/'))) : '';
+
+		if (($filetype == 'audio') || ($attachment['type'] == Post\Media::AUDIO)) {
+			$type = 'audio';
+		} elseif (($filetype == 'video') || ($attachment['type'] == Post\Media::VIDEO)) {
+			$type = 'video';
+		} elseif ($attachment['mimetype'] == 'image/gif') {
+			$type = 'gifv';
+		} elseif (($filetype == 'image') || ($attachment['type'] == Post\Media::IMAGE)) {
+			$type = 'image';
+		} else {
+			$type = 'unknown';
+		}
+
+		$remote = $attachment['url'];
+		if ($type == 'image') {
+			$url     = Post\Media::getPreviewUrlForId($attachment['id']);
+			$preview = Post\Media::getPreviewUrlForId($attachment['id'], Proxy::SIZE_SMALL);
+		} else {
+			$url = $attachment['url'];
+
+			if (!empty($attachment['preview'])) {
+				$preview = Post\Media::getPreviewUrlForId($attachment['id'], Proxy::SIZE_SMALL);
+			} else {
+				$preview = '';
+			}
+		}
+
+		return new \Friendica\Object\Api\Mastodon\Attachment($attachment, $type, $url, $preview, $remote);
+	}
+
+	/**
+	 * @param int $id id of the photo
+	 *
+	 * @return array
+	 * @throws HTTPException\InternalServerErrorException
+	 */
+	public function createFromPhoto(int $id): array
+	{
+		$photo = Photo::selectFirst(['resource-id', 'uid', 'id', 'title', 'type', 'width', 'height', 'blurhash'], ['id' => $id]);
+		if (empty($photo)) {
+			return [];
+		}
+
+		$attachment = [
+			'id'          => $photo['id'],
+			'description' => $photo['title'],
+			'width'       => $photo['width'],
+			'height'      => $photo['height'],
+			'blurhash'    => $photo['blurhash'],
+		];
+
+		$photoTypes = Images::supportedTypes();
+		$ext        = $photoTypes[$photo['type']];
+
+		$url = $this->baseUrl . '/photo/' . $photo['resource-id'] . '-0.' . $ext;
+
+		$preview = Photo::selectFirst(['scale'], ["`resource-id` = ? AND `uid` = ? AND `scale` > ?", $photo['resource-id'], $photo['uid'], 0], ['order' => ['scale']]);
+		if (!empty($preview)) {
+			$preview_url = $this->baseUrl . '/photo/' . $photo['resource-id'] . '-' . $preview['scale'] . '.' . $ext;
+		} else {
+			$preview_url = '';
+		}
+
+		$object = new \Friendica\Object\Api\Mastodon\Attachment($attachment, 'image', $url, $preview_url, '');
+		return $object->toArray();
 	}
 }

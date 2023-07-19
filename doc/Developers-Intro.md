@@ -20,7 +20,7 @@ The discussion of Friendica development takes place in the following Friendica f
 ## Help other users
 
 Remember the questions you had when you first tried Friendica?
-A good place to start can be to help new people find their way around Friendica in the [general support forum](https://forum.friendi.ca/prufile/helpers).
+A good place to start can be to help new people find their way around Friendica in the [general support forum](https://forum.friendi.ca/profile/helpers).
 Welcome them, answer their questions, point them to documentation or ping other helpers directly if you can't help but think you know who can.
 
 ## Translation
@@ -47,11 +47,11 @@ Friendica uses an implementation of [Domain-Driven-Design](help/Developer-Domain
 
 Friendica uses [Composer](https://getcomposer.org) to manage dependencies libraries and the class autoloader both for libraries and namespaced Friendica classes.
 
-It's a command-line tool that downloads required libraries into the `vendor` folder and makes any namespaced class in `src` available through the whole application through `boot.php`.
+It's a command-line tool that downloads required libraries into the `vendor` folder and makes any namespaced class in `src` available through the whole application.
 
 If you want to have git automatically update the dependencies with composer, you can use the `post-merge` [git-hook](https://git-scm.com/book/en/v2/Customizing-Git-Git-Hooks) with a script similar to this one:
 
-    #/usr/bin/env bash
+    #!/usr/bin/env bash
     # MIT © Sindre Sorhus - sindresorhus.com
     # forked by Gianluca Guarini
     # phponly by Ivo Bathke ;)
@@ -92,7 +92,7 @@ For documentation we use the standard of *one sentence per line* for the `md` fi
 
 #### Check with [PHP Code Sniffer](https://github.com/squizlabs/PHP_CodeSniffer)
 
-This tool checks your files against a variety of coding standards, including PSR-2, and ouputs a report of all the standard violations.
+This tool checks your files against a variety of coding standards, including PSR-2, and outputs a report of all the standard violations.
 You can simply install it through PEAR: `pear install PHP_CodeSniffer`
 Once it is installed and available in your PATH, here's the command to run before committing your work:
 
@@ -109,7 +109,7 @@ Here's the command to automatically fix the files you created/modified:
 
 	$> phpcbf --standard=ruleset.xml <file or directory>
 
-If the command-line tools `diff` and `patch` are unavailabe for you, `phpcbf` can use slightly slower PHP equivalents by using the `--no-patch` argument.
+If the command-line tools `diff` and `patch` are unavailable for you, `phpcbf` can use slightly slower PHP equivalents by using the `--no-patch` argument.
 
 ### Code documentation
 

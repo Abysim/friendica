@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -76,7 +76,7 @@ HELP;
 		$this->dba = $dba;
 	}
 
-	protected function doExecute()
+	protected function doExecute(): int
 	{
 		if ($this->getOption('v')) {
 			$this->out('Executable: ' . $this->executable);
@@ -91,8 +91,8 @@ HELP;
 
 		if ((count($this->args) == 1) && ($this->getArgument(0) == 'list')) {
 			$contacts = $this->dba->select('apcontact', ['url'],
-			["`type` = ? AND `url` IN (SELECT `url` FROM `contact` WHERE `uid` = ? AND `rel` IN (?, ?))",
-				'Application', 0, Contact::FOLLOWER, Contact::FRIEND]);
+			["`type` IN (?, ?) AND `url` IN (SELECT `url` FROM `contact` WHERE `uid` = ? AND `rel` = ?)",
+				'Application', 'Service', 0, Contact::FRIEND]);
 			while ($contact = $this->dba->fetch($contacts)) {
 				$this->out($contact['url']);
 			}
@@ -108,7 +108,7 @@ HELP;
 			$actor = $this->getArgument(1);
 
 			$apcontact = APContact::getByURL($actor);
-			if (empty($apcontact) || ($apcontact['type'] != 'Application')) {
+			if (empty($apcontact) || !in_array($apcontact['type'], ['Application', 'Service'])) {
 				$this->out($actor . ' is no relay actor');
 				return 1;
 			}

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,7 @@ use Friendica\Network\HTTPException;
 
 class GatewayTimeoutException extends HTTPException
 {
-	protected $code = 504;
+	protected $code        = 504;
+	protected $httpdesc    = 'Gateway Timeout';
+	protected $explanation = 'The server was acting as a gateway or proxy and did not receive a timely response from the upstream server.';
 }

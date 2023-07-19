@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,42 +21,56 @@
 
 namespace Friendica\Module\Search;
 
+use Friendica\App;
 use Friendica\BaseModule;
+use Friendica\Core\L10n;
 use Friendica\Core\Search;
-use Friendica\Database\DBA;
+use Friendica\Database\Database;
 use Friendica\DI;
-use Friendica\Util\Strings;
+use Friendica\Module\Response;
+use Friendica\Util\Profiler;
+use Psr\Log\LoggerInterface;
 
 class Saved extends BaseModule
 {
-	public static function init(array $parameters = [])
+	/** @var Database */
+	protected $dba;
+
+	public function __construct(L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, Response $response, Database $dba, array $server, array $parameters = [])
 	{
-		$action = DI::args()->get(2, 'none');
-		$search = Strings::escapeTags(trim(rawurldecode($_GET['term'] ?? '')));
+		parent::__construct($l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
+
+		$this->dba = $dba;
+	}
+
+	protected function rawContent(array $request = [])
+	{
+		$action = $this->args->get(2, 'none');
+		$search = trim(rawurldecode($_GET['term'] ?? ''));
 
 		$return_url = $_GET['return_url'] ?? Search::getSearchPath($search);
 
-		if (local_user() && $search) {
+		if (DI::userSession()->getLocalUserId() && $search) {
 			switch ($action) {
 				case 'add':
-					$fields = ['uid' => local_user(), 'term' => $search];
-					if (!DBA::exists('search', $fields)) {
-						if (!DBA::insert('search', $fields)) {
-							notice(DI::l10n()->t('Search term was not saved.'));
+					$fields = ['uid' => DI::userSession()->getLocalUserId(), 'term' => $search];
+					if (!$this->dba->exists('search', $fields)) {
+						if (!$this->dba->insert('search', $fields)) {
+							DI::sysmsg()->addNotice($this->t('Search term was not saved.'));
 						}
 					} else {
-						notice(DI::l10n()->t('Search term already saved.'));
+						DI::sysmsg()->addNotice($this->t('Search term already saved.'));
 					}
 					break;
 
 				case 'remove':
-					if (!DBA::delete('search', ['uid' => local_user(), 'term' => $search])) {
-						notice(DI::l10n()->t('Search term was not removed.'));
+					if (!$this->dba->delete('search', ['uid' => DI::userSession()->getLocalUserId(), 'term' => $search])) {
+						DI::sysmsg()->addNotice($this->t('Search term was not removed.'));
 					}
 					break;
 			}
 		}
 
-		DI::baseUrl()->redirect($return_url);
+		$this->baseUrl->redirect($return_url);
 	}
 }

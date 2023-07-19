@@ -3,8 +3,7 @@ Häufig gestellte Fragen - FAQ
 
 * [Zur Startseite der Hilfe](help)
 
-Nutzer
-
+* **[Wo finde ich Hilfe?](help/FAQ#help)**
 * **[Warum erhalte ich Warnungen über fehlende Zertifikate?](help/FAQ#ssl)**
 * **[Wie kann ich Bilder, Dateien, Links, Video und Audio in Beiträge einfügen?](help/FAQ#upload)**
 * **[Ist es möglich, bei mehreren Profilen verschiedene Avatare (Nutzerbilder) zu haben?](help/FAQ#avatars)**
@@ -14,18 +13,27 @@ Nutzer
 * **[Kann ich einem Hashtag folgen?](help/FAQ#hashtag)**
 * **[Wie kann ich einen RSS-Feed meiner Netzwerkseite (Stream) erstellen?](help/FAQ#rss)**
 * **[Gibt es Clients für Friendica?](help/FAQ#clients)**
-* **[Wo finde ich Hilfe?](help/FAQ#help)**
 
-Admins
 
-* **[Kann ich mehrere Domains mit den selben Dateien aufsetzen?](help/FAQ#multiple)**
-* **[Wo kann ich den Quellcode von Friendica, Addons und Themes finden?](help/FAQ#sources)**
-* **[Ich habe meine E-Mail Adresse geändern und jetzt ist das Admin Panel verschwunden?](help/FAQ#adminaccount1)**
-* **[Kann es mehr als einen Admin auf einer Friendica Instanz geben?](help/FAQ#adminaccount2)**
-* **[Die Datenbank Struktur schein nicht aktuell zu sein. Was kann ich tun?](help/FAQ#dbupdate)**
+<a name="help"></a>
+### Wo finde ich Hilfe?
 
-Nutzer
---------
+Wenn Du Probleme mit Deiner Friendica-Seite hast, dann kannst Du die Community in der [Friendica-Support-Gruppe](https://forum.friendi.ca/profile/helpers) fragen.
+Wenn Du Deinen Account nicht nutzen kannst, kannst Du einen Account auf einer öffentlichen Seite ([Liste](https://dir.friendica.social/servers)) nutzen.
+
+Wenn du dir keinen weiteren Friendica Account einrichten willst, kannst du auch gerne über einen der folgenden alternativen Kanäle Hilfe suchen:
+
+  * Friendica Support Forum: [@helpers@forum.friendi.ca](https://forum.friendi.ca/~helpers)
+  * Chats der Friendica Community (die IRC, Matrix und XMPP Räume sind mit einer Brücke verbunden) Logs dieser öffentlichen Chaträume können [hier aus dem IRC](https://gnusociarg.nsupdate.info/2021/%23friendica/) und [hier aus der Matrix](https://view.matrix.org/alias/%23friendi.ca:matrix.org/) gefunden werden.
+    * XMPP: support(at)forum.friendi.ca
+    * IRC: #friendica auf [libera.chat](https://web.libera.chat/?channels=#friendica)
+    * Matrix: [#friendica-en:matrix.org](https://matrix.to/#/#friendica-en:matrix.org) or [#friendi.ca:matrix.org](https://matrix.to/#/#friendi.ca:matrix.org)
+  * [Mailing List](http://mailman.friendi.ca/mailman/listinfo/support-friendi.ca)
+  <!--- * [XMPP](xmpp:support@forum.friendi.ca?join)
+	https://github.com/github/markup/issues/202
+	https://github.com/gjtorikian/html-pipeline/pull/307
+	https://github.com/github/opensource.guide/pull/807
+  --->
 
 <a name="ssl"></a>
 ### Warum erhalte ich Warnungen über fehlende Zertifikate?
@@ -61,7 +69,7 @@ Andere erlauben nur kostenpflichtige Zertifikate als eigenes Angebot bzw. von an
 ### Wie kann ich Bilder, Dateien, Links, Video und Audio in Beiträge einfügen?
 
 Bilder können direkt im [Beitragseditor](help/Text_editor) vom Computer hochgeladen werden.
-Eine Übersicht aller Bilder, die auf Deinem Server liegen, findest Du unter <i>deineSeite.de/photos/profilname</i>.
+Eine Übersicht aller Bilder, die auf Deinem Server liegen, findest Du unter <i>deineSeite.de/profile/profilname/photos</i>.
 Dort kannst Du auch direkt Bilder hochladen und festlegen, ob Deine Kontakte eine Nachricht über das neue Bild bekommen.
 
 Alle Arten von Dateien können grundsätzlich als Anhang in Friendica hochgeladen werden.
@@ -172,86 +180,56 @@ Beispiel: Friendica Support
 <a name="clients">
 ### Gibt es Clients für Friendica?
 
-Friendica verwendet eine [Twitter/GNU Social](help/api) kompatible API.
-Das bedeutet, dass du jeden Twitter/GNU Social Client verwenden kannst in dem du den API Pfad entsprechend änderst.
+Friendica unterstützt [Mastodon API](help/API-Mastodon) und [Twitter API | gnusocial](help/api).
+Das bedeutet, du kannst einge der Mastodon und Twitter Clients für Friendica verwenden.
+Die verfügbaren Features sind Abhängig vom Client, so dass diese teils unterschiedlich sein können.
 
-Hier ist eine Liste von Clients bei denen dies möglich ist, bzw. die speziell für Friendica entwickelt werden:
+#### Android
 
-* Android
-  * [Friendiqa](https://git.friendi.ca/lubuwest/Friendiqa) (Gibt es im Google Playstore oder als [binary Repository](https://freunde.ma-nic.de/display/3e98eba8185a13c5bdbf3d1539646854) für F-Droid)
-  * [Fedilab](https://gitlab.com/tom79/mastalab) (Gibt es im F-Droid und dem Google Play Store)
-  * [DiCa](https://dica.mixi.cool/) (Gibt es bei Google Play)
-  * AndStatus
-  * Twidere
-  * Mustard and Mustard-Mod
-* SailfishOS
-  * [Friendly](https://openrepos.net/content/fabrixxm/friendly#comment-form)
-* Linux
-  * Hotot
-  * Choqok
-* MacOS X
-  * Hotot
-* Windows
-  * [Friendica Mobile](https://www.microsoft.com/de-DE/store/p/friendica-mobile/9nblggh0fhmn?rtc=1) für Windows 10
-  * Hotot
+* [AndStatus](http://andstatus.org) ([F-Droid](https://f-droid.org/repository/browse/?fdid=org.andstatus.app), [Google Play](https://play.google.com/store/apps/details?id=org.andstatus.app))
+* [B4X for Pleroma & Mastodon](https://github.com/AnywhereSoftware/B4X-Pleroma)
+* DiCa ([Google Play](https://play.google.com/store/apps/details?id=cool.mixi.dica), letztes Update 2019)
+* [Fedi](https://play.google.com/store/apps/details?id=com.fediverse.app)
+* [Fedilab](https://fedilab.app) ([F-Droid](https://f-droid.org/app/fr.gouv.etalab.mastodon), [Google Play](https://play.google.com/store/apps/details?id=app.fedilab.android))
+* [Friendiqa](https://git.friendi.ca/lubuwest/Friendiqa) (Gibt es im Google Playstore oder als [binary Repository](https://freunde.ma-nic.de/display/3e98eba8185a13c5bdbf3d1539646854) für F-Droid)
+* [Husky](https://husky.fwgs.ru)
+* [Roma](https://play.google.com/store/apps/details?id=tech.bigfig.roma)
+* [Subway Tooter](https://github.com/tateisu/SubwayTooter)
+* [Tooot](https://tooot.app/)
+* [Tusky](https://tusky.app)
+* [Twidere](https://dimension.im/) ([F-Droid](https://f-droid.org/repository/browse/?fdid=org.mariotaku.twidere), [Google Play](https://play.google.com/store/apps/details?id=com.twidere.twiderex), [GitHub](https://github.com/TwidereProject/Twidere-Android))
+* [TwidereX](https://github.com/TwidereProject/TwidereX-Android)
+* [twitlatte](https://github.com/moko256/twitlatte)
+* [Yuito](https://github.com/accelforce/Yuito)
 
-<a name="help"></a>
-### Wo finde ich Hilfe?
+#### SailfishOS
 
-Wenn Du Probleme mit Deiner Friendica-Seite hast, dann kannst Du die Community in der [Friendica-Support-Gruppe](https://forum.friendi.ca/profile/helpers) fragen oder Dir das [deutsche Wiki](https://friendica-wiki.de/) anschauen.
-Wenn Du Deinen Account nicht nutzen kannst, kannst Du entweder einen [Testaccount](https://tryfriendica.de) bzw. einen Account auf einer öffentlichen Seite ([Liste](https://dir.friendica.social/servers)) nutzen.
+* [Friendly](https://openrepos.net/content/fabrixxm/friendly#comment-form)
 
-Wenn du dir keinen weiteren Friendica Account einrichten willst, kannst du auch gerne über einen der folgenden alternativen Kanäle Hilfe suchen:
+#### iOS
 
-  * [Friendica Support Forum](https://forum.friendi.ca/~helpers)
-  * [Mailing List Archive](http://mailman.friendi.ca/mailman/listinfo/support-friendi.ca) you can subscribe to the list by sending an email to ``support-request(at)friendi.ca?subject=subscribe``
-  * XMPP/Jabber MUC: support(at)forum.friendi.ca
-  * IRC: #friendica at irc.freenode.net
-  * Matrix: #friendi.ca or #friendica at matrix.org.
+* [B4X for Pleroma & Mastodon](https://www.b4x.com/) ([AppStore](https://apps.apple.com/app/b4x-pleroma/id1538396871), [GitHub](https://github.com/AnywhereSoftware/B4X-Pleroma))
+* [Fedi](https://fediapp.com) ([AppStore](https://apps.apple.com/de/app/fedi-for-pleroma-and-mastodon/id1478806281))
+* [Mastodon](https://joinmastodon.org/apps)([AppStore](https://apps.apple.com/us/app/mastodon-for-iphone/id1571998974))
+* [Roma](https://www.roma.rocks/)([AppStore](https://apps.apple.com/de/app/roma-for-pleroma-and-mastodon/id1445328699))
+* [Stella*](https://www.stella-app.net/) ([AppStore](https://apps.apple.com/us/app/stella-for-mastodon-twitter/id921372048))
+* [Tooot](https://tooot.app/) ([AppStore](https://apps.apple.com/app/id1549772269), [GitHub](https://github.com/tooot-app)), Datensammlung (nicht mit Identität verknüpft)
+* [Tootle](https://mastodon.cloud/@tootleapp) ([AppStore](https://apps.apple.com/de/app/tootle-for-mastodon/id1236013466)), letztes update: 2020
 
-Admin
---------
+#### Linux
 
-<a name="multiple"></a>
-### Kann ich mehrere Domains mit den selben Dateien aufsetzen?
+* [Choqok](https://choqok.kde.org)
+* [Whalebird](https://whalebird.social)
+* [TheDesk](https://ja.mstdn.wiki/TheDesk)
+* [Toot](https://toot.readthedocs.io/en/latest/)
+* [Tootle](https://github.com/bleakgrey/tootle)
 
-Ja, das ist möglich.
-Es ist allerdings nicht möglich, eine Datenbank durch zwei Domains zu nutzen.
-Solange Du Deine config/local.config.php allerdings so einrichtest, dass das System nicht versucht, eine Installation durchzuführen, kannst Du die richtige Config-Datei in include/$hostname/config/local.config.php hinterlegen.
-Alle Cache-Aspekte und der Zugriffsschutz können pro Instanz konfiguriert werden.
+#### macOS
 
-<a name="sources"></a>
-### Wo kann ich den Quellcode von Friendica, Addons und Themes finden?
+* [Mastonaut](https://mastonaut.app/) ([AppStore](https://apps.apple.com/us/app/mastonaut/id1450757574)), kostet ~8€
+* [Whalebird](https://whalebird.social/en/desktop/contents) ([AppStore](https://apps.apple.com/de/app/whalebird/id1378283354), [GitHub](https://github.com/h3poteto/whalebird-desktop))
 
-Du kannst den Friendica-Quellcode [hier](https://github.com/friendica/friendica) finden.
-Dort findest Du immer die aktuellste stabile Version von Friendica.
-Der Quellcode von Friendica Red ist [hier](https://github.com/friendica/red) zu finden.
+#### Web
 
-Addons findest Du auf [dieser Seite](https://github.com/friendica/friendica-addons).
-
-Wenn Du neue Themen suchst, findest Du sie auf [Friendica-Themes.com](http://friendica-themes.com/).
-
-<a name="adminaccount1"></a>
-### Ich habe meine E-Mail Adresse geändern und jetzt ist das Admin Panel verschwunden?
-
-Bitte aktualisiere deine E-Mail Adresse in der <tt>config/local.config.php</tt> Datei.
-
-<a name="adminaccount2"></a>
-### Kann es mehr als einen Admin auf einer Friendica Instanz geben?
-
-Ja.
-Du kannst in der <tt>config/local.config.php</tt> Datei mehrere E-Mail Adressen auflisten.
-Die aufgelisteten Adressen werden mit Kommata von einander getrennt.
-
-<a name="dbupdate">
-### Die Datenbank Struktur schein nicht aktuell zu sein. Was kann ich tun?
-
-Rufe bitte im Admin Panel den Punkt [DB Updates](/admin/dbsync/) auf und folge dem Link *Datenbank Struktur überprüfen*.
-Damit wird ein Hintergrundprozess gestartet der die Struktur deiner Datenbank überprüft und gegebenenfalls aktualisiert.
-
-Du kannst das Struktur Updatee auch manuell auf der Kommandoeingabe ausführen.
-Starte dazu bitte vom Grundverzeichnis deiner Friendica Instanz folgendes Kommand:
-
-    bin/console dbstructure update
-
-sollten bei der Ausführung Fehler auftreten, kontaktiere bitte das [Support Forum](https://forum.friendi.ca/profile/helpers).
+* [Halcyon](https://www.halcyon.social/)
+* [Pinafore](https://github.com/nolanlawson/pinafore)

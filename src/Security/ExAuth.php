@@ -1,6 +1,22 @@
 <?php
-
 /**
+ * @copyright Copyright (C) 2010-2023, the Friendica project
+ *
+ * @license GNU AGPL version 3 or any later version
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * ejabberd extauth script for the integration with friendica
  *
  * Originally written for joomla by Dalibor Karlovic <dado@krizevci.info>
@@ -36,11 +52,12 @@ namespace Friendica\Security;
 
 use Exception;
 use Friendica\App;
-use Friendica\Core\Config\IConfig;
-use Friendica\Core\PConfig\IPConfig;
+use Friendica\Core\Config\Capability\IManageConfigValues;
+use Friendica\Core\PConfig\Capability\IManagePersonalConfigValues;
 use Friendica\Database\Database;
 use Friendica\DI;
 use Friendica\Model\User;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
 use Friendica\Network\HTTPException;
 use Friendica\Util\PidFile;
 
@@ -54,11 +71,11 @@ class ExAuth
 	 */
 	private $appMode;
 	/**
-	 * @var IConfig
+	 * @var IManageConfigValues
 	 */
 	private $config;
 	/**
-	 * @var IPConfig
+	 * @var IManagePersonalConfigValues
 	 */
 	private $pConfig;
 	/**
@@ -71,14 +88,15 @@ class ExAuth
 	private $baseURL;
 
 	/**
-	 * @param App\Mode    $appMode
-	 * @param IConfig      $config
-	 * @param IPConfig     $pConfig
-	 * @param Database    $dba
-	 * @param App\BaseURL $baseURL
+	 * @param App\Mode                    $appMode
+	 * @param IManageConfigValues         $config
+	 * @param IManagePersonalConfigValues $pConfig
+	 * @param Database                    $dba
+	 * @param App\BaseURL                 $baseURL
+	 *
 	 * @throws Exception
 	 */
-	public function __construct(App\Mode $appMode, IConfig $config, IPConfig $pConfig, Database $dba, App\BaseURL $baseURL)
+	public function __construct(App\Mode $appMode, IManageConfigValues $config, IManagePersonalConfigValues $pConfig, Database $dba, App\BaseURL $baseURL)
 	{
 		$this->appMode = $appMode;
 		$this->config  = $config;
@@ -135,11 +153,11 @@ class ExAuth
 			if (is_array($aCommand)) {
 				switch ($aCommand[0]) {
 					case 'isuser':
-						// Check the existance of a given username
+						// Check the existence of a given username
 						$this->isUser($aCommand);
 						break;
 					case 'auth':
-						// Check if the givven password is correct
+						// Check if the given password is correct
 						$this->auth($aCommand);
 						break;
 					case 'setpass':
@@ -183,7 +201,7 @@ class ExAuth
 		$sUser = str_replace(['%20', '(a)'], [' ', '@'], $aCommand[1]);
 
 		// Does the hostname match? So we try directly
-		if ($this->baseURL->getHostname() == $aCommand[2]) {
+		if ($this->baseURL->getHost() == $aCommand[2]) {
 			$this->writeLog(LOG_INFO, 'internal user check for ' . $sUser . '@' . $aCommand[2]);
 			$found = $this->dba->exists('user', ['nickname' => $sUser]);
 		} else {
@@ -207,7 +225,7 @@ class ExAuth
 	}
 
 	/**
-	 * Check remote user existance via HTTP(S)
+	 * Check remote user existence via HTTP(S)
 	 *
 	 * @param string  $host The hostname
 	 * @param string  $user Username
@@ -222,7 +240,7 @@ class ExAuth
 
 		$url = ($ssl ? 'https' : 'http') . '://' . $host . '/noscrape/' . $user;
 
-		$curlResult = DI::httpRequest()->get($url);
+		$curlResult = DI::httpClient()->get($url, HttpClientAccept::JSON);
 
 		if (!$curlResult->isSuccess()) {
 			return false;
@@ -264,7 +282,7 @@ class ExAuth
 
 		$Error = false;
 		// Does the hostname match? So we try directly
-		if ($this->baseURL->getHostname() == $aCommand[2]) {
+		if ($this->baseURL->getHost() == $aCommand[2]) {
 			try {
 				$this->writeLog(LOG_INFO, 'internal auth for ' . $sUser . '@' . $aCommand[2]);
 				User::getIdFromPasswordAuthentication($sUser, $aCommand[3], true);
@@ -285,10 +303,10 @@ class ExAuth
 
 		// If the hostnames doesn't match or there is some failure, we try to check remotely
 		if ($Error && !$this->checkCredentials($aCommand[2], $aCommand[1], $aCommand[3], true)) {
-			$this->writeLog(LOG_WARNING, 'authentification failed for user ' . $sUser . '@' . $aCommand[2]);
+			$this->writeLog(LOG_WARNING, 'authentication failed for user ' . $sUser . '@' . $aCommand[2]);
 			fwrite(STDOUT, pack('nn', 2, 0));
 		} else {
-			$this->writeLog(LOG_NOTICE, 'authentificated user ' . $sUser . '@' . $aCommand[2]);
+			$this->writeLog(LOG_NOTICE, 'authenticated user ' . $sUser . '@' . $aCommand[2]);
 			fwrite(STDOUT, pack('nn', 2, 1));
 		}
 	}

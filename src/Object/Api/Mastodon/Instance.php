@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,23 +21,29 @@
 
 namespace Friendica\Object\Api\Mastodon;
 
-use Friendica\BaseEntity;
-use Friendica\Database\DBA;
+use Friendica\App;
+use Friendica\App\BaseURL;
+use Friendica\BaseDataTransferObject;
+use Friendica\Core\Config\Capability\IManageConfigValues;
+use Friendica\Database\Database;
 use Friendica\DI;
 use Friendica\Model\User;
 use Friendica\Module\Register;
+use Friendica\Network\HTTPException;
 
 /**
  * Class Instance
  *
- * @see https://docs.joinmastodon.org/api/entities/#instance
+ * @see https://docs.joinmastodon.org/entities/V1_Instance/
  */
-class Instance extends BaseEntity
+class Instance extends BaseDataTransferObject
 {
 	/** @var string (URL) */
 	protected $uri;
 	/** @var string */
 	protected $title;
+	/** @var string */
+	protected $short_description;
 	/** @var string */
 	protected $description;
 	/** @var string */
@@ -48,7 +54,7 @@ class Instance extends BaseEntity
 	protected $urls;
 	/** @var Stats */
 	protected $stats;
-	/** @var string|null */
+	/** @var string|null This is meant as a server banner, default Mastodon "thumbnail" is 1600×620px */
 	protected $thumbnail = null;
 	/** @var array */
 	protected $languages;
@@ -58,46 +64,46 @@ class Instance extends BaseEntity
 	protected $registrations;
 	/** @var bool */
 	protected $approval_required;
+	/** @var bool */
+	protected $invites_enabled;
 	/** @var Account|null */
 	protected $contact_account = null;
+	/** @var array */
+	protected $rules = [];
 
 	/**
-	 * Creates an instance record
-	 *
-	 * @return Instance
-	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 * @param IManageConfigValues $config
+	 * @param BaseURL             $baseUrl
+	 * @param Database            $database
+	 * @param array               $rules
+	 * @throws HTTPException\InternalServerErrorException
+	 * @throws HTTPException\NotFoundException
 	 * @throws \ImagickException
 	 */
-	public static function get()
+	public function __construct(IManageConfigValues $config, BaseURL $baseUrl, Database $database, array $rules = [])
 	{
-		$register_policy = intval(DI::config()->get('config', 'register_policy'));
+		$register_policy = intval($config->get('config', 'register_policy'));
 
-		$baseUrl = DI::baseUrl();
+		$this->uri               = $baseUrl->getHost();
+		$this->title             = $config->get('config', 'sitename');
+		$this->short_description = $this->description = $config->get('config', 'info');
+		$this->email             = implode(',', User::getAdminEmailList());
+		$this->version           = '2.8.0 (compatible; Friendica ' . App::VERSION . ')';
+		$this->urls              = null; // Not supported
+		$this->stats             = new Stats($config, $database);
+		$this->thumbnail         = $baseUrl . '/images/friendica-banner.jpg';
+		$this->languages         = [$config->get('system', 'language')];
+		$this->max_toot_chars    = (int)$config->get('config', 'api_import_size', $config->get('config', 'max_import_size'));
+		$this->registrations     = ($register_policy != Register::CLOSED);
+		$this->approval_required = ($register_policy == Register::APPROVE);
+		$this->invites_enabled   = false;
+		$this->contact_account   = [];
+		$this->rules             = $rules;
 
-		$instance = new Instance();
-		$instance->uri = $baseUrl->get();
-		$instance->title = DI::config()->get('config', 'sitename');
-		$instance->description = DI::config()->get('config', 'info');
-		$instance->email = DI::config()->get('config', 'admin_email');
-		$instance->version = FRIENDICA_VERSION;
-		$instance->urls = []; // Not supported
-		$instance->stats = Stats::get();
-		$instance->thumbnail = $baseUrl->get() . (DI::config()->get('system', 'shortcut_icon') ?? 'images/friendica-32.png');
-		$instance->languages = [DI::config()->get('system', 'language')];
-		$instance->max_toot_chars = (int)DI::config()->get('config', 'api_import_size', DI::config()->get('config', 'max_import_size'));
-		$instance->registrations = ($register_policy != Register::CLOSED);
-		$instance->approval_required = ($register_policy == Register::APPROVE);
-		$instance->contact_account = [];
-
-		if (!empty(DI::config()->get('config', 'admin_email'))) {
-			$adminList = explode(',', str_replace(' ', '', DI::config()->get('config', 'admin_email')));
-			$administrator = User::getByEmail($adminList[0], ['nickname']);
-			if (!empty($administrator)) {
-				$adminContact = DBA::selectFirst('contact', ['id'], ['nick' => $administrator['nickname'], 'self' => true]);
-				$instance->contact_account = DI::mstdnAccount()->createFromContactId($adminContact['id']);
-			}
+		$administrator = User::getFirstAdmin(['nickname']);
+		if ($administrator) {
+			$adminContact = $database->selectFirst('contact', ['uri-id'], ['nick' => $administrator['nickname'], 'self' => true]);
+			$this->contact_account = DI::mstdnAccount()->createFromUriId($adminContact['uri-id']);
 		}
-
-		return $instance;
 	}
 }

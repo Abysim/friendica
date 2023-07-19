@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,12 +22,18 @@
 namespace Friendica\Util;
 
 use Friendica\Core\Logger;
+use Friendica\Core\Protocol;
 use Friendica\Database\Database;
 use Friendica\Database\DBA;
 use Friendica\DI;
 use Friendica\Model\APContact;
 use Friendica\Model\Contact;
+use Friendica\Model\GServer;
+use Friendica\Model\ItemURI;
 use Friendica\Model\User;
+use Friendica\Network\HTTPClient\Capability\ICanHandleHttpResponses;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
+use Friendica\Network\HTTPClient\Client\HttpClientOptions;
 
 /**
  * Implements HTTP Signatures per draft-cavage-http-signatures-07.
@@ -51,7 +57,7 @@ class HTTPSignature
 	 * @return array with verification data
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function verifyMagic($key)
+	public static function verifyMagic(string $key): array
 	{
 		$headers   = null;
 		$spoofable = false;
@@ -63,7 +69,7 @@ class HTTPSignature
 
 		// Decide if $data arrived via controller submission or curl.
 		$headers = [];
-		$headers['(request-target)'] = strtolower($_SERVER['REQUEST_METHOD']).' '.$_SERVER['REQUEST_URI'];
+		$headers['(request-target)'] = strtolower(DI::args()->getMethod()).' '.$_SERVER['REQUEST_URI'];
 
 		foreach ($_SERVER as $k => $v) {
 			if (strpos($k, 'HTTP_') === 0) {
@@ -77,7 +83,7 @@ class HTTPSignature
 		$sig_block = self::parseSigheader($headers['authorization']);
 
 		if (!$sig_block) {
-			Logger::log('no signature provided.');
+			Logger::notice('no signature provided.');
 			return $result;
 		}
 
@@ -107,7 +113,7 @@ class HTTPSignature
 			$key = $key($sig_block['keyId']);
 		}
 
-		Logger::log('Got keyID ' . $sig_block['keyId'], Logger::DEBUG);
+		Logger::info('Got keyID ' . $sig_block['keyId']);
 
 		if (!$key) {
 			return $result;
@@ -115,7 +121,7 @@ class HTTPSignature
 
 		$x = Crypto::rsaVerify($signed_data, $sig_block['signature'], $key, $algorithm);
 
-		Logger::log('verified: ' . $x, Logger::DEBUG);
+		Logger::info('verified: ' . $x);
 
 		if (!$x) {
 			return $result;
@@ -135,9 +141,12 @@ class HTTPSignature
 	 *
 	 * @return array
 	 */
-	public static function createSig($head, $prvkey, $keyid = 'Key')
+	public static function createSig(array $head, string $prvkey, string $keyid = 'Key'): array
 	{
 		$return_headers = [];
+		if (!empty($head)) {
+			$return_headers = $head;
+		}
 
 		$alg = 'sha512';
 		$algorithm = 'rsa-sha512';
@@ -147,15 +156,7 @@ class HTTPSignature
 		$headerval = 'keyId="' . $keyid . '",algorithm="' . $algorithm
 			. '",headers="' . $x['headers'] . '",signature="' . $x['signature'] . '"';
 
-		$sighead = 'Authorization: Signature ' . $headerval;
-
-		if ($head) {
-			foreach ($head as $k => $v) {
-				$return_headers[] = $k . ': ' . $v;
-			}
-		}
-
-		$return_headers[] = $sighead;
+		$return_headers['Authorization'] = ['Signature ' . $headerval];
 
 		return $return_headers;
 	}
@@ -167,13 +168,16 @@ class HTTPSignature
 	 *
 	 * @return array
 	 */
-	private static function sign($head, $prvkey, $alg = 'sha256')
+	private static function sign(array $head, string $prvkey, string $alg = 'sha256'): array
 	{
 		$ret = [];
 		$headers = '';
 		$fields  = '';
 
 		foreach ($head as $k => $v) {
+			if (is_array($v)) {
+				$v = implode(', ', $v);
+			}
 			$headers .= strtolower($k) . ': ' . trim($v) . "\n";
 			if ($fields) {
 				$fields .= ' ';
@@ -202,7 +206,7 @@ class HTTPSignature
 	 *   - \e string \b signature
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function parseSigheader($header)
+	public static function parseSigheader(string $header): array
 	{
 		// Remove obsolete folds
 		$header = preg_replace('/\n\s+/', ' ', $header);
@@ -249,7 +253,7 @@ class HTTPSignature
 	 * @return string Decrypted signature string
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	private static function decryptSigheader(array $headers, string $prvkey)
+	private static function decryptSigheader(array $headers, string $prvkey): string
 	{
 		if (!empty($headers['iv']) && !empty($headers['key']) && !empty($headers['data'])) {
 			return Crypto::unencapsulate($headers, $prvkey);
@@ -263,23 +267,16 @@ class HTTPSignature
 	 */
 
 	/**
-	 * Transmit given data to a target for a user
+	 * Post given data to a target for a user, returns the result class
 	 *
-	 * @param array   $data   Data that is about to be send
-	 * @param string  $target The URL of the inbox
-	 * @param integer $uid    User id of the sender
+	 * @param array  $data   Data that is about to be sent
+	 * @param string $target The URL of the inbox
+	 * @param array  $owner  Sender owner-view record
 	 *
-	 * @return boolean Was the transmission successful?
-	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 * @return ICanHandleHttpResponses
 	 */
-	public static function transmit($data, $target, $uid)
+	public static function post(array $data, string $target, array $owner): ICanHandleHttpResponses
 	{
-		$owner = User::getOwnerDataById($uid);
-
-		if (!$owner) {
-			return;
-		}
-
 		$content = json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
 		// Header data that is about to be signed.
@@ -289,26 +286,46 @@ class HTTPSignature
 		$content_length = strlen($content);
 		$date = DateTimeFormat::utcNow(DateTimeFormat::HTTP);
 
-		$headers = ['Date: ' . $date, 'Content-Length: ' . $content_length, 'Digest: ' . $digest, 'Host: ' . $host];
+		$headers = [
+			'Date' => $date,
+			'Content-Length' => $content_length,
+			'Digest' => $digest,
+			'Host' => $host
+		];
 
 		$signed_data = "(request-target): post " . $path . "\ndate: ". $date . "\ncontent-length: " . $content_length . "\ndigest: " . $digest . "\nhost: " . $host;
 
 		$signature = base64_encode(Crypto::rsaSign($signed_data, $owner['uprvkey'], 'sha256'));
 
-		$headers[] = 'Signature: keyId="' . $owner['url'] . '#main-key' . '",algorithm="rsa-sha256",headers="(request-target) date content-length digest host",signature="' . $signature . '"';
+		$headers['Signature'] = 'keyId="' . $owner['url'] . '#main-key' . '",algorithm="rsa-sha256",headers="(request-target) date content-length digest host",signature="' . $signature . '"';
 
-		$headers[] = 'Content-Type: application/activity+json';
+		$headers['Content-Type'] = 'application/activity+json';
 
-		$postResult = DI::httpRequest()->post($target, $content, $headers);
+		$postResult = DI::httpClient()->post($target, $content, $headers, DI::config()->get('system', 'curl_timeout'));
 		$return_code = $postResult->getReturnCode();
 
-		Logger::log('Transmit to ' . $target . ' returned ' . $return_code, Logger::DEBUG);
+		Logger::info('Transmit to ' . $target . ' returned ' . $return_code);
 
-		$success = ($return_code >= 200) && ($return_code <= 299);
+		self::setInboxStatus($target, ($return_code >= 200) && ($return_code <= 299));
 
-		self::setInboxStatus($target, $success);
+		return $postResult;
+	}
 
-		return $success;
+	/**
+	 * Transmit given data to a target for a user
+	 *
+	 * @param array  $data   Data that is about to be sent
+	 * @param string $target The URL of the inbox
+	 * @param array  $owner  Sender owner-vew record
+	 *
+	 * @return boolean Was the transmission successful?
+	 */
+	public static function transmit(array $data, string $target, array $owner): bool
+	{
+		$postResult = self::post($data, $target, $owner);
+		$return_code = $postResult->getReturnCode();
+
+		return ($return_code >= 200) && ($return_code <= 299);
 	}
 
 	/**
@@ -317,21 +334,36 @@ class HTTPSignature
 	 * @param string  $url     The URL of the inbox
 	 * @param boolean $success Transmission status
 	 * @param boolean $shared  The inbox is a shared inbox
+	 * @param int     $gsid    Server ID
+	 * @throws \Exception
 	 */
-	static public function setInboxStatus($url, $success, $shared = false)
+	static public function setInboxStatus(string $url, bool $success, bool $shared = false, int $gsid = null)
 	{
 		$now = DateTimeFormat::utcNow();
 
 		$status = DBA::selectFirst('inbox-status', [], ['url' => $url]);
 		if (!DBA::isResult($status)) {
-			DBA::insert('inbox-status', ['url' => $url, 'created' => $now, 'shared' => $shared], Database::INSERT_IGNORE);
+			$insertFields = ['url' => $url, 'uri-id' => ItemURI::getIdByURI($url), 'created' => $now, 'shared' => $shared];
+			if (!empty($gsid)) {
+				$insertFields['gsid'] = $gsid;
+			}
+			DBA::insert('inbox-status', $insertFields, Database::INSERT_IGNORE);
+
 			$status = DBA::selectFirst('inbox-status', [], ['url' => $url]);
+			if (empty($status)) {
+				Logger::warning('Unable to insert inbox-status row', $insertFields);
+				return;
+			}
 		}
 
 		if ($success) {
 			$fields = ['success' => $now];
 		} else {
 			$fields = ['failure' => $now];
+		}
+
+		if (!empty($gsid)) {
+			$fields['gsid'] = $gsid;
 		}
 
 		if ($status['failure'] > DBA::NULL_DATETIME) {
@@ -364,7 +396,19 @@ class HTTPSignature
 			$fields['archive'] = false;
 		}
 
+		if (empty($status['uri-id'])) {
+			$fields['uri-id'] = ItemURI::getIdByURI($url);
+		}
+
 		DBA::update('inbox-status', $fields, ['url' => $url]);
+
+		if (!empty($status['gsid'])) {
+			if ($success) {
+				GServer::setReachableById($status['gsid'], Protocol::ACTIVITYPUB);
+			} elseif ($status['shared']) {
+				GServer::setFailureById($status['gsid']);
+			}
+		}
 	}
 
 	/**
@@ -376,21 +420,26 @@ class HTTPSignature
 	 * @return array JSON array
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function fetch($request, $uid)
+	public static function fetch(string $request, int $uid): array
 	{
-		$curlResult = self::fetchRaw($request, $uid);
+		try {
+			$curlResult = self::fetchRaw($request, $uid);
+		} catch (\Exception $exception) {
+			Logger::notice('Error fetching url', ['url' => $request, 'exception' => $exception]);
+			return [];
+		}
 
 		if (empty($curlResult)) {
-			return false;
+			return [];
 		}
 
 		if (!$curlResult->isSuccess() || empty($curlResult->getBody())) {
-			return false;
+			return [];
 		}
 
 		$content = json_decode($curlResult->getBody(), true);
 		if (empty($content) || !is_array($content)) {
-			return false;
+			return [];
 		}
 
 		return $content;
@@ -402,16 +451,16 @@ class HTTPSignature
 	 * @param string  $request request url
 	 * @param integer $uid     User id of the requester
 	 * @param boolean $binary  TRUE if asked to return binary results (file download) (default is "false")
-	 * @param array   $opts    (optional parameters) assoziative array with:
+	 * @param array   $opts    (optional parameters) associative array with:
 	 *                         'accept_content' => supply Accept: header with 'accept_content' as the value
 	 *                         'timeout' => int Timeout in seconds, default system config value or 60 seconds
 	 *                         'nobody' => only return the header
 	 *                         'cookiejar' => path to cookie jar file
 	 *
-	 * @return object CurlResult
+	 * @return \Friendica\Network\HTTPClient\Capability\ICanHandleHttpResponses CurlResult
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function fetchRaw($request, $uid = 0, $opts = ['accept_content' => 'application/activity+json, application/ld+json'])
+	public static function fetchRaw(string $request, int $uid = 0, array $opts = [HttpClientOptions::ACCEPT_CONTENT => [HttpClientAccept::JSON_AS]])
 	{
 		$header = [];
 
@@ -433,62 +482,86 @@ class HTTPSignature
 			$path = parse_url($request, PHP_URL_PATH);
 			$date = DateTimeFormat::utcNow(DateTimeFormat::HTTP);
 
-			$header = ['Date: ' . $date, 'Host: ' . $host];
+			$header['Date'] = $date;
+			$header['Host'] = $host;
 
 			$signed_data = "(request-target): get " . $path . "\ndate: ". $date . "\nhost: " . $host;
 
 			$signature = base64_encode(Crypto::rsaSign($signed_data, $owner['uprvkey'], 'sha256'));
 
-			$header[] = 'Signature: keyId="' . $owner['url'] . '#main-key' . '",algorithm="rsa-sha256",headers="(request-target) date host",signature="' . $signature . '"';
+			$header['Signature'] = 'keyId="' . $owner['url'] . '#main-key' . '",algorithm="rsa-sha256",headers="(request-target) date host",signature="' . $signature . '"';
 		}
 
-		if (!empty($opts['accept_content'])) {
-			$header[] = 'Accept: ' . $opts['accept_content'];
-		}
-
-		$curl_opts = $opts;
-		$curl_opts['header'] = $header;
+		$curl_opts                             = $opts;
+		$curl_opts[HttpClientOptions::HEADERS] = $header;
 
 		if (!empty($opts['nobody'])) {
-			$curlResult = DI::httpRequest()->head($request, $curl_opts);
+			$curlResult = DI::httpClient()->head($request, $curl_opts);
 		} else {
-			$curlResult = DI::httpRequest()->get($request, $curl_opts);
+			$curlResult = DI::httpClient()->get($request, HttpClientAccept::JSON_AS, $curl_opts);
 		}
 		$return_code = $curlResult->getReturnCode();
 
-		Logger::log('Fetched for user ' . $uid . ' from ' . $request . ' returned ' . $return_code, Logger::DEBUG);
+		Logger::info('Fetched for user ' . $uid . ' from ' . $request . ' returned ' . $return_code);
 
 		return $curlResult;
 	}
 
 	/**
-	 * Gets a signer from a given HTTP request
+	 * Fetch the apcontact entry of the keyId in the given header
 	 *
-	 * @param $content
-	 * @param $http_headers
+	 * @param array $http_headers
 	 *
-	 * @return string Signer
-	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 * @return array APContact entry
 	 */
-	public static function getSigner($content, $http_headers)
+	public static function getKeyIdContact(array $http_headers): array
 	{
 		if (empty($http_headers['HTTP_SIGNATURE'])) {
+			Logger::debug('No HTTP_SIGNATURE header', ['header' => $http_headers]);
+			return [];
+		}
+
+		$sig_block = self::parseSigHeader($http_headers['HTTP_SIGNATURE']);
+
+		if (empty($sig_block['keyId'])) {
+			Logger::debug('No keyId', ['sig_block' => $sig_block]);
+			return [];
+		}
+
+		$url = (strpos($sig_block['keyId'], '#') ? substr($sig_block['keyId'], 0, strpos($sig_block['keyId'], '#')) : $sig_block['keyId']);
+		return APContact::getByURL($url);
+	}
+
+	/**
+	 * Gets a signer from a given HTTP request
+	 *
+	 * @param string $content
+	 * @param array $http_headers
+	 *
+	 * @return string|null|false Signer
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 */
+	public static function getSigner(string $content, array $http_headers)
+	{
+		if (empty($http_headers['HTTP_SIGNATURE'])) {
+			Logger::debug('No HTTP_SIGNATURE header');
 			return false;
 		}
 
 		if (!empty($content)) {
 			$object = json_decode($content, true);
 			if (empty($object)) {
+				Logger::info('No object');
 				return false;
 			}
 
-			$actor = JsonLD::fetchElement($object, 'actor', 'id');
+			$actor = JsonLD::fetchElement($object, 'actor', 'id') ?? '';
 		} else {
 			$actor = '';
 		}
 
 		$headers = [];
-		$headers['(request-target)'] = strtolower($http_headers['REQUEST_METHOD']) . ' ' . parse_url($http_headers['REQUEST_URI'], PHP_URL_PATH);
+		$headers['(request-target)'] = strtolower(DI::args()->getMethod()) . ' ' . parse_url($http_headers['REQUEST_URI'], PHP_URL_PATH);
 
 		// First take every header
 		foreach ($http_headers as $k => $v) {
@@ -506,7 +579,17 @@ class HTTPSignature
 
 		$sig_block = self::parseSigHeader($http_headers['HTTP_SIGNATURE']);
 
+		// Add fields from the signature block to the header. See issue 8845
+		if (!empty($sig_block['created']) && empty($headers['(created)'])) {
+			$headers['(created)'] = $sig_block['created'];
+		}
+
+		if (!empty($sig_block['expires']) && empty($headers['(expires)'])) {
+			$headers['(expires)'] = $sig_block['expires'];
+		}
+
 		if (empty($sig_block) || empty($sig_block['headers']) || empty($sig_block['keyId'])) {
+			Logger::info('No headers or keyId');
 			return false;
 		}
 
@@ -514,11 +597,14 @@ class HTTPSignature
 		foreach ($sig_block['headers'] as $h) {
 			if (array_key_exists($h, $headers)) {
 				$signed_data .= $h . ': ' . $headers[$h] . "\n";
+			} else {
+				Logger::info('Requested header field not found', ['field' => $h, 'header' => $headers]);
 			}
 		}
 		$signed_data = rtrim($signed_data, "\n");
 
 		if (empty($signed_data)) {
+			Logger::info('Signed data is empty');
 			return false;
 		}
 
@@ -541,27 +627,33 @@ class HTTPSignature
 		}
 
 		if (empty($algorithm)) {
+			Logger::info('No algorithm');
 			return false;
 		}
 
 		$key = self::fetchKey($sig_block['keyId'], $actor);
 		if (empty($key)) {
+			Logger::info('Empty key');
 			return false;
 		}
 
 		if (!empty($key['url']) && !empty($key['type']) && ($key['type'] == 'Tombstone')) {
 			Logger::info('Actor is a tombstone', ['key' => $key]);
 
-			// We now delete everything that we possibly knew from this actor
-			Contact::deleteContactByUrl($key['url']);
-			return false;
+			if (!Contact::isLocal($key['url'])) {
+				// We now delete everything that we possibly knew from this actor
+				Contact::deleteContactByUrl($key['url']);
+			}
+			return null;
 		}
 
 		if (empty($key['pubkey'])) {
+			Logger::info('Empty pubkey');
 			return false;
 		}
 
 		if (!Crypto::rsaVerify($signed_data, $sig_block['signature'], $key['pubkey'], $algorithm)) {
+			Logger::info('Verification failed', ['signed_data' => $signed_data, 'algorithm' => $algorithm, 'header' => $sig_block['headers'], 'http_headers' => $http_headers]);
 			return false;
 		}
 
@@ -580,25 +672,50 @@ class HTTPSignature
 			/// @todo add all hashes from the rfc
 
 			if (!empty($hashalg) && base64_encode(hash($hashalg, $content, true)) != $digest[1]) {
+				Logger::info('Digest does not match');
 				return false;
 			}
 
 			$hasGoodSignedContent = true;
 		}
 
+		if (in_array('date', $sig_block['headers']) && !empty($headers['date'])) {
+			$created = strtotime($headers['date']);
+		} elseif (in_array('(created)', $sig_block['headers']) && !empty($sig_block['created'])) {
+			$created = $sig_block['created'];
+		} else {
+			$created = 0;
+		}
+
+		if (in_array('(expires)', $sig_block['headers']) && !empty($sig_block['expires'])) {
+			$expired = min($sig_block['expires'], $created + 300);
+		} else {
+			$expired = $created + 300;
+		}
+
 		//  Check if the signed date field is in an acceptable range
-		if (in_array('date', $sig_block['headers'])) {
-			$diff = abs(strtotime($headers['date']) - time());
-			if ($diff > 300) {
-				Logger::log("Header date '" . $headers['date'] . "' is with " . $diff . " seconds out of the 300 second frame. The signature is invalid.");
+		if (!empty($created)) {
+			$current = time();
+
+			// Calculate with a grace period of 60 seconds to avoid slight time differences between the servers
+			if (($created - 60) > $current) {
+				Logger::notice('Signature created in the future', ['created' => date(DateTimeFormat::MYSQL, $created), 'expired' => date(DateTimeFormat::MYSQL, $expired), 'current' => date(DateTimeFormat::MYSQL, $current)]);
 				return false;
 			}
+
+			if ($current > $expired) {
+				Logger::notice('Signature expired', ['created' => date(DateTimeFormat::MYSQL, $created), 'expired' => date(DateTimeFormat::MYSQL, $expired), 'current' => date(DateTimeFormat::MYSQL, $current)]);
+				return false;
+			}
+
+			Logger::debug('Valid creation date', ['created' => date(DateTimeFormat::MYSQL, $created), 'expired' => date(DateTimeFormat::MYSQL, $expired), 'current' => date(DateTimeFormat::MYSQL, $current)]);
 			$hasGoodSignedContent = true;
 		}
 
 		// Check the content-length when it is part of the signed data
 		if (in_array('content-length', $sig_block['headers'])) {
 			if (strlen($content) != $headers['content-length']) {
+				Logger::info('Content length does not match');
 				return false;
 			}
 		}
@@ -606,6 +723,7 @@ class HTTPSignature
 		// Ensure that the authentication had been done with some content
 		// Without this check someone could authenticate with fakeable data
 		if (!$hasGoodSignedContent) {
+			Logger::info('No good signed content');
 			return false;
 		}
 
@@ -615,28 +733,29 @@ class HTTPSignature
 	/**
 	 * fetches a key for a given id and actor
 	 *
-	 * @param $id
-	 * @param $actor
+	 * @param string $id
+	 * @param string $actor
 	 *
 	 * @return array with actor url and public key
 	 * @throws \Exception
 	 */
-	private static function fetchKey($id, $actor)
+	private static function fetchKey(string $id, string $actor): array
 	{
 		$url = (strpos($id, '#') ? substr($id, 0, strpos($id, '#')) : $id);
 
 		$profile = APContact::getByURL($url);
 		if (!empty($profile)) {
-			Logger::log('Taking key from id ' . $id, Logger::DEBUG);
+			Logger::info('Taking key from id', ['id' => $id]);
 			return ['url' => $url, 'pubkey' => $profile['pubkey'], 'type' => $profile['type']];
 		} elseif ($url != $actor) {
 			$profile = APContact::getByURL($actor);
 			if (!empty($profile)) {
-				Logger::log('Taking key from actor ' . $actor, Logger::DEBUG);
+				Logger::info('Taking key from actor', ['actor' => $actor]);
 				return ['url' => $actor, 'pubkey' => $profile['pubkey'], 'type' => $profile['type']];
 			}
 		}
 
-		return false;
+		Logger::notice('Key could not be fetched', ['url' => $url, 'actor' => $actor]);
+		return [];
 	}
 }

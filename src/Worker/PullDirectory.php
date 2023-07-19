@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,8 +22,10 @@
 namespace Friendica\Worker;
 
 use Friendica\Core\Logger;
+use Friendica\Core\Search;
 use Friendica\DI;
 use Friendica\Model\Contact;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
 
 class PullDirectory
 {
@@ -37,17 +39,17 @@ class PullDirectory
 			return;
 		}
 
-		$directory = DI::config()->get('system', 'directory');
+		$directory = Search::getGlobalDirectory();
 		if (empty($directory)) {
 			Logger::info('No directory configured');
 			return;
 		}
 
-		$now = (int)DI::config()->get('system', 'last-directory-sync', 0);
+		$now = (int)(DI::keyValue()->get('last-directory-sync') ?? 0);
 
 		Logger::info('Synchronization started.', ['now' => $now, 'directory' => $directory]);
 
-		$result = DI::httpRequest()->fetch($directory . '/sync/pull/since/' . $now);
+		$result = DI::httpClient()->fetch($directory . '/sync/pull/since/' . $now, HttpClientAccept::JSON);
 		if (empty($result)) {
 			Logger::info('Directory server return empty result.', ['directory' => $directory]);
 			return;
@@ -62,7 +64,7 @@ class PullDirectory
 		$result = Contact::addByUrls($contacts['results']);
 
 		$now = $contacts['now'] ?? 0;
-		DI::config()->set('system', 'last-directory-sync', $now);
+		DI::keyValue()->set('last-directory-sync', $now);
 
 		Logger::info('Synchronization ended', ['now' => $now, 'count' => $result['count'], 'added' => $result['added'], 'updated' => $result['updated'], 'unchanged' => $result['unchanged'], 'directory' => $directory]);
 	}

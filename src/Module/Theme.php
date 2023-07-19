@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,7 +22,7 @@
 namespace Friendica\Module;
 
 use Friendica\BaseModule;
-use Friendica\DI;
+use Friendica\Core\System;
 use Friendica\Util\Strings;
 
 /**
@@ -30,11 +30,11 @@ use Friendica\Util\Strings;
  */
 class Theme extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		header('Content-Type: text/css');
 
-		$theme = Strings::sanitizeFilePathItem($parameters['theme']);
+		$theme = Strings::sanitizeFilePathItem($this->parameters['theme']);
 
 		if (file_exists("view/theme/$theme/theme.php")) {
 			require_once "view/theme/$theme/theme.php";
@@ -45,7 +45,6 @@ class Theme extends BaseModule
 		if (file_exists("view/theme/$theme/style.php")) {
 			require_once "view/theme/$theme/style.php";
 		}
-
-		exit();
+		System::exit();
 	}
 }

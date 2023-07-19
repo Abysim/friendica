@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,34 +21,48 @@
 
 namespace Friendica\Module\Debug;
 
+use Friendica\App;
 use Friendica\BaseModule;
+use Friendica\Core\L10n;
 use Friendica\Core\Renderer;
 use Friendica\DI;
 use Friendica\Model;
+use Friendica\Module\Response;
+use Friendica\Network\HTTPClient\Capability\ICanSendHttpRequests;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
 use Friendica\Protocol;
+use Friendica\Util\Profiler;
+use Psr\Log\LoggerInterface;
 
 /**
  * Tests a given feed of a contact
  */
 class Feed extends BaseModule
 {
-	public static function init(array $parameters = [])
+	/** @var ICanSendHttpRequests */
+	protected $httpClient;
+
+	public function __construct(L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, Response $response, ICanSendHttpRequests $httpClient, array $server, array $parameters = [])
 	{
-		if (!local_user()) {
-			notice(DI::l10n()->t('You must be logged in to use this module'));
-			DI::baseUrl()->redirect();
+		parent::__construct($l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
+
+		$this->httpClient = $httpClient;
+
+		if (!DI::userSession()->getLocalUserId()) {
+			DI::sysmsg()->addNotice($this->t('You must be logged in to use this module'));
+			$baseUrl->redirect();
 		}
 	}
 
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
 		$result = [];
 		if (!empty($_REQUEST['url'])) {
 			$url = $_REQUEST['url'];
 
-			$contact = Model\Contact::getByURLForUser($url, local_user(), false);
+			$contact = Model\Contact::getByURLForUser($url, DI::userSession()->getLocalUserId(), null);
 
-			$xml = DI::httpRequest()->fetch($contact['poll']);
+			$xml = $this->httpClient->fetch($contact['poll'], HttpClientAccept::FEED_XML);
 
 			$import_result = Protocol\Feed::import($xml);
 
@@ -60,7 +74,7 @@ class Feed extends BaseModule
 
 		$tpl = Renderer::getMarkupTemplate('feedtest.tpl');
 		return Renderer::replaceMacros($tpl, [
-			'$url'    => ['url', DI::l10n()->t('Source URL'), $_REQUEST['url'] ?? '', ''],
+			'$url'    => ['url', $this->t('Source URL'), $_REQUEST['url'] ?? '', ''],
 			'$result' => $result
 		]);
 	}

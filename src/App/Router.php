@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,16 +21,30 @@
 
 namespace Friendica\App;
 
-
+use Dice\Dice;
 use FastRoute\DataGenerator\GroupCountBased;
 use FastRoute\Dispatcher;
 use FastRoute\RouteCollector;
 use FastRoute\RouteParser\Std;
-use Friendica\Core\Cache\Duration;
-use Friendica\Core\Cache\ICache;
+use Friendica\Capabilities\ICanHandleRequests;
+use Friendica\Core\Addon;
+use Friendica\Core\Cache\Enum\Duration;
+use Friendica\Core\Cache\Capability\ICanCache;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\Core\Hook;
 use Friendica\Core\L10n;
+use Friendica\Core\Lock\Capability\ICanLock;
+use Friendica\Core\Session\Capability\IHandleUserSessions;
+use Friendica\LegacyModule;
+use Friendica\Module\HTTPException\MethodNotAllowed;
+use Friendica\Module\HTTPException\PageNotFound;
+use Friendica\Module\Special\Options;
 use Friendica\Network\HTTPException;
+use Friendica\Network\HTTPException\InternalServerErrorException;
+use Friendica\Network\HTTPException\MethodNotAllowedException;
+use Friendica\Network\HTTPException\NotFoundException;
+use Friendica\Util\Router\FriendicaGroupCountBased;
+use Psr\Log\LoggerInterface;
 
 /**
  * Wrapper for FastRoute\Router
@@ -44,11 +58,12 @@ use Friendica\Network\HTTPException;
  */
 class Router
 {
-	const DELETE = 'DELETE';
-	const GET    = 'GET';
-	const PATCH  = 'PATCH';
-	const POST   = 'POST';
-	const PUT    = 'PUT';
+	const DELETE  = 'DELETE';
+	const GET     = 'GET';
+	const PATCH   = 'PATCH';
+	const POST    = 'POST';
+	const PUT     = 'PUT';
+	const OPTIONS = 'OPTIONS';
 
 	const ALLOWED_METHODS = [
 		self::DELETE,
@@ -56,53 +71,87 @@ class Router
 		self::PATCH,
 		self::POST,
 		self::PUT,
+		self::OPTIONS
 	];
 
 	/** @var RouteCollector */
 	protected $routeCollector;
 
 	/**
-	 * @var string The HTTP method
-	 */
-	private $httpMethod;
-
-	/**
 	 * @var array Module parameters
 	 */
-	private $parameters = [];
+	protected $parameters = [];
 
 	/** @var L10n */
 	private $l10n;
 
-	/** @var ICache */
+	/** @var ICanCache */
 	private $cache;
+
+	/** @var ICanLock */
+	private $lock;
+
+	/** @var Arguments */
+	private $args;
+
+	/** @var IManageConfigValues */
+	private $config;
+
+	/** @var LoggerInterface */
+	private $logger;
+
+	/** @var bool */
+	private $isLocalUser;
+
+	/** @var float */
+	private $dice_profiler_threshold;
+
+	/** @var Dice */
+	private $dice;
 
 	/** @var string */
 	private $baseRoutesFilepath;
+
+	/** @var array */
+	private $server;
+
+	/** @var string|null */
+	protected $moduleClass = null;
 
 	/**
 	 * @param array               $server             The $_SERVER variable
 	 * @param string              $baseRoutesFilepath The path to a base routes file to leverage cache, can be empty
 	 * @param L10n                $l10n
-	 * @param ICache              $cache
+	 * @param ICanCache           $cache
+	 * @param ICanLock            $lock
+	 * @param IManageConfigValues $config
+	 * @param Arguments           $args
+	 * @param LoggerInterface     $logger
+	 * @param Dice                $dice
+	 * @param IHandleUserSessions $userSession
 	 * @param RouteCollector|null $routeCollector
 	 */
-	public function __construct(array $server, string $baseRoutesFilepath, L10n $l10n, ICache $cache, RouteCollector $routeCollector = null)
+	public function __construct(array $server, string $baseRoutesFilepath, L10n $l10n, ICanCache $cache, ICanLock $lock, IManageConfigValues $config, Arguments $args, LoggerInterface $logger, Dice $dice, IHandleUserSessions $userSession, RouteCollector $routeCollector = null)
 	{
-		$this->baseRoutesFilepath = $baseRoutesFilepath;
-		$this->l10n = $l10n;
-		$this->cache = $cache;
+		$this->baseRoutesFilepath      = $baseRoutesFilepath;
+		$this->l10n                    = $l10n;
+		$this->cache                   = $cache;
+		$this->lock                    = $lock;
+		$this->args                    = $args;
+		$this->config                  = $config;
+		$this->dice                    = $dice;
+		$this->server                  = $server;
+		$this->logger                  = $logger;
+		$this->isLocalUser             = !empty($userSession->getLocalUserId());
+		$this->dice_profiler_threshold = $config->get('system', 'dice_profiler_threshold', 0);
 
-		$httpMethod = $server['REQUEST_METHOD'] ?? self::GET;
-		$this->httpMethod = in_array($httpMethod, self::ALLOWED_METHODS) ? $httpMethod : self::GET;
-
-		$this->routeCollector = isset($routeCollector) ?
-			$routeCollector :
-			new RouteCollector(new Std(), new GroupCountBased());
+		$this->routeCollector = $routeCollector ?? new RouteCollector(new Std(), new GroupCountBased());
 
 		if ($this->baseRoutesFilepath && !file_exists($this->baseRoutesFilepath)) {
 			throw new HTTPException\InternalServerErrorException('Routes file path does\'n exist.');
 		}
+
+		$this->parameters = [$this->server];
 	}
 
 	/**
@@ -115,11 +164,9 @@ class Router
 	 *
 	 * @throws HTTPException\InternalServerErrorException In case of invalid configs
 	 */
-	public function loadRoutes(array $routes)
+	public function loadRoutes(array $routes): Router
 	{
-		$routeCollector = (isset($this->routeCollector) ?
-			$this->routeCollector :
-			new RouteCollector(new Std(), new GroupCountBased()));
+		$routeCollector = ($this->routeCollector ?? new RouteCollector(new Std(), new GroupCountBased()));
 
 		$this->addRoutes($routeCollector, $routes);
 
@@ -131,13 +178,23 @@ class Router
 		return $this;
 	}
 
+	/**
+	 * Adds multiple routes to a route collector
+	 *
+	 * @param RouteCollector $routeCollector Route collector instance
+	 * @param array $routes Multiple routes to be added
+	 * @throws HTTPException\InternalServerErrorException If route was wrong (somehow)
+	 */
 	private function addRoutes(RouteCollector $routeCollector, array $routes)
 	{
 		foreach ($routes as $route => $config) {
 			if ($this->isGroup($config)) {
 				$this->addGroup($route, $config, $routeCollector);
 			} elseif ($this->isRoute($config)) {
-				$routeCollector->addRoute($config[1], $route, $config[0]);
+				// Always add the OPTIONS endpoint to a route
+				$httpMethods   = (array) $config[1];
+				$httpMethods[] = Router::OPTIONS;
+				$routeCollector->addRoute($httpMethods, $route, $config[0]);
 			} else {
 				throw new HTTPException\InternalServerErrorException("Wrong route config for route '" . print_r($route, true) . "'");
 			}
@@ -165,7 +222,7 @@ class Router
 	 *
 	 * @return bool
 	 */
-	private function isGroup(array $config)
+	private function isGroup(array $config): bool
 	{
 		return
 			is_array($config) &&
@@ -183,7 +240,7 @@ class Router
 	 *
 	 * @return bool
 	 */
-	private function isRoute(array $config)
+	private function isRoute(array $config): bool
 	{
 		return
 			// The config array should at least have one entry
@@ -201,52 +258,107 @@ class Router
 	 *
 	 * @return RouteCollector|null
 	 */
-	public function getRouteCollector()
+	public function getRouteCollector(): ?RouteCollector
 	{
 		return $this->routeCollector;
 	}
 
 	/**
-	 * Returns the relevant module class name for the given page URI or NULL if no route rule matched.
+	 * Returns the Friendica\BaseModule-extending class name if a route rule matched
 	 *
-	 * @param string $cmd The path component of the request URL without the query string
+	 * @return string
 	 *
-	 * @return string A Friendica\BaseModule-extending class name if a route rule matched
-	 *
-	 * @throws HTTPException\InternalServerErrorException
-	 * @throws HTTPException\MethodNotAllowedException    If a rule matched but the method didn't
-	 * @throws HTTPException\NotFoundException            If no rule matched
+	 * @throws InternalServerErrorException
+	 * @throws MethodNotAllowedException
 	 */
-	public function getModuleClass($cmd)
+	public function getModuleClass(): string
 	{
-		$cmd = '/' . ltrim($cmd, '/');
-
-		$dispatcher = new Dispatcher\GroupCountBased($this->getCachedDispatchData());
-
-		$moduleClass = null;
-		$this->parameters = [];
-
-		$routeInfo  = $dispatcher->dispatch($this->httpMethod, $cmd);
-		if ($routeInfo[0] === Dispatcher::FOUND) {
-			$moduleClass = $routeInfo[1];
-			$this->parameters = $routeInfo[2];
-		} elseif ($routeInfo[0] === Dispatcher::METHOD_NOT_ALLOWED) {
-			throw new HTTPException\MethodNotAllowedException($this->l10n->t('Method not allowed for this module. Allowed method(s): %s', implode(', ', $routeInfo[1])));
-		} else {
-			throw new HTTPException\NotFoundException($this->l10n->t('Page not found.'));
+		if (empty($this->moduleClass)) {
+			$this->determineModuleClass();
 		}
 
-		return $moduleClass;
+		return $this->moduleClass;
 	}
 
 	/**
-	 * Returns the module parameters.
+	 * Returns the relevant module class name for the given page URI or NULL if no route rule matched.
 	 *
-	 * @return array parameters
+	 * @return void
+	 *
+	 * @throws HTTPException\InternalServerErrorException Unexpected exceptions
+	 * @throws HTTPException\MethodNotAllowedException    If a rule is private only
 	 */
-	public function getModuleParameters()
+	private function determineModuleClass(): void
 	{
-		return $this->parameters;
+		$cmd = $this->args->getCommand();
+		$cmd = '/' . ltrim($cmd, '/');
+
+		$dispatcher = new FriendicaGroupCountBased($this->getCachedDispatchData());
+
+		try {
+			// Check if the HTTP method is OPTIONS and return the special Options Module with the possible HTTP methods
+			if ($this->args->getMethod() === static::OPTIONS) {
+				$this->moduleClass = Options::class;
+				$this->parameters[] = ['AllowedMethods' => $dispatcher->getOptions($cmd)];
+			} else {
+				$routeInfo = $dispatcher->dispatch($this->args->getMethod(), $cmd);
+				if ($routeInfo[0] === Dispatcher::FOUND) {
+					$this->moduleClass = $routeInfo[1];
+					$this->parameters[] = $routeInfo[2];
+				} else if ($routeInfo[0] === Dispatcher::METHOD_NOT_ALLOWED) {
+					throw new HTTPException\MethodNotAllowedException($this->l10n->t('Method not allowed for this module. Allowed method(s): %s', implode(', ', $routeInfo[1])));
+				} else {
+					throw new HTTPException\NotFoundException($this->l10n->t('Page not found.'));
+				}
+			}
+		} catch (MethodNotAllowedException $e) {
+			$this->moduleClass = MethodNotAllowed::class;
+		} catch (NotFoundException $e) {
+			$moduleName = $this->args->getModuleName();
+			// Then we try addon-provided modules that we wrap in the LegacyModule class
+			if (Addon::isEnabled($moduleName) && file_exists("addon/{$moduleName}/{$moduleName}.php")) {
+				//Check if module is an app and if public access to apps is allowed or not
+				$privateapps = $this->config->get('config', 'private_addons', false);
+				if (!$this->isLocalUser && Hook::isAddonApp($moduleName) && $privateapps) {
+					throw new MethodNotAllowedException($this->l10n->t("You must be logged in to use addons. "));
+				} else {
+					include_once "addon/{$moduleName}/{$moduleName}.php";
+					if (function_exists($moduleName . '_module')) {
+						$this->parameters[] = "addon/{$moduleName}/{$moduleName}.php";
+						$this->moduleClass  = LegacyModule::class;
+					}
+				}
+			}
+
+			/* Finally, we look for a 'standard' program module in the 'mod' directory
+			 * We emulate a Module class through the LegacyModule class
+			 */
+			if (!$this->moduleClass && file_exists("mod/{$moduleName}.php")) {
+				$this->parameters[] = "mod/{$moduleName}.php";
+				$this->moduleClass  = LegacyModule::class;
+			}
+
+			$this->moduleClass = $this->moduleClass ?: PageNotFound::class;
+		}
+	}
+
+	public function getModule(?string $module_class = null): ICanHandleRequests
+	{
+		$moduleClass = $module_class ?? $this->getModuleClass();
+
+		$stamp = microtime(true);
+
+		try {
+			/** @var ICanHandleRequests $module */
+			return $this->dice->create($moduleClass, $this->parameters);
+		} finally {
+			if ($this->dice_profiler_threshold > 0) {
+				$dur = floatval(microtime(true) - $stamp);
+				if ($dur >= $this->dice_profiler_threshold) {
+					$this->logger->notice('Dice module creation lasts too long.', ['duration' => round($dur, 3), 'module' => $moduleClass, 'parameters' => $this->parameters]);
+				}
+			}
+		}
 	}
 
 	/**
@@ -286,24 +398,33 @@ class Router
 	 */
 	private function getCachedDispatchData()
 	{
-		$routerDispatchData = $this->cache->get('routerDispatchData');
+		$routerDispatchData         = $this->cache->get('routerDispatchData');
 		$lastRoutesFileModifiedTime = $this->cache->get('lastRoutesFileModifiedTime');
-		$forceRecompute = false;
+		$forceRecompute             = false;
 
 		if ($this->baseRoutesFilepath) {
 			$routesFileModifiedTime = filemtime($this->baseRoutesFilepath);
-			$forceRecompute = $lastRoutesFileModifiedTime != $routesFileModifiedTime;
+			$forceRecompute         = $lastRoutesFileModifiedTime != $routesFileModifiedTime;
 		}
 
 		if (!$forceRecompute && $routerDispatchData) {
 			return $routerDispatchData;
 		}
 
+		if (!$this->lock->acquire('getCachedDispatchData', 0)) {
+			// Immediately return uncached data when we can't acquire a lock
+			return $this->getDispatchData();
+		}
+
 		$routerDispatchData = $this->getDispatchData();
 
 		$this->cache->set('routerDispatchData', $routerDispatchData, Duration::DAY);
 		if (!empty($routesFileModifiedTime)) {
-			$this->cache->set('lastRoutesFileMtime', $routesFileModifiedTime, Duration::MONTH);
+			$this->cache->set('lastRoutesFileModifiedTime', $routesFileModifiedTime, Duration::MONTH);
+		}
+
+		if ($this->lock->isLocked('getCachedDispatchData')) {
+			$this->lock->release('getCachedDispatchData');
 		}
 
 		return $routerDispatchData;

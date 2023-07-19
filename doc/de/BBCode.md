@@ -65,17 +65,17 @@ table.bbcodes > * > tr > th {
   <td><a href="http://friendi.ca" target="external-link">Friendica</a></td>
 </tr>
 <tr>
-  <td>[img]https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.jpg[/img]</td>
-  <td><img src="https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.jpg" alt="Immagine/foto"></td>
+  <td>[img]https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.png[/img]</td>
+  <td><img src="https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.png"></td>
 </tr>
 <tr>
-  <td>[img=https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.jpg]Das Friendica Logo[/img]</td>
-  <td><img src="https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.jpg" alt="Das Friendica Logo"></td>
+  <td>[img=https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.png]Das Friendica Logo[/img]</td>
+  <td><img src="https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.png" alt="Das Friendica Logo"></td>
 </tr>
 <tr>
-  <td>[img=64x32]https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.jpg[/img]<br>
+  <td>[img=64x32]https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica.svg[/img]<br>
 <br>Note: provided height is simply discarded.</td>
-  <td><img src="https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica-32.jpg" style="width: 64px;"></td>
+  <td><img src="https://raw.githubusercontent.com/friendica/friendica/stable/images/friendica.svg" style="width: 64px;"></td>
 </tr>
 <tr>
   <td>[size=xx-small]kleiner Text[/size]</td>
@@ -192,7 +192,7 @@ Zeilen</code></td>
       Du solltest nicht weiter lesen, wenn du das Ende des Films nicht vorher erfahren willst. <br>
       <span id="spoiler-wrap-0716e642" class="spoiler-wrap fakelink" onclick="openClose('spoiler-0716e642');">Zum &ouml;ffnen/schlie&szlig;en klicken</span>
       <blockquote class="spoiler" id="spoiler-0716e642" style="display: none;">Es gibt ein Happy End.</blockquote>
-      <div class="body-attach"><div class="clear"></div></div>
+      <div class="body-attach"></div>
     </div>
   </td>
 </tr>
@@ -203,7 +203,7 @@ Zeilen</code></td>
       <strong class="spoiler">Autor hat geschrieben</strong><br>
       <span id="spoiler-wrap-a893765a" class="spoiler-wrap fakelink" onclick="openClose('spoiler-a893765a');">Zum &ouml;ffnen/schlie&szlig;en klicken</span>
       <blockquote class="spoiler" id="spoiler-a893765a" style="display: none;">Spoiler Alarm</blockquote>
-      <div class="body-attach"><div class="clear"></div></div>
+      <div class="body-attach"></div>
     </div>
   </td>
 </tr>
@@ -604,18 +604,16 @@ Dieses Feld wird von Mastodon f&uuml;r die Inhaltswarnung (content warning) verw
   <td>;-) :-O</td>
 </tr>
 <tr>
-  <td>Benutzerdefinierte Inline-Styles<br>
+  <td>Benutzerdefinierte Block-Styles<br>
 <br>
 [style=text-shadow: 0 0 4px #CC0000;]Du kannst alle CSS-Eigenschaften eines Blocks &auml;ndern-[/style]</td>
-  <td><span style="text-shadow: 0 0 4px #cc0000;;">Du kannst alle CSS-Eigenschaften eines Blocks &auml;ndern-</span></td>
+  <td><div style="text-shadow: 0 0 4px #cc0000;;">Du kannst alle CSS-Eigenschaften eines Blocks &auml;ndern.</div></td>
 </tr>
 <tr>
-  <td>Benutzerdefinierte CSS Klassen<br>
+  <td>Benutzerdefinierte Inline-Styles<br>
 <br>
-[class=custom]Wenn die vergebene Klasse in den CSS Anweisungen existiert, wird sie angewandt.[/class]</td>
-  <td><pre>&lt;span class="custom"&gt;Wenn die<br>
-vergebene Klasse in den CSS Anweisungen<br>
-existiert,wird sie angewandt.&lt;/span&gt;</pre></td>
+Du kannst alle [style=text-shadow: 0 0 4px #CC0000;]CSS-Eigenschaften[/style] dieses Inline-Textes &auml;ndern-</td>
+  <td>Du kannst alle <span style="text-shadow: 0 0 4px #cc0000;;">CSS-Eigenschaften</span> dieses Inline-Textes &auml;ndern-</td>
 </tr>
 </table>
 

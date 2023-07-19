@@ -28,11 +28,12 @@
 			<span class="wall-item-ago">
 				{{if $item.plink}}<a class="link" title="{{$item.plink.title}}" href="{{$item.plink.href}}" style="color: #999">{{$item.ago}}</a>{{else}} {{$item.ago}} {{/if}}
 				{{if $item.lock}}<span class="fakelink" style="color: #999" onclick="lockview(event, 'item', {{$item.id}});">{{$item.lock}}</span> {{/if}}
+				<span class="pinned">{{$item.pinned}}</span>
 			</span>
 		</div>
 		<div class="wall-item-content">
-			{{if $item.title}}<h2><a href="{{$item.plink.href}}">{{$item.title}}</a></h2>{{/if}}
-			<div class="wall-item-body">{{$item.body_html nofilter}}</div>
+			{{if $item.title}}<h2 dir="auto"><a href="{{$item.plink.href}}">{{$item.title}}</a></h2>{{/if}}
+			<div class="wall-item-body" dir="auto">{{$item.body_html nofilter}}</div>
 		</div>
 	</div>
 	<div class="wall-item-bottom">
@@ -47,9 +48,8 @@
 		</div>
 	</div>
 	<div class="wall-item-bottom">
-		<div class="">
-			<!-- {{if $item.plink}}<a title="{{$item.plink.title}}" href="{{$item.plink.href}}"><i class="icon-link icon-large"></i></a>{{/if}} -->
-			{{if $item.conv}}<a href='{{$item.conv.href}}' id='context-{{$item.id}}' title='{{$item.conv.title}}'><i class="icon-link icon-large"></i></a>{{/if}}
+		<div dir="auto">
+			{{if $item.conv}}<a href="{{$item.conv.href}}" id="context-{{$item.id}}" title="{{$item.conv.title}}"><i class="icon-link icon-large"></i></a>{{/if}}
 		</div>
 		<div class="wall-item-actions">
 
@@ -57,16 +57,16 @@
 
 			<div class="wall-item-actions-social">
 			{{if $item.star}}
-				<a href="#" id="star-{{$item.id}}" onclick="dostar({{$item.id}}); return false;"  class="{{$item.star.classdo}}"  title="{{$item.star.do}}">{{$item.star.do}}</a>
-				<a href="#" id="unstar-{{$item.id}}" onclick="dostar({{$item.id}}); return false;"  class="{{$item.star.classundo}}"  title="{{$item.star.undo}}">{{$item.star.undo}}</a>
+				<a href="#" id="star-{{$item.id}}" onclick="doStar({{$item.id}}); return false;" class="{{$item.star.classdo}}" title="{{$item.star.do}}">{{$item.star.do}}</a>
+				<a href="#" id="unstar-{{$item.id}}" onclick="doStar({{$item.id}}); return false;" class="{{$item.star.classundo}}" title="{{$item.star.undo}}">{{$item.star.undo}}</a>
 				<a href="#" id="tagger-{{$item.id}}" onclick="itemTag({{$item.id}}); return false;" class="{{$item.star.classtagger}}" title="{{$item.star.tagger}}">{{$item.star.tagger}}</a>
 			{{/if}}
 
 			{{if $item.vote.like}}
-				<a href="#" id="like-{{$item.id}}"{{if $item.responses.like.self}} class="active"{{/if}} title="{{$item.vote.like.0}}" onclick="dolike({{$item.id}}, 'like'{{if $item.responses.like.self}}, true{{/if}}); return false">{{$item.vote.like.1}}</a>
+				<a href="#" id="like-{{$item.id}}"{{if $item.responses.like.self}} class="active"{{/if}} title="{{$item.vote.like.0}}" onclick="doActivityItem({{$item.id}}, 'like'{{if $item.responses.like.self}}, true{{/if}}); return false">{{$item.vote.like.1}}</a>
 			{{/if}}
 			{{if $item.vote.dislike}}
-				<a href="#" id="dislike-{{$item.id}}"{{if $item.responses.dislike.self}} class="active"{{/if}} title="{{$item.vote.dislike.0}}" onclick="dolike({{$item.id}}, 'dislike'{{if $item.responses.dislike.self}}, true{{/if}}); return false">{{$item.vote.dislike.1}}</a>
+				<a href="#" id="dislike-{{$item.id}}"{{if $item.responses.dislike.self}} class="active"{{/if}} title="{{$item.vote.dislike.0}}" onclick="doActivityItem({{$item.id}}, 'dislike'{{if $item.responses.dislike.self}}, true{{/if}}); return false">{{$item.vote.dislike.1}}</a>
 			{{/if}}
 
 			{{if $item.vote.share}}
@@ -76,10 +76,10 @@
 
 			<div class="wall-item-actions-tools">
 
-				{{if $item.drop.pagedrop}}
+				{{if $item.drop && $item.drop.pagedrop}}
 					<input type="checkbox" title="{{$item.drop.select}}" name="itemselected[]" class="item-select" value="{{$item.id}}" />
 				{{/if}}
-				{{if $item.drop.dropping}}
+				{{if $item.drop && $item.drop.dropping}}
 					<a href="item/drop/{{$item.id}}" onclick="return confirmDelete();" class="icon delete s16" title="{{$item.drop.delete}}">{{$item.drop.delete}}</a>
 				{{/if}}
 				{{if $item.edpost}}

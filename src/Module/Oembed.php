@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,6 +23,7 @@ namespace Friendica\Module;
 
 use Friendica\BaseModule;
 use Friendica\Content;
+use Friendica\Core\System;
 use Friendica\DI;
 use Friendica\Util\Strings;
 
@@ -37,28 +38,26 @@ use Friendica\Util\Strings;
  */
 class Oembed extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		$a = DI::app();
-
 		// Unused form: /oembed/b2h?url=...
-		if ($a->argv[1] == 'b2h') {
+		if (DI::args()->getArgv()[1] == 'b2h') {
 			$url = ["", trim(hex2bin($_REQUEST['url']))];
 			echo Content\OEmbed::replaceCallback($url);
-			exit();
+			System::exit();
 		}
 
 		// Unused form: /oembed/h2b?text=...
-		if ($a->argv[1] == 'h2b') {
+		if (DI::args()->getArgv()[1] == 'h2b') {
 			$text = trim(hex2bin($_REQUEST['text']));
 			echo Content\OEmbed::HTML2BBCode($text);
-			exit();
+			System::exit();
 		}
 
 		// @TODO: Replace with parameter from router
-		if ($a->argc == 2) {
+		if (DI::args()->getArgc() == 2) {
 			echo '<html><body>';
-			$url = Strings::base64UrlDecode($a->argv[1]);
+			$url = Strings::base64UrlDecode(DI::args()->getArgv()[1]);
 			$j = Content\OEmbed::fetchURL($url);
 
 			// workaround for media.ccc.de (and any other endpoint that return size 0)
@@ -70,6 +69,6 @@ class Oembed extends BaseModule
 			echo $j->html;
 			echo '</body></html>';
 		}
-		exit();
+		System::exit();
 	}
 }

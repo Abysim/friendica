@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,10 +22,10 @@
 namespace Friendica\Module\Item;
 
 use Friendica\BaseModule;
-use Friendica\Core\Session;
 use Friendica\Core\System;
 use Friendica\DI;
 use Friendica\Model\Item;
+use Friendica\Model\Post;
 use Friendica\Network\HTTPException;
 
 /**
@@ -33,44 +33,33 @@ use Friendica\Network\HTTPException;
  */
 class Ignore extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		$l10n = DI::l10n();
 
-		if (!Session::isAuthenticated()) {
+		if (!DI::userSession()->isAuthenticated()) {
 			throw new HttpException\ForbiddenException($l10n->t('Access denied.'));
 		}
 
-		$args = DI::args();
+		if (empty($this->parameters['id'])) {
+			throw new HTTPException\BadRequestException();
+		}
+
+		$itemId = intval($this->parameters['id']);
+
 		$dba = DI::dba();
 
-		$message_id = intval($args->get(2));
-
-		if (empty($message_id) || !is_int($message_id)) {
-			throw new HTTPException\BadRequestException();
-		}
-
-		$thread = Item::selectFirstThreadForUser(local_user(), ['uid', 'ignored'], ['iid' => $message_id]);
+		$thread = Post::selectFirst(['uri-id', 'uid'], ['id' => $itemId, 'gravity' => Item::GRAVITY_PARENT]);
 		if (!$dba->isResult($thread)) {
-			throw new HTTPException\BadRequestException();
+			throw new HTTPException\NotFoundException();
 		}
 
-		// Numeric values are needed for the json output further below
-		$ignored = !empty($thread['ignored']) ? 0 : 1;
+		$ignored = !Post\ThreadUser::getIgnored($thread['uri-id'], DI::userSession()->getLocalUserId());
 
-		switch ($thread['uid'] ?? 0) {
-			// if the thread is from the current user
-			case local_user():
-				$dba->update('thread', ['ignored' => $ignored], ['iid' => $message_id]);
-				break;
-			// 0 (null will get transformed to 0) => it's a public post
-			case 0:
-				$dba->update('user-item', ['ignored' => $ignored], ['iid' => $message_id, 'uid' => local_user()], true);
-				break;
-			// Throws a BadRequestException and not a ForbiddenException on purpose
-			// Avoids harvesting existing, but forbidden IIDs (security issue)
-			default:
-				throw new HTTPException\BadRequestException();
+		if (in_array($thread['uid'], [0, DI::userSession()->getLocalUserId()])) {
+			Post\ThreadUser::setIgnored($thread['uri-id'], DI::userSession()->getLocalUserId(), $ignored);
+		} else {
+			throw new HTTPException\BadRequestException();
 		}
 
 		// See if we've been passed a return path to redirect to
@@ -86,7 +75,13 @@ class Ignore extends BaseModule
 			DI::baseUrl()->redirect($return_path . $rand);
 		}
 
-		// the json doesn't really matter, it will either be 0 or 1
-		System::jsonExit($ignored);
+		$return = [
+			'status'  => 'ok',
+			'item_id' => $itemId,
+			'verb'    => 'ignore',
+			'state'   => $ignored,
+		];
+
+		System::jsonExit($return);
 	}
 }

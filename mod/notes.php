@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -20,16 +20,18 @@
  */
 
 use Friendica\App;
+use Friendica\Content\Conversation;
 use Friendica\Content\Nav;
 use Friendica\Content\Pager;
 use Friendica\Database\DBA;
 use Friendica\DI;
 use Friendica\Model\Item;
+use Friendica\Model\Post;
 use Friendica\Module\BaseProfile;
 
 function notes_init(App $a)
 {
-	if (! local_user()) {
+	if (! DI::userSession()->getLocalUserId()) {
 		return;
 	}
 
@@ -37,43 +39,36 @@ function notes_init(App $a)
 }
 
 
-function notes_content(App $a, $update = false)
+function notes_content(App $a, bool $update = false)
 {
-	if (!local_user()) {
-		notice(DI::l10n()->t('Permission denied.'));
+	if (!DI::userSession()->getLocalUserId()) {
+		DI::sysmsg()->addNotice(DI::l10n()->t('Permission denied.'));
 		return;
 	}
 
-	$o = BaseProfile::getTabsHTML($a, 'notes', true);
+	$o = BaseProfile::getTabsHTML('notes', true, $a->getLoggedInUserNickname(), false);
 
 	if (!$update) {
 		$o .= '<h3>' . DI::l10n()->t('Personal Notes') . '</h3>';
 
 		$x = [
-			'is_owner' => true,
-			'allow_location' => (($a->user['allow_location']) ? true : false),
-			'default_location' => $a->user['default-location'],
-			'nickname' => $a->user['nickname'],
 			'lockstate' => 'lock',
-			'acl' => \Friendica\Core\ACL::getSelfOnlyHTML(local_user(), DI::l10n()->t('Personal notes are visible only by yourself.')),
-			'bang' => '',
-			'visitor' => 'block',
-			'profile_uid' => local_user(),
+			'acl' => \Friendica\Core\ACL::getSelfOnlyHTML(DI::userSession()->getLocalUserId(), DI::l10n()->t('Personal notes are visible only by yourself.')),
 			'button' => DI::l10n()->t('Save'),
 			'acl_data' => '',
 		];
 
-		$o .= status_editor($a, $x, $a->contact['id']);
+		$o .= DI::conversation()->statusEditor($x, $a->getContactId());
 	}
 
-	$condition = ['uid' => local_user(), 'post-type' => Item::PT_PERSONAL_NOTE, 'gravity' => GRAVITY_PARENT,
-		'contact-id'=> $a->contact['id']];
+	$condition = ['uid' => DI::userSession()->getLocalUserId(), 'post-type' => Item::PT_PERSONAL_NOTE, 'gravity' => Item::GRAVITY_PARENT,
+		'contact-id'=> $a->getContactId()];
 
 	if (DI::mode()->isMobile()) {
-		$itemsPerPage = DI::pConfig()->get(local_user(), 'system', 'itemspage_mobile_network',
+		$itemsPerPage = DI::pConfig()->get(DI::userSession()->getLocalUserId(), 'system', 'itemspage_mobile_network',
 			DI::config()->get('system', 'itemspage_network_mobile'));
 	} else {
-		$itemsPerPage = DI::pConfig()->get(local_user(), 'system', 'itemspage_network',
+		$itemsPerPage = DI::pConfig()->get(DI::userSession()->getLocalUserId(), 'system', 'itemspage_network',
 			DI::config()->get('system', 'itemspage_network'));
 	}
 
@@ -81,16 +76,16 @@ function notes_content(App $a, $update = false)
 
 	$params = ['order' => ['created' => true],
 		'limit' => [$pager->getStart(), $pager->getItemsPerPage()]];
-	$r = Item::selectThreadForUser(local_user(), ['uri'], $condition, $params);
+	$r = Post::selectThreadForUser(DI::userSession()->getLocalUserId(), ['uri-id'], $condition, $params);
 
 	$count = 0;
 
 	if (DBA::isResult($r)) {
-		$notes = Item::inArray($r);
+		$notes = Post::toArray($r);
 
 		$count = count($notes);
 
-		$o .= conversation($a, $notes, 'notes', $update);
+		$o .= DI::conversation()->create($notes, Conversation::MODE_NOTES, $update);
 	}
 
 	$o .= $pager->renderMinimal($count);

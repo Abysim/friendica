@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -29,15 +29,15 @@ use Friendica\Util\Strings;
 
 function lostpass_post(App $a)
 {
-	$loginame = Strings::escapeTags(trim($_POST['login-name']));
+	$loginame = trim($_POST['login-name']);
 	if (!$loginame) {
 		DI::baseUrl()->redirect();
 	}
 
-	$condition = ['(`email` = ? OR `nickname` = ?) AND `verified` = 1 AND `blocked` = 0', $loginame, $loginame];
+	$condition = ['(`email` = ? OR `nickname` = ?) AND `verified` = 1 AND `blocked` = 0 AND `account_removed` = 0 AND `account_expired` = 0', $loginame, $loginame];
 	$user = DBA::selectFirst('user', ['uid', 'username', 'nickname', 'email', 'language'], $condition);
 	if (!DBA::isResult($user)) {
-		notice(DI::l10n()->t('No valid account found.'));
+		DI::sysmsg()->addNotice(DI::l10n()->t('No valid account found.'));
 		DI::baseUrl()->redirect();
 	}
 
@@ -49,7 +49,7 @@ function lostpass_post(App $a)
 	];
 	$result = DBA::update('user', $fields, ['uid' => $user['uid']]);
 	if ($result) {
-		info(DI::l10n()->t('Password reset request issued. Check your email.'));
+		DI::sysmsg()->addInfo(DI::l10n()->t('Password reset request issued. Check your email.'));
 	}
 
 	$sitename = DI::config()->get('config', 'sitename');
@@ -92,12 +92,12 @@ function lostpass_post(App $a)
 
 function lostpass_content(App $a)
 {
-	if ($a->argc > 1) {
-		$pwdreset_token = $a->argv[1];
+	if (DI::args()->getArgc() > 1) {
+		$pwdreset_token = DI::args()->getArgv()[1];
 
 		$user = DBA::selectFirst('user', ['uid', 'username', 'nickname', 'email', 'pwdreset_time', 'language'], ['pwdreset' => hash('sha256', $pwdreset_token)]);
 		if (!DBA::isResult($user)) {
-			notice(DI::l10n()->t("Request could not be verified. \x28You may have previously submitted it.\x29 Password reset failed."));
+			DI::sysmsg()->addNotice(DI::l10n()->t("Request could not be verified. \x28You may have previously submitted it.\x29 Password reset failed."));
 
 			return lostpass_form();
 		}
@@ -110,7 +110,7 @@ function lostpass_content(App $a)
 			];
 			DBA::update('user', $fields, ['uid' => $user['uid']]);
 
-			notice(DI::l10n()->t('Request has expired, please make a new one.'));
+			DI::sysmsg()->addNotice(DI::l10n()->t('Request has expired, please make a new one.'));
 
 			return lostpass_form();
 		}
@@ -152,7 +152,7 @@ function lostpass_generate_password($user)
 			'$newpass' => $new_password,
 		]);
 
-		info(DI::l10n()->t("Your password has been reset."));
+		DI::sysmsg()->addInfo(DI::l10n()->t("Your password has been reset."));
 
 		$sitename = DI::config()->get('config', 'sitename');
 		$preamble = Strings::deindent(DI::l10n()->t('

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,9 +21,8 @@
 
 namespace Friendica\Protocol;
 
+use Friendica\Core\Logger;
 use Friendica\Core\Protocol;
-use Friendica\Database\DBA;
-use Friendica\DI;
 use Friendica\Model\APContact;
 use Friendica\Model\User;
 use Friendica\Util\HTTPSignature;
@@ -65,19 +64,38 @@ class ActivityPub
 		'dfrn' => 'http://purl.org/macgirvin/dfrn/1.0/',
 		'diaspora' => 'https://diasporafoundation.org/ns/',
 		'litepub' => 'http://litepub.social/ns#',
+		'toot' => 'http://joinmastodon.org/ns#',
+		'featured' => [
+			"@id" => "toot:featured",
+			"@type" => "@id",
+		],
+		'schema' => 'http://schema.org#',
 		'manuallyApprovesFollowers' => 'as:manuallyApprovesFollowers',
 		'sensitive' => 'as:sensitive', 'Hashtag' => 'as:Hashtag',
-		'directMessage' => 'litepub:directMessage']];
+		'quoteUrl' => 'as:quoteUrl',
+		'conversation' => 'ostatus:conversation',
+		'directMessage' => 'litepub:directMessage',
+		'discoverable' => 'toot:discoverable',
+		'PropertyValue' => 'schema:PropertyValue',
+		'value' => 'schema:value',
+	]];
 	const ACCOUNT_TYPES = ['Person', 'Organization', 'Service', 'Group', 'Application', 'Tombstone'];
 	/**
 	 * Checks if the web request is done for the AP protocol
 	 *
 	 * @return bool is it AP?
 	 */
-	public static function isRequest()
+	public static function isRequest(): bool
 	{
-		return stristr($_SERVER['HTTP_ACCEPT'] ?? '', 'application/activity+json') ||
+		$isrequest = stristr($_SERVER['HTTP_ACCEPT'] ?? '', 'application/activity+json') ||
+			stristr($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json') ||
 			stristr($_SERVER['HTTP_ACCEPT'] ?? '', 'application/ld+json');
+
+		if ($isrequest) {
+			Logger::debug('Is AP request', ['accept' => $_SERVER['HTTP_ACCEPT'], 'agent' => $_SERVER['HTTP_USER_AGENT'] ?? '']);
+		}
+
+		return $isrequest;
 	}
 
 	/**
@@ -88,12 +106,12 @@ class ActivityPub
 	 * @return array
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function fetchContent(string $url, int $uid = 0)
+	public static function fetchContent(string $url, int $uid = 0): array
 	{
 		return HTTPSignature::fetch($url, $uid);
 	}
 
-	private static function getAccountType($apcontact)
+	private static function getAccountType(array $apcontact): int
 	{
 		$accounttype = -1;
 
@@ -130,7 +148,7 @@ class ActivityPub
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	public static function probeProfile($url, $update = true)
+	public static function probeProfile(string $url, bool $update = true): array
 	{
 		$apcontact = APContact::getByURL($url, $update);
 		if (empty($apcontact)) {
@@ -150,11 +168,14 @@ class ActivityPub
 		$profile['outbox'] = $apcontact['outbox'];
 		$profile['sharedinbox'] = $apcontact['sharedinbox'];
 		$profile['photo'] = $apcontact['photo'];
+		$profile['header'] = $apcontact['header'];
 		$profile['account-type'] = self::getAccountType($apcontact);
 		$profile['community'] = ($profile['account-type'] == User::ACCOUNT_TYPE_COMMUNITY);
 		// $profile['keywords']
 		// $profile['location']
 		$profile['about'] = $apcontact['about'];
+		$profile['xmpp'] = $apcontact['xmpp'];
+		$profile['matrix'] = $apcontact['matrix'];
 		$profile['batch'] = $apcontact['sharedinbox'];
 		$profile['notify'] = $apcontact['inbox'];
 		$profile['poll'] = $apcontact['outbox'];
@@ -163,6 +184,10 @@ class ActivityPub
 		$profile['manually-approve'] = $apcontact['manually-approve'];
 		$profile['baseurl'] = $apcontact['baseurl'];
 		$profile['gsid'] = $apcontact['gsid'];
+
+		if (!is_null($apcontact['discoverable'])) {
+			$profile['hide'] = !$apcontact['discoverable'];
+		}
 
 		// Remove all "null" fields
 		foreach ($profile as $field => $content) {
@@ -179,9 +204,10 @@ class ActivityPub
 	 *
 	 * @param string  $url
 	 * @param integer $uid User ID
+	 * @return void
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function fetchOutbox($url, $uid)
+	public static function fetchOutbox(string $url, int $uid)
 	{
 		$data = self::fetchContent($url, $uid);
 		if (empty($data)) {
@@ -212,7 +238,7 @@ class ActivityPub
 	 * @param integer $uid Optional user id
 	 * @return array Endpoint items
 	 */
-	public static function fetchItems(string $url, int $uid = 0)
+	public static function fetchItems(string $url, int $uid = 0): array
 	{
 		$data = self::fetchContent($url, $uid);
 		if (empty($data)) {
@@ -245,7 +271,7 @@ class ActivityPub
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	public static function isSupportedByContactUrl($url, $update = null)
+	public static function isSupportedByContactUrl(string $url, $update = null): bool
 	{
 		return !empty(APContact::getByURL($url, $update));
 	}

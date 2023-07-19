@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -29,6 +29,15 @@ use PHPUnit\Framework\TestCase;
 
 class CryptoTest extends TestCase
 {
+	public static function tearDownAfterClass(): void
+	{
+		// Reset mocking
+		global $phpMock;
+		$phpMock = [];
+
+		parent::tearDownAfterClass();
+	}
+
 	/**
 	 * Replaces random_int results with given mocks
 	 *
@@ -56,7 +65,7 @@ class CryptoTest extends TestCase
 		self::assertEquals(11111111, $test);
 	}
 
-	public function dataRsa()
+	public function dataRsa(): array
 	{
 		return [
 			'diaspora' => [
@@ -82,34 +91,6 @@ class CryptoTest extends TestCase
 				'key' => file_get_contents(__DIR__ . '/../../datasets/crypto/rsa/diaspora-public-pem'),
 			],
 		];
-	}
-
-	/**
-	 * @dataProvider dataPEM
-	 */
-	public function testPemToMe(string $key)
-	{
-		Crypto::pemToMe($key, $m, $e);
-
-		$expectedRSA = new RSA();
-		$expectedRSA->loadKey([
-			'e' => new BigInteger($e, 256),
-			'n' => new BigInteger($m, 256)
-		]);
-
-		self::assertEquals($expectedRSA->getPublicKey(), $key);
-	}
-
-	/**
-	 * @dataProvider dataPEM
-	 */
-	public function testMeToPem(string $key)
-	{
-		Crypto::pemToMe($key, $m, $e);
-
-		$checkKey = Crypto::meToPem($m, $e);
-
-		self::assertEquals($key, $checkKey);
 	}
 }
 

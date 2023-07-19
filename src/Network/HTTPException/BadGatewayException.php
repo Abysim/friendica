@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,7 @@ use Friendica\Network\HTTPException;
 
 class BadGatewayException extends HTTPException
 {
-	protected $code = 502;
+	protected $code        = 502;
+	protected $httpdesc    = 'Bad Gateway';
+	protected $explanation = 'The server was acting as a gateway or proxy and received an invalid response from the upstream server.';
 }

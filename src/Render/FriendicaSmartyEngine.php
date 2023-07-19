@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,7 +23,7 @@ namespace Friendica\Render;
 
 use Friendica\Core\Hook;
 use Friendica\DI;
-use Friendica\Network\HTTPException\InternalServerErrorException;
+use Friendica\Network\HTTPException\ServiceUnavailableException;
 use Friendica\Util\Strings;
 
 /**
@@ -31,7 +31,7 @@ use Friendica\Util\Strings;
  */
 final class FriendicaSmartyEngine extends TemplateEngine
 {
-	static $name = "smarty3";
+	static $name = 'smarty3';
 
 	const FILE_PREFIX = 'file:';
 	const STRING_PREFIX = 'string:';
@@ -44,17 +44,21 @@ final class FriendicaSmartyEngine extends TemplateEngine
 	 */
 	public function __construct(string $theme, array $theme_info)
 	{
-		$this->theme = $theme;
+		$this->theme      = $theme;
 		$this->theme_info = $theme_info;
-		$this->smarty = new FriendicaSmarty($this->theme, $this->theme_info);
 
-		if (!is_writable(DI::basePath() . '/view/smarty3')) {
-			$admin_message = DI::l10n()->t('The folder view/smarty3/ must be writable by webserver.');
+		$work_dir     = DI::config()->get('smarty3', 'config_dir');
+		$use_sub_dirs = DI::config()->get('smarty3', 'use_sub_dirs');
+
+		$this->smarty = new FriendicaSmarty($this->theme, $this->theme_info, $work_dir, $use_sub_dirs);
+
+		if (!is_writable($work_dir)) {
+			$admin_message = DI::l10n()->t('The folder %s must be writable by webserver.', $work_dir);
 			DI::logger()->critical($admin_message);
-			$message = is_site_admin() ?
+			$message = DI::app()->isSiteAdmin() ?
 				$admin_message :
 				DI::l10n()->t('Friendica can\'t display this page at the moment, please contact the administrator.');
-			throw new InternalServerErrorException($message);
+			throw new ServiceUnavailableException($message);
 		}
 	}
 
@@ -69,7 +73,7 @@ final class FriendicaSmartyEngine extends TemplateEngine
 	/**
 	 * @inheritDoc
 	 */
-	public function replaceMacros(string $template, array $vars)
+	public function replaceMacros(string $template, array $vars): string
 	{
 		if (!Strings::startsWith($template, self::FILE_PREFIX)) {
 			$template = self::STRING_PREFIX . $template;
@@ -77,7 +81,7 @@ final class FriendicaSmartyEngine extends TemplateEngine
 
 		// "middleware": inject variables into templates
 		$arr = [
-			'template' => basename($this->smarty->filename),
+			'template' => basename($this->smarty->filename ?? ''),
 			'vars' => $vars
 		];
 		Hook::callAll('template_vars', $arr);

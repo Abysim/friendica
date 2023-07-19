@@ -1,53 +1,59 @@
 <?php
 /**
+ * @copyright Copyright (C) 2010-2023, the Friendica project
+ *
+ * @license GNU AGPL version 3 or any later version
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as
+ * published by the Free Software Foundation, either version 3 of the
+ * License, or (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ *
  * FixtureTest class.
  */
 
 namespace Friendica\Test;
 
 use Dice\Dice;
-use Friendica\Core\Config\Cache;
-use Friendica\Core\Config\IConfig;
-use Friendica\Core\Session;
-use Friendica\Core\Session\ISession;
+use Friendica\App\Arguments;
+use Friendica\App\Router;
+use Friendica\Core\Config\Capability\IManageConfigValues;
+use Friendica\Core\Config\Factory\Config;
+use Friendica\Core\Config\Util\ConfigFileManager;
+use Friendica\Core\Session\Capability\IHandleSessions;
+use Friendica\Core\Session\Type\Memory;
 use Friendica\Database\Database;
 use Friendica\Database\DBStructure;
 use Friendica\DI;
 use Friendica\Test\Util\Database\StaticDatabase;
+use Friendica\Test\Util\VFSTrait;
 
 /**
  * Parent class for test cases requiring fixtures
  */
-abstract class FixtureTest extends DatabaseTest
+abstract class FixtureTest extends MockedTest
 {
-	/** @var Dice */
-	protected $dice;
+	use FixtureTestTrait;
 
-	/**
-	 * Create variables used by tests.
-	 */
-	protected function setUp()
+	protected function setUp(): void
 	{
 		parent::setUp();
 
-		$this->dice = (new Dice())
-			->addRules(include __DIR__ . '/../static/dependencies.config.php')
-			->addRule(Database::class, ['instanceOf' => StaticDatabase::class, 'shared' => true])
-			->addRule(ISession::class, ['instanceOf' => Session\Memory::class, 'shared' => true, 'call' => null]);
-		DI::init($this->dice);
+		$this->setUpFixtures();
+	}
 
-		/** @var IConfig $config */
-		$configCache = $this->dice->create(Cache::class);
-		$configCache->set('database', 'disable_pdo', true);
+	protected function tearDown(): void
+	{
+		$this->tearDownFixtures();
 
-		/** @var Database $dba */
-		$dba = $this->dice->create(Database::class);
-
-		$dba->setTestmode(true);
-
-		DBStructure::checkInitialValues();
-
-		// Load the API dataset for the whole API
-		$this->loadFixture(__DIR__ . '/datasets/api.fixture.php', $dba);
+		parent::tearDown();
 	}
 }

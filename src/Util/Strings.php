@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,6 +23,8 @@ namespace Friendica\Util;
 
 use Friendica\Content\ContactSelector;
 use Friendica\Core\Logger;
+use Friendica\Core\System;
+use ParagonIE\ConstantTime\Base64;
 
 /**
  * This class handles string functions
@@ -32,11 +34,12 @@ class Strings
 	/**
 	 * Generates a pseudo-random string of hexadecimal characters
 	 *
-	 * @param int $size
-	 * @return string
+	 * @param int $size Size of string (default: 64)
+	 *
+	 * @return string Pseudo-random string
 	 * @throws \Exception
 	 */
-	public static function getRandomHex($size = 64)
+	public static function getRandomHex(int $size = 64): string
 	{
 		$byte_size = ceil($size / 2);
 
@@ -51,28 +54,11 @@ class Strings
 	 * Checks, if the given string is a valid hexadecimal code
 	 *
 	 * @param string $hexCode
-	 *
 	 * @return bool
 	 */
-	public static function isHex($hexCode)
+	public static function isHex(string $hexCode): bool
 	{
 		return !empty($hexCode) ? @preg_match("/^[a-f0-9]{2,}$/i", $hexCode) && !(strlen($hexCode) & 1) : false;
-	}
-
-	/**
-	 * This is our primary input filter.
-	 *
-	 * Use this on any text input where angle chars are not valid or permitted
-	 * They will be replaced with safer brackets. This may be filtered further
-	 * if these are not allowed either.
-	 *
-	 * @param string $string Input string
-	 * @return string Filtered string
-	 * @deprecated since 2020.09 Please use Smarty default HTML escaping for templates or htmlspecialchars() otherwise
-	 */
-	public static function escapeTags($string)
-	{
-		return str_replace(["<", ">"], ['[', ']'], $string);
 	}
 
 	/**
@@ -91,10 +77,9 @@ class Strings
 	 * Generate a string that's random, but usually pronounceable. Used to generate initial passwords
 	 *
 	 * @param int $len	length
-	 *
 	 * @return string
 	 */
-	public static function getRandomName($len)
+	public static function getRandomName(int $len): string
 	{
 		if ($len <= 0) {
 			return '';
@@ -181,7 +166,7 @@ class Strings
 	 * @return string Formatted network name
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function formatNetworkName($network, $url = '')
+	public static function formatNetworkName(string $network, string $url = ''): string
 	{
 		if ($network != '') {
 			if ($url != '') {
@@ -192,6 +177,8 @@ class Strings
 
 			return $network_name;
 		}
+
+		return '';
 	}
 
 	/**
@@ -203,7 +190,7 @@ class Strings
 	 *
 	 * @return string		Transformed string.
 	 */
-	public static function deindent($text, $chr = "[\t ]", $count = NULL)
+	public static function deindent(string $text, string $chr = "[\t ]", int $count = null): string
 	{
 		$lines = explode("\n", $text);
 
@@ -232,9 +219,14 @@ class Strings
 	 *
 	 * @return string	Size with measured units.
 	 */
-	public static function formatBytes($bytes, $precision = 2)
+	public static function formatBytes(int $bytes, int $precision = 2): string
 	{
-		$units = ['B', 'KB', 'MB', 'GB', 'TB'];
+		// If this method is called for an infinite (== unlimited) amount of bytes:
+		if ($bytes == INF) {
+			return INF;
+		}
+
+		$units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
 		$bytes = max($bytes, 0);
 		$pow = floor(($bytes ? log($bytes) : 0) / log(1024));
 		$pow = min($pow, count($units) - 1);
@@ -247,10 +239,9 @@ class Strings
 	 * Protect percent characters in sprintf calls
 	 *
 	 * @param string $s String to transform.
-	 *
 	 * @return string	Transformed string.
 	 */
-	public static function protectSprintf($s)
+	public static function protectSprintf(string $s): string
 	{
 		return str_replace('%', '%%', $s);
 	}
@@ -260,61 +251,40 @@ class Strings
 	 *
 	 * @param string $s					URL to encode
 	 * @param boolean $strip_padding	Optional. Default false
-	 *
 	 * @return string	Encoded URL
+	 * @see https://web.archive.org/web/20160506073138/http://salmon-protocol.googlecode.com:80/svn/trunk/draft-panzer-magicsig-01.html#params
 	 */
-	public static function base64UrlEncode($s, $strip_padding = false)
+	public static function base64UrlEncode(string $s, bool $strip_padding = false): string
 	{
-		$s = strtr(base64_encode($s), '+/', '-_');
-
 		if ($strip_padding) {
-			$s = str_replace('=', '', $s);
+			$s = Base64::encodeUnpadded($s);
+		} else {
+			$s = Base64::encode($s);
 		}
 
-		return $s;
+		return strtr($s, '+/', '-_');
 	}
 
 	/**
 	 * Decode Base64 Encoded URL and translate -_ to +/
-	 * @param string $s URL to decode
 	 *
+	 * @param string $s URL to decode
 	 * @return string	Decoded URL
 	 * @throws \Exception
+	 * @see https://web.archive.org/web/20160506073138/http://salmon-protocol.googlecode.com:80/svn/trunk/draft-panzer-magicsig-01.html#params
 	 */
-	public static function base64UrlDecode($s)
+	public static function base64UrlDecode(string $s): string
 	{
-		if (is_array($s)) {
-			Logger::log('base64url_decode: illegal input: ' . print_r(debug_backtrace(), true));
-			return $s;
-		}
-
-		/*
-		*  // Placeholder for new rev of salmon which strips base64 padding.
-		*  // PHP base64_decode handles the un-padded input without requiring this step
-		*  // Uncomment if you find you need it.
-		*
-		*	$l = strlen($s);
-		*	if (!strpos($s,'=')) {
-		*		$m = $l % 4;
-		*		if ($m == 2)
-		*			$s .= '==';
-		*		if ($m == 3)
-		*			$s .= '=';
-		*	}
-		*
-		*/
-
-		return base64_decode(strtr($s, '-_', '+/'));
+		return Base64::decode(strtr($s, '-_', '+/'));
 	}
 
 	/**
 	 * Normalize url
 	 *
 	 * @param string $url	URL to be normalized.
-	 *
 	 * @return string	Normalized URL.
 	 */
-	public static function normaliseLink($url)
+	public static function normaliseLink(string $url): string
 	{
 		$ret = str_replace(['https:', '//www.'], ['http:', '//'], $url);
 		return rtrim($ret, '/');
@@ -324,10 +294,9 @@ class Strings
 	 * Normalize OpenID identity
 	 *
 	 * @param string $s OpenID Identity
-	 *
 	 * @return string	normalized OpenId Identity
 	 */
-	public static function normaliseOpenID($s)
+	public static function normaliseOpenID(string $s): string
 	{
 		return trim(str_replace(['http://', 'https://'], ['', ''], $s), '/');
 	}
@@ -343,7 +312,7 @@ class Strings
 	 * @return boolean True if the URLs match, otherwise False
 	 *
 	 */
-	public static function compareLink($a, $b)
+	public static function compareLink(string $a, string $b): bool
 	{
 		return (strcasecmp(self::normaliseLink($a), self::normaliseLink($b)) === 0);
 	}
@@ -354,7 +323,7 @@ class Strings
 	 * @param string $uri
 	 * @return string
 	 */
-	public static function ensureQueryParameter($uri)
+	public static function ensureQueryParameter(string $uri): string
 	{
 		if (strpos($uri, '?') === false && ($pos = strpos($uri, '&')) !== false) {
 			$uri = substr($uri, 0, $pos) . '?' . substr($uri, $pos + 1);
@@ -367,10 +336,11 @@ class Strings
 	 * Check if the trimmed provided string is starting with one of the provided characters
 	 *
 	 * @param string $string
-	 * @param array	 $chars
+	 * @param array $chars
+	 *
 	 * @return bool
 	 */
-	public static function startsWithChars($string, array $chars)
+	public static function startsWithChars(string $string, array $chars): bool
 	{
 		$return = in_array(substr(trim($string), 0, 1), $chars);
 
@@ -385,7 +355,7 @@ class Strings
 	 * @param string $start
 	 * @return bool
 	 */
-	public static function startsWith(string $string, string $start)
+	public static function startsWith(string $string, string $start): bool
 	{
 		$return = substr_compare($string, $start, 0, strlen($start)) === 0;
 
@@ -398,52 +368,70 @@ class Strings
 	 * @see http://maettig.com/code/php/php-performance-benchmarks.php#endswith
 	 * @param string $string
 	 * @param string $end
+	 *
 	 * @return bool
 	 */
-	public static function endsWith(string $string, string $end)
+	public static function endsWith(string $string, string $end): bool
 	{
-		$return = substr_compare($string, $end, -strlen($end)) === 0;
-
-		return $return;
+		return (substr_compare($string, $end, -strlen($end)) === 0);
 	}
 
 	/**
 	 * Returns the regular expression string to match URLs in a given text
 	 *
 	 * @return string
-	 * @see https://daringfireball.net/2010/07/improved_regex_for_matching_urls
 	 */
-	public static function autoLinkRegEx()
+	public static function autoLinkRegEx(): string
 	{
 		return '@
-(?<![=\'\]"/])			# Not preceded by [, =, \', ], ", /
+(?<![=\'\]"/]) # Not preceded by [, =, \', ], ", /
 \b
-(							   # Capture 1: entire matched URL
-  https?://							   # http or https protocol
+(              # Capture 1: entire matched URL
+  ' . self::linkRegEx() . '
+)@xiu';
+	}
+
+	/**
+	 * Returns the regular expression string to match only an HTTP URL
+	 *
+	 * @return string
+	 */
+	public static function onlyLinkRegEx(): string
+	{
+		return '@^' . self::linkRegEx() . '$@xiu';
+	}
+
+	/**
+	 * @return string
+	 * @see https://daringfireball.net/2010/07/improved_regex_for_matching_urls
+	 */
+	private static function linkRegEx(): string
+	{
+		return 'https?://                   # http or https protocol
   (?:
-	[^/\s\xA0`!()\[\]{};:\'",<>?«»“”‘’.]	  # Domain can\'t start with a .
-	[^/\s\xA0`!()\[\]{};:\'",<>?«»“”‘’]+	  # Domain can\'t end with a .
+	[^/\s\xA0`!()\[\]{};:\'",<>?«»“”‘’.]    # Domain can\'t start with a .
+	[^/\s\xA0`!()\[\]{};:\'",<>?«»“”‘’]+    # Domain can\'t end with a .
 	\.
 	[^/\s\xA0`!()\[\]{};:\'".,<>?«»“”‘’]+/? # Followed by a slash
   )
-  (?:								   # One or more:
-	[^\s\xA0()<>]+						   # Run of non-space, non-()<>
-	|								   #   or
-	\(([^\s\xA0()<>]+|(\([^\s()<>]+\)))*\) # balanced parens, up to 2 levels
-	|								   #   or
-	[^\s\xA0`!()\[\]{};:\'".,<>?«»“”‘’]	 # not a space or one of these punct chars
-  )*
-)@xiu';
+  (?:                                       # One or more:
+	[^\s\xA0()<>]+                            # Run of non-space, non-()<>
+	|                                         #   or
+	\(([^\s\xA0()<>]+|(\([^\s()<>]+\)))*\)    # balanced parens, up to 2 levels
+	|								          #   or
+	[^\s\xA0`!()\[\]{};:\'".,<>?«»“”‘’]	      # not a space or one of these punct chars
+  )*';
 	}
 
 	/**
 	 * Ensures a single path item doesn't contain any path-traversing characters
 	 *
-	 * @see https://stackoverflow.com/a/46097713
 	 * @param string $pathItem
+	 *
+	 * @see https://stackoverflow.com/a/46097713
 	 * @return string
 	 */
-	public static function sanitizeFilePathItem($pathItem)
+	public static function sanitizeFilePathItem(string $pathItem): string
 	{
 		$pathItem = str_replace('/', '_', $pathItem);
 		$pathItem = str_replace('\\', '_', $pathItem);
@@ -462,10 +450,11 @@ class Strings
 	 * @param string   $replacement
 	 * @param int      $start
 	 * @param int|null $length
+	 *
 	 * @return string
 	 * @see substr_replace()
 	 */
-	public static function substringReplace(string $string, string $replacement, int $start, int $length = null)
+	public static function substringReplace(string $string, string $replacement, int $start, int $length = null): string
 	{
 		$string_length = mb_strlen($string);
 
@@ -500,17 +489,17 @@ class Strings
 	 * @param string   $text
 	 * @param string   $regex
 	 * @param callable $callback
+	 *
 	 * @return string
-	 * @throws \Exception
 	 */
-	public static function performWithEscapedBlocks(string $text, string $regex, callable $callback)
+	public static function performWithEscapedBlocks(string $text, string $regex, callable $callback): string
 	{
 		// Enables nested use
 		$executionId = random_int(PHP_INT_MAX / 10, PHP_INT_MAX);
 
 		$blocks = [];
 
-		$text = preg_replace_callback($regex,
+		$return = preg_replace_callback($regex,
 			function ($matches) use ($executionId, &$blocks) {
 				$return = '«block-' . $executionId . '-' . count($blocks) . '»';
 
@@ -521,7 +510,11 @@ class Strings
 			$text
 		);
 
-		$text = $callback($text) ?? '';
+		if (is_null($return)) {
+			Logger::notice('Received null value from preg_replace_callback', ['text' => $text, 'regex' => $regex, 'blocks' => $blocks, 'executionId' => $executionId, 'callstack' => System::callstack(10)]);
+		}
+
+		$text = $callback($return ?? $text) ?? '';
 
 		// Restore code blocks
 		$text = preg_replace_callback('/«block-' . $executionId . '-([0-9]+)»/iU',
@@ -537,4 +530,35 @@ class Strings
 
 		return $text;
 	}
+
+	/**
+	 * This function converts a file size string written in PHP's shorthand notation to an integer number of total bytes.
+	 * For example: The string for shorthand notation of '2M' (which is 2,097,152 Bytes) is converted to 2097152
+	 * @see https://www.php.net/manual/en/faq.using.php#faq.using.shorthandbytes
+	 * @param string $shorthand
+	 * @return int
+	 */
+	public static function getBytesFromShorthand(string $shorthand): int
+	{
+		$shorthand = trim($shorthand);
+
+		if (is_numeric($shorthand)) {
+			return $shorthand;
+		}
+
+		$last      = strtolower($shorthand[strlen($shorthand)-1]);
+		$shorthand = substr($shorthand, 0, -1);
+
+		switch($last) {
+			case 'g':
+				$shorthand *= 1024;
+			case 'm':
+				$shorthand *= 1024;
+			case 'k':
+				$shorthand *= 1024;
+		}
+
+		return $shorthand;
+	}
+
 }

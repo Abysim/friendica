@@ -12,16 +12,16 @@
 {{/if}}
 
 <div id="tread-wrapper-{{$item.uriid}}" class="tread-wrapper {{$item.toplevel}} {{if $item.toplevel}} h-entry {{else}} u-comment h-cite {{/if}}">
-<div class="wall-item-outside-wrapper {{$item.indent}} {{$item.shiny}} wallwall" id="wall-item-outside-wrapper-{{$item.id}}" >
-<div class="wall-item-content-wrapper {{$item.indent}} {{$item.shiny}}" id="wall-item-content-wrapper-{{$item.id}}" >
+<div class="wall-item-outside-wrapper {{$item.indent}} {{$item.shiny}} wallwall" id="wall-item-outside-wrapper-{{$item.id}}">
+<div class="wall-item-content-wrapper {{$item.indent}} {{$item.shiny}}" id="wall-item-content-wrapper-{{$item.id}}">
 
 		<div class="wall-item-info{{if $item.owner_url}} wallwall{{/if}}" id="wall-item-info-{{$item.id}}">
 			{{if $item.owner_url}}
-			<div class="wall-item-photo-wrapper mframe wwto" id="wall-item-ownerphoto-wrapper-{{$item.id}}" >
+			<div class="wall-item-photo-wrapper mframe wwto" id="wall-item-ownerphoto-wrapper-{{$item.id}}">
 				<a href="{{$item.owner_url}}" title="{{$item.olinktitle}}" class="wall-item-photo-link" id="wall-item-ownerphoto-link-{{$item.id}}">
 				<img src="{{$item.owner_photo}}" class="wall-item-photo{{$item.osparkle}}" id="wall-item-ownerphoto-{{$item.id}}" style="height: 80px; width: 80px;" alt="{{$item.owner_name}}" /></a>
 			</div>
-			<div class="wall-item-arrowphoto-wrapper" ><img src="view/theme/smoothly/images/larrow.gif" alt="{{$item.wall}}" /></div>
+			<div class="wall-item-arrowphoto-wrapper"><img src="view/theme/smoothly/images/larrow.gif" alt="{{$item.wall}}" /></div>
 			{{/if}}
 			<div class="wall-item-photo-wrapper mframe{{if $item.owner_url}} wwfrom{{/if}} p-author h-card" id="wall-item-photo-wrapper-{{$item.id}}"
 				onmouseover="if (typeof t{{$item.id}} != 'undefined') clearTimeout(t{{$item.id}}); openMenu('wall-item-photo-menu-button-{{$item.id}}')"
@@ -48,21 +48,22 @@
 			<div class="wall-item-lock"></div>
 			{{/if}}
 		</div>
-		<div class="wall-item-content" id="wall-item-content-{{$item.id}}" >
+		<div class="wall-item-content" id="wall-item-content-{{$item.id}}">
 		<div class="wall-item-author">
 			<a href="{{$item.profile_url}}" title="{{$item.linktitle}}" class="wall-item-name-link">
-			<span class="wall-item-name{{$item.sparkle}}" id="wall-item-name-{{$item.id}}" >{{$item.name}}</span>
+			<span class="wall-item-name{{$item.sparkle}}" id="wall-item-name-{{$item.id}}">{{$item.name}}</span>
 			</a>
 			<div class="wall-item-ago">&bull;</div>
-			<div class="wall-item-ago" id="wall-item-ago-{{$item.id}}" title="{{$item.localtime}}"><time class="dt-published" datetime="{{$item.localtime}}">{{$item.ago}}</time><span class="pinned">{{$item.pinned}}</span></div>
+			<div class="wall-item-ago" id="wall-item-ago-{{$item.id}}"><time class="dt-published" title="{{$item.localtime}}" datetime="{{$item.utc}}">{{$item.ago}}</time><span class="pinned">{{$item.pinned}}</span></div>
 		</div>
 
 		<div>
 		<hr class="line-dots">
 		</div>
-			<div class="wall-item-title p-name" id="wall-item-title-{{$item.id}}">{{$item.title}}</div>
+			<div class="wall-item-title p-name" id="wall-item-title-{{$item.id}}" dir="auto">{{$item.title}}</div>
 			<div class="wall-item-title-end"></div>
-			<div class="wall-item-body" id="wall-item-body-{{$item.id}}" ><span class="e-content">{{$item.body_html nofilter}}</span>
+			<div class="wall-item-body" id="wall-item-body-{{$item.id}}">
+				<span class="e-content" dir="auto">{{$item.body_html nofilter}}</span>
 				<div class="body-tag">
 				{{if !$item.suppress_tags}}
 					{{foreach $item.tags as $tag}}
@@ -84,19 +85,21 @@
 				{{if $cat.last}}{{else}}, {{/if}}{{/foreach}}
 				</div>
 				{{/if}}
-
+				{{if $item.edited}}
+				<div class="itemedited text-muted">{{$item.edited['label']}} (<span title="{{$item.edited['date']}}">{{$item.edited['relative']}}</span>)</div>
+				{{/if}}
 			</div>
 		</div>
 		<div class="wall-item-social" id="wall-item-social-{{$item.id}}">
 
 			{{if $item.vote}}
 			<div class="wall-item-like-buttons" id="wall-item-like-buttons-{{$item.id}}">
-				<a href="#" class="icon like{{if $item.responses.like.self}} self{{/if}}" title="{{$item.vote.like.0}}" onclick="dolike({{$item.id}}, 'like'{{if $item.responses.like.self}}, true{{/if}}); return false"></a>
+				<a href="#" class="icon like{{if $item.responses.like.self}} self{{/if}}" title="{{$item.vote.like.0}}" onclick="doActivityItem({{$item.id}}, 'like'{{if $item.responses.like.self}}, true{{/if}}); return false"></a>
 				{{if $item.vote.dislike}}
-				<a href="#" class="icon dislike{{if $item.responses.dislike.self}} self{{/if}}" title="{{$item.vote.dislike.0}}" onclick="dolike({{$item.id}}, 'dislike'{{if $item.responses.dislike.self}}, true{{/if}}); return false"></a>
+				<a href="#" class="icon dislike{{if $item.responses.dislike.self}} self{{/if}}" title="{{$item.vote.dislike.0}}" onclick="doActivityItem({{$item.id}}, 'dislike'{{if $item.responses.dislike.self}}, true{{/if}}); return false"></a>
 				{{/if}}
 				{{if $item.vote.announce}}
-				<a href="#" class="icon recycle{{if $item.responses.announce.self}} self{{/if}}" title="{{$item.vote.announce.0}}" onclick="dolike({{$item.id}}, 'announce'{{if $item.responses.announce.self}}, true{{/if}}); return false"></a>
+				<a href="#" class="icon recycle{{if $item.responses.announce.self}} self{{/if}}" title="{{$item.vote.announce.0}}" onclick="doActivityItem({{$item.id}}, 'announce'{{if $item.responses.announce.self}}, true{{/if}}); return false"></a>
 				{{/if}}
 				{{if $item.vote.share}}
 				<a href="#" class="icon share wall-item-share-buttons" title="{{$item.vote.share.0}}" onclick="jotShare({{$item.id}}); return false"></a>				{{/if}}
@@ -111,10 +114,10 @@
 			{{/if}}
 
 			{{if $item.pin}}
-			<a href="#" id="pinned-{{$item.id}}" onclick="dopin({{$item.id}}); return false;" class="pin-item icon {{$item.ispinned}}" title="{{$item.pin.toggle}}"></a>
+			<a href="#" id="pinned-{{$item.id}}" onclick="doPin({{$item.id}}); return false;" class="pin-item icon {{$item.ispinned}}" title="{{$item.pin.toggle}}"></a>
 			{{/if}}
 			{{if $item.star}}
-			<a href="#" id="starred-{{$item.id}}" onclick="dostar({{$item.id}}); return false;" class="star-item icon {{$item.isstarred}}" title="{{$item.star.toggle}}"></a>
+			<a href="#" id="starred-{{$item.id}}" onclick="doStar({{$item.id}}); return false;" class="star-item icon {{$item.isstarred}}" title="{{$item.star.toggle}}"></a>
 			{{/if}}
 			{{if $item.tagger}}
 			<a href="#" id="tagger-{{$item.id}}" onclick="itemTag({{$item.id}}); return false;" class="tag-item icon tagged" title="{{$item.tagger.add}}"></a>
@@ -131,13 +134,13 @@
 			<a class="editpost icon pencil" href="{{$item.edpost.0}}" title="{{$item.edpost.1}}"></a>
 			{{/if}}
 
-			<div class="wall-item-delete-wrapper" id="wall-item-delete-wrapper-{{$item.id}}" >
-				{{if $item.drop.dropping}}
-				<a href="item/drop/{{$item.id}}" onclick="return confirmDelete();" class="icon drophide" title="{{$item.drop.delete}}" onmouseover="imgbright(this);" onmouseout="imgdull(this);" ></a>
+			<div class="wall-item-delete-wrapper" id="wall-item-delete-wrapper-{{$item.id}}">
+				{{if $item.drop && $item.drop.dropping}}
+				<a href="item/drop/{{$item.id}}" onclick="return confirmDelete();" class="icon drophide" title="{{$item.drop.delete}}" onmouseover="imgbright(this);" onmouseout="imgdull(this);"></a>
 				{{/if}}
 			</div>
 
-			{{if $item.drop.pagedrop}}
+			{{if $item.drop && $item.drop.pagedrop}}
 			<input type="checkbox" onclick="checkboxhighlight(this);" title="{{$item.drop.select}}" class="item-select" name="itemselected[]" value="{{$item.id}}" />
 			{{/if}}
 
@@ -151,21 +154,21 @@
 
 	{{if $item.threaded}}
 	{{if $item.comment_html}}
-        <div class="wall-item-comment-wrapper {{$item.indent}} {{$item.shiny}}" >
+        <div class="wall-item-comment-wrapper {{$item.indent}} {{$item.shiny}}">
 		{{$item.comment_html nofilter}}
 	</div>
 	{{/if}}
 	{{/if}}
 </div>
 
-<div class="wall-item-outside-wrapper-end {{$item.indent}} {{$item.shiny}}" ></div>
+<div class="wall-item-outside-wrapper-end {{$item.indent}} {{$item.shiny}}"></div>
 
 {{foreach $item.children as $child}}
 	{{include file="{{$child.template}}" item=$child}}
 {{/foreach}}
 
 {{if $item.flatten}}
-<div class="wall-item-comment-wrapper" >
+<div class="wall-item-comment-wrapper">
 	{{$item.comment_html nofilter}}
 </div>
 {{/if}}

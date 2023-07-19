@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,15 +22,16 @@
 namespace Friendica\Module;
 
 use Friendica\BaseModule;
+use Friendica\Core\System;
 
 /**
  * Return the default robots.txt
  */
 class RobotsTxt extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-		$allDisalloweds = [
+		$allDisallowed = [
 			'/settings/',
 			'/admin/',
 			'/message/',
@@ -41,9 +42,9 @@ class RobotsTxt extends BaseModule
 
 		header('Content-Type: text/plain');
 		echo 'User-agent: *' . PHP_EOL;
-		foreach ($allDisalloweds as $disallowed) {
+		foreach ($allDisallowed as $disallowed) {
 			echo 'Disallow: ' . $disallowed . PHP_EOL;
 		}
-		exit();
+		System::exit();
 	}
 }

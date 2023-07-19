@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,6 +23,7 @@ namespace Friendica\Model;
 
 use Friendica\Content\Pager;
 use Friendica\Database\DBA;
+use Friendica\Network\HTTPException;
 use Friendica\Util\DateTimeFormat;
 use Friendica\Util\Strings;
 
@@ -34,13 +35,12 @@ class Register
 	/**
 	 * Return the list of pending registrations
 	 *
-	 * @param int    $start Start count (Default is 0)
+	 * @param int $start Start count (Default is 0)
 	 * @param int $count Count of the items per page (Default is @see Pager::ITEMS_PER_PAGE)
-	 *
-	 * @return array
+	 * @return array|bool Array on succes, false on failure
 	 * @throws \Exception
 	 */
-	public static function getPending($start = 0, $count = Pager::ITEMS_PER_PAGE)
+	public static function getPending(int $start = 0, int $count = Pager::ITEMS_PER_PAGE)
 	{
 		return DBA::selectToArray('pending-view', [], [], ['limit' => [$start, $count]]);
 	}
@@ -50,8 +50,7 @@ class Register
 	 *
 	 * @param int $uid The user id
 	 *
-	 * @return array The pending user information
-	 *
+	 * @return array|bool Array on succes, false on failure
 	 * @throws \Exception
 	 */
 	public static function getPendingForUser(int $uid)
@@ -65,7 +64,7 @@ class Register
 	 * @return int
 	 * @throws \Exception
 	 */
-	public static function getPendingCount()
+	public static function getPendingCount(): int
 	{
 		return DBA::count('pending-view', ['self' => true]);
 	}
@@ -74,10 +73,10 @@ class Register
 	 * Returns the register record associated with the provided hash
 	 *
 	 * @param  string $hash
-	 * @return array
+	 * @return array|bool Array on succes, false on failure
 	 * @throws \Exception
 	 */
-	public static function getByHash($hash)
+	public static function getByHash(string $hash)
 	{
 		return DBA::selectFirst('register', [], ['hash' => $hash]);
 	}
@@ -89,7 +88,7 @@ class Register
 	 * @return boolean
 	 * @throws \Exception
 	 */
-	public static function existsByHash($hash)
+	public static function existsByHash(string $hash): bool
 	{
 		return DBA::exists('register', ['hash' => $hash]);
 	}
@@ -100,7 +99,7 @@ class Register
 	 * @return string
 	 * @throws \Exception
 	 */
-	public static function createForInvitation()
+	public static function createForInvitation(): string
 	{
 		$code = Strings::getRandomName(8) . random_int(1000, 9999);
 
@@ -115,21 +114,27 @@ class Register
 	}
 
 	/**
-	 * Creates a register record for approval and returns the success of the database insert
+	 * Creates a register record for approval
 	 * Checks for the existence of the provided user id
 	 *
-	 * @param  integer $uid      The ID of the user needing approval
-	 * @param  string  $language The registration language
-	 * @param  string  $note     An additional message from the user
-	 * @return boolean
-	 * @throws \Exception
+	 * @param integer $uid      The ID of the user needing approval
+	 * @param string  $language The registration language
+	 * @param string  $note     An additional message from the user
+	 * @return void
+	 * @throws \OutOfBoundsException
+	 * @throws HTTPException\InternalServerErrorException
+	 * @throws HTTPException\NotFoundException
 	 */
-	public static function createForApproval($uid, $language, $note = '')
+	public static function createForApproval(int $uid, string $language, string $note = ''): void
 	{
 		$hash = Strings::getRandomHex();
 
+		if (!$uid) {
+			throw new \OutOfBoundsException("User ID can't be empty");
+		}
+
 		if (!User::exists($uid)) {
-			return false;
+			throw new HTTPException\NotFoundException("User ID doesn't exist");
 		}
 
 		$fields = [
@@ -141,7 +146,9 @@ class Register
 			'note'     => $note
 		];
 
-		return DBA::insert('register', $fields);
+		if (!DBA::insert('register', $fields)) {
+			throw new HTTPException\InternalServerErrorException('Unable to insert a `register` record');
+		}
 	}
 
 	/**
@@ -151,7 +158,7 @@ class Register
 	 * @return boolean
 	 * @throws \Exception
 	 */
-	public static function deleteByHash($hash)
+	public static function deleteByHash(string $hash): bool
 	{
 		return DBA::delete('register', ['hash' => $hash]);
 	}

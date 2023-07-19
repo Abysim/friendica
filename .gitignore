@@ -10,13 +10,13 @@ home.html
 robots.txt
 
 #ignore local config
-/config/local.config.php
-/config/addon.config.php
-/config/local.ini.php
-/config/addon.ini.php
+!/config/local-sample.config.php
+/config/*.config.php
+/config/*.ini.php
 
 #ignore documentation, it should be newly built
-/doc/html
+/doc/api
+/doc/cache
 
 #ignore reports, should be generated with every build
 report/
@@ -79,3 +79,21 @@ venv/
 
 #Ignore log folder
 /log
+
+#Ignore temporary installed phpunit
+/bin/phpunit
+
+#Ignore cache file
+.php_cs.cache
+
+#ignore avatar picture cache path
+/avatar
+
+#Ignore autotest results
+autotest-results.xml
+
+#ignore phpunit result cache
+tests/.phpunit.result.cache
+
+#ignore .php_cs (local copy)
+.php_cs

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,7 @@ use Friendica\Network\HTTPException;
 
 class GoneException extends HTTPException
 {
-	protected $code = 410;
+	protected $code        = 410;
+	protected $httpdesc    = 'Gone';
+	protected $explanation = 'Indicates that the resource requested is no longer available and will not be available again.';
 }

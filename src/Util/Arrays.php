@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -29,8 +29,8 @@ class Arrays
 	/**
 	 * Private constructor
 	 */
-	private function __construct () {
-		// Utitlities don't have instances
+	private function __construct() {
+		// Utilities don't have instances
 	}
 
 	/**
@@ -40,7 +40,7 @@ class Arrays
 	 * @param string $glue  Glue for imploded elements
 	 * @return string String with elements from array
 	 */
-	public static function recursiveImplode (array $array, $glue) {
+	public static function recursiveImplode(array $array, $glue) {
 		// Init returned string
 		$string = '';
 
@@ -61,5 +61,33 @@ class Arrays
 
 		// Return it
 		return $string;
+	}
+
+	/**
+	 * walks recursively through an array with the possibility to change value and key
+	 *
+	 * @param array    $array    The array to walk through
+	 * @param callable $callback The callback function
+	 *
+	 * @return array the transformed array
+	 */
+	public static function walkRecursive(array &$array, callable $callback)
+	{
+		$new_array = [];
+
+		foreach ($array as $k => $v) {
+			if (is_array($v)) {
+				if ($callback($v, $k)) {
+					$new_array[$k] = self::walkRecursive($v, $callback);
+				}
+			} else {
+				if ($callback($v, $k)) {
+					$new_array[$k] = $v;
+				}
+			}
+		}
+		$array = $new_array;
+
+		return $array;
 	}
 }

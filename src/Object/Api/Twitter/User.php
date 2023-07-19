@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,14 +21,18 @@
 
 namespace Friendica\Object\Api\Twitter;
 
-use Friendica\BaseEntity;
+use Friendica\BaseDataTransferObject;
 use Friendica\Content\ContactSelector;
 use Friendica\Content\Text\BBCode;
+use Friendica\Core\Protocol;
+use Friendica\Model\Contact;
+use Friendica\Util\DateTimeFormat;
+use Friendica\Util\Proxy;
 
 /**
  * @see https://developer.twitter.com/en/docs/tweets/data-dictionary/overview/user-object
  */
-class User extends BaseEntity
+class User extends BaseDataTransferObject
 {
 	/** @var int */
 	protected $id;
@@ -80,6 +84,14 @@ class User extends BaseEntity
 	protected $withheld_scope;
 
 	/**
+	 * Missing fields:
+	 *
+	 * - profile_sidebar_fill_color
+	 * - profile_link_color
+	 * - profile_background_color
+	 */
+
+	/**
 	 * @param array $publicContact         Full contact table record with uid = 0
 	 * @param array $apcontact             Optional full apcontact table record
 	 * @param array $userContact           Optional full contact table record with uid != 0
@@ -87,11 +99,13 @@ class User extends BaseEntity
 	 * @param bool  $include_user_entities Whether to add the entities property
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public function __construct(array $publicContact, array $apcontact = [], array $userContact = [], $skip_status = false, $include_user_entities = true)
+	public function __construct(array $publicContact, array $apcontact = [], array $userContact = [], $status = null, $include_user_entities = true)
 	{
+		$uid = $userContact['uid'] ?? 0;
+
 		$this->id                      = (int)$publicContact['id'];
 		$this->id_str                  = (string) $publicContact['id'];
-		$this->name                    = $publicContact['name'];
+		$this->name                    = $publicContact['name'] ?: $publicContact['nick'];
 		$this->screen_name             = $publicContact['nick'] ?: $publicContact['name'];
 		$this->location                = $publicContact['location'] ?:
 			ContactSelector::networkToName($publicContact['network'], $publicContact['url'], $publicContact['protocol']);
@@ -105,31 +119,34 @@ class User extends BaseEntity
 		if (!$include_user_entities) {
 			unset($this->entities);
 		}
-		$this->description             = BBCode::toPlaintext($publicContact['about']);
-		$this->profile_image_url_https = $userContact['avatar'] ?? $publicContact['avatar'];
+		$this->description             = (!empty($publicContact['about']) ? BBCode::toPlaintext($publicContact['about']) : '');
+		$this->profile_image_url_https = Contact::getAvatarUrlForUrl($publicContact['url'], $uid, Proxy::SIZE_MICRO);
 		$this->protected               = false;
 		$this->followers_count         = $apcontact['followers_count'] ?? 0;
 		$this->friends_count           = $apcontact['following_count'] ?? 0;
 		$this->listed_count            = 0;
-		$this->created_at              = api_date($publicContact['created']);
+		$this->created_at              = DateTimeFormat::utc($publicContact['created'], DateTimeFormat::API);
 		$this->favourites_count        = 0;
-		$this->verified                = false;
+		$this->verified                = $uid != 0;
 		$this->statuses_count          = $apcontact['statuses_count'] ?? 0;
-		$this->profile_banner_url      = '';
+		$this->profile_banner_url      = Contact::getHeaderUrlForId($publicContact['id'], '', $publicContact['updated']);
 		$this->default_profile         = false;
 		$this->default_profile_image   = false;
 
-		// @TODO Replace skip_status parameter with an optional Status parameter
-		unset($this->status);
+		if (!empty($status)) {
+			$this->status = $status;
+		} else {
+			unset($this->status);
+		}
 
 		//  Unused optional fields
 		unset($this->withheld_in_countries);
 		unset($this->withheld_scope);
 
 		// Deprecated
-		$this->profile_image_url              = $userContact['avatar'] ?? $publicContact['avatar'];
-		$this->profile_image_url_profile_size = $publicContact['thumb'];
-		$this->profile_image_url_large        = $publicContact['photo'];
+		$this->profile_image_url              = Contact::getAvatarUrlForUrl($publicContact['url'], $uid, Proxy::SIZE_MICRO);
+		$this->profile_image_url_profile_size = Contact::getAvatarUrlForUrl($publicContact['url'], $uid, Proxy::SIZE_THUMB);
+		$this->profile_image_url_large        = Contact::getAvatarUrlForUrl($publicContact['url'], $uid, Proxy::SIZE_LARGE);
 		$this->utc_offset                     = 0;
 		$this->time_zone                      = 'UTC';
 		$this->geo_enabled                    = false;
@@ -137,17 +154,15 @@ class User extends BaseEntity
 		$this->contributors_enabled           = false;
 		$this->is_translator                  = false;
 		$this->is_translation_enabled         = false;
-		$this->following                      = false;
+		$this->following                      = in_array($userContact['rel'] ?? Contact::NOTHING, [Contact::FOLLOWER, Contact::FRIEND]);
 		$this->follow_request_sent            = false;
 		$this->statusnet_blocking             = false;
 		$this->notifications                  = false;
 
 		// Friendica-specific
-		$this->uid                   = (int)$userContact['uid'] ?? 0;
-		$this->cid                   = (int)$userContact['id'] ?? 0;
+		$this->uid                   = (int)$uid;
+		$this->cid                   = (int)($userContact['id'] ?? 0);
 		$this->pid                   = (int)$publicContact['id'];
-		$this->self                  = (boolean)$userContact['self'] ?? false;
-		$this->network               = $publicContact['network'];
 		$this->statusnet_profile_url = $publicContact['url'];
 	}
 }

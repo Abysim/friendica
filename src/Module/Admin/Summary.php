@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,25 +21,27 @@
 
 namespace Friendica\Module\Admin;
 
+use Friendica\App;
 use Friendica\Core\Addon;
-use Friendica\Core\Config\Cache;
-use Friendica\Core\Logger;
+use Friendica\Core\Config\Util\ConfigFileManager;
+use Friendica\Core\Config\ValueObject\Cache;
 use Friendica\Core\Renderer;
 use Friendica\Core\Update;
 use Friendica\Database\DBA;
 use Friendica\Database\DBStructure;
 use Friendica\DI;
-use Friendica\Model\Register;
+use Friendica\Core\Config\Factory\Config;
 use Friendica\Module\BaseAdmin;
-use Friendica\Network\HTTPException\InternalServerErrorException;
-use Friendica\Util\ConfigFileLoader;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
+use Friendica\Network\HTTPException\ServiceUnavailableException;
+use Friendica\Network\Probe;
 use Friendica\Util\DateTimeFormat;
 
 class Summary extends BaseAdmin
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		parent::content($parameters);
+		parent::content();
 
 		$a = DI::app();
 
@@ -53,36 +55,39 @@ class Summary extends BaseAdmin
 			$warningtext[] = DI::l10n()->t('Template engine (%s) error: %s', $templateEngine::$name, $error);
 		}
 
-		if (DBA::count(['information_schema' => 'tables'], ['engine' => 'myisam', 'table_schema' => DBA::databaseName()])) {
+		if (DBA::count('information_schema.tables', ['engine' => 'myisam', 'table_schema' => DBA::databaseName()])) {
 			$warningtext[] = DI::l10n()->t('Your DB still runs with MyISAM tables. You should change the engine type to InnoDB. As Friendica will use InnoDB only features in the future, you should change this! See <a href="%s">here</a> for a guide that may be helpful converting the table engines. You may also use the command <tt>php bin/console.php dbstructure toinnodb</tt> of your Friendica installation for an automatic conversion.<br />', 'https://dev.mysql.com/doc/refman/5.7/en/converting-tables-to-innodb.html');
 		}
 
 		// are there InnoDB tables in Antelope in the DB? If so, trigger a warning message
-		if (DBA::count(['information_schema' => 'tables'], ['ENGINE' => 'InnoDB', 'ROW_FORMAT' => ['COMPACT', 'REDUNDANT'], 'table_schema' => DBA::databaseName()])) {
+		if (DBA::count('information_schema.tables', ['ENGINE' => 'InnoDB', 'ROW_FORMAT' => ['COMPACT', 'REDUNDANT'], 'table_schema' => DBA::databaseName()])) {
 			$warningtext[] = DI::l10n()->t('Your DB still runs with InnoDB tables in the Antelope file format. You should change the file format to Barracuda. Friendica is using features that are not provided by the Antelope format. See <a href="%s">here</a> for a guide that may be helpful converting the table engines. You may also use the command <tt>php bin/console.php dbstructure toinnodb</tt> of your Friendica installation for an automatic conversion.<br />', 'https://dev.mysql.com/doc/refman/5.7/en/innodb-file-format.html');
 		}
 
 		// Avoid the database error 1615 "Prepared statement needs to be re-prepared", see https://github.com/friendica/friendica/issues/8550
-		$table_definition_cache = DBA::getVariable('table_definition_cache');
-		$table_open_cache = DBA::getVariable('table_open_cache');
-		if (!empty($table_definition_cache) && !empty($table_open_cache)) {
-			$suggested_definition_cache = min(400 + round($table_open_cache / 2, 1), 2000);
-			if ($suggested_definition_cache > $table_definition_cache) {
-				$warningtext[] = DI::l10n()->t('Your table_definition_cache is too low (%d). This can lead to the database error "Prepared statement needs to be re-prepared". Please set it at least to %d (or -1 for autosizing). See <a href="%s">here</a> for more information.<br />', $table_definition_cache, $suggested_definition_cache, 'https://dev.mysql.com/doc/refman/5.7/en/server-system-variables.html#sysvar_table_definition_cache');
+		if (!DI::config()->get('database', 'pdo_emulate_prepares')) {
+			$table_definition_cache = DBA::getVariable('table_definition_cache');
+			$table_open_cache = DBA::getVariable('table_open_cache');
+			if (!empty($table_definition_cache) && !empty($table_open_cache)) {
+				$suggested_definition_cache = min(400 + round($table_open_cache / 2, 1), 2000);
+				if ($suggested_definition_cache > $table_definition_cache) {
+					$warningtext[] = DI::l10n()->t('Your table_definition_cache is too low (%d). This can lead to the database error "Prepared statement needs to be re-prepared". Please set it at least to %d. See <a href="%s">here</a> for more information.<br />', $table_definition_cache, $suggested_definition_cache, 'https://dev.mysql.com/doc/refman/5.7/en/server-system-variables.html#sysvar_table_definition_cache');
+				}
 			}
 		}
 
 		// Check if github.com/friendica/stable/VERSION is higher then
 		// the local version of Friendica. Check is opt-in, source may be stable or develop branch
 		if (DI::config()->get('system', 'check_new_version_url', 'none') != 'none') {
-			$gitversion = DI::config()->get('system', 'git_friendica_version');
-			if (version_compare(FRIENDICA_VERSION, $gitversion) < 0) {
-				$warningtext[] = DI::l10n()->t('There is a new version of Friendica available for download. Your current version is %1$s, upstream version is %2$s', FRIENDICA_VERSION, $gitversion);
+			$gitversion = DI::keyValue()->get('git_friendica_version') ?? ''; 
+
+			if (version_compare(App::VERSION, $gitversion) < 0) {
+				$warningtext[] = DI::l10n()->t('There is a new version of Friendica available for download. Your current version is %1$s, upstream version is %2$s', App::VERSION, $gitversion);
 			}
 		}
 
 		if (DI::config()->get('system', 'dbupdate', DBStructure::UPDATE_NOT_CHECKED) == DBStructure::UPDATE_NOT_CHECKED) {
-			DBStructure::update($a->getBasePath(), false, true);
+			DBStructure::performUpdate();
 		}
 
 		if (DI::config()->get('system', 'dbupdate') == DBStructure::UPDATE_FAILED) {
@@ -93,7 +98,11 @@ class Summary extends BaseAdmin
 			$warningtext[] = DI::l10n()->t('The last update failed. Please run "php bin/console.php dbstructure update" from the command line and have a look at the errors that might appear. (Some of the errors are possibly inside the logfile.)');
 		}
 
-		$last_worker_call = DI::config()->get('system', 'last_worker_execution', false);
+		if (empty(DI::config()->get('system', 'url'))) {
+			$warningtext[] = DI::l10n()->t('The system.url entry is missing. This is a low level setting and can lead to unexpected behavior. Please add a valid entry as soon as possible in the config file or per console command!');
+		}
+
+		$last_worker_call = DI::keyValue()->get('last_worker_execution');
 		if (!$last_worker_call) {
 			$warningtext[] = DI::l10n()->t('The worker was never executed. Please check your database structure!');
 		} elseif ((strtotime(DateTimeFormat::utcNow()) - strtotime($last_worker_call)) > 60 * 60) {
@@ -102,18 +111,18 @@ class Summary extends BaseAdmin
 
 		// Legacy config file warning
 		if (file_exists('.htconfig.php')) {
-			$warningtext[] = DI::l10n()->t('Friendica\'s configuration now is stored in config/local.config.php, please copy config/local-sample.config.php and move your config from <code>.htconfig.php</code>. See <a href="%s">the Config help page</a> for help with the transition.', DI::baseUrl()->get() . '/help/Config');
+			$warningtext[] = DI::l10n()->t('Friendica\'s configuration now is stored in config/local.config.php, please copy config/local-sample.config.php and move your config from <code>.htconfig.php</code>. See <a href="%s">the Config help page</a> for help with the transition.', DI::baseUrl() . '/help/Config');
 		}
 
 		if (file_exists('config/local.ini.php')) {
-			$warningtext[] = DI::l10n()->t('Friendica\'s configuration now is stored in config/local.config.php, please copy config/local-sample.config.php and move your config from <code>config/local.ini.php</code>. See <a href="%s">the Config help page</a> for help with the transition.', DI::baseUrl()->get() . '/help/Config');
+			$warningtext[] = DI::l10n()->t('Friendica\'s configuration now is stored in config/local.config.php, please copy config/local-sample.config.php and move your config from <code>config/local.ini.php</code>. See <a href="%s">the Config help page</a> for help with the transition.', DI::baseUrl() . '/help/Config');
 		}
 
 		// Check server vitality
 		if (!self::checkSelfHostMeta()) {
-			$well_known = DI::baseUrl()->get() . '/.well-known/host-meta';
+			$well_known = DI::baseUrl() . Probe::HOST_META;
 			$warningtext[] = DI::l10n()->t('<a href="%s">%s</a> is not reachable on your system. This is a severe configuration issue that prevents server to server communication. See <a href="%s">the installation page</a> for help.',
-				$well_known, $well_known, DI::baseUrl()->get() . '/help/Install');
+				$well_known, $well_known, DI::baseUrl() . '/help/Install');
 		}
 
 		// Check logfile permission
@@ -126,7 +135,7 @@ class Summary extends BaseAdmin
 				$stream = $fileSystem->createStream($file);
 
 				if (!isset($stream)) {
-					throw new InternalServerErrorException('Stream is null.');
+					throw new ServiceUnavailableException('Stream is null.');
 				}
 
 			} catch (\Throwable $exception) {
@@ -140,7 +149,7 @@ class Summary extends BaseAdmin
 					$stream = $fileSystem->createStream($file);
 
 					if (!isset($stream)) {
-						throw new InternalServerErrorException('Stream is null.');
+						throw new ServiceUnavailableException('Stream is null.');
 					}
 				}
 			} catch (\Throwable $exception) {
@@ -149,7 +158,7 @@ class Summary extends BaseAdmin
 		}
 
 		// check legacy basepath settings
-		$configLoader = new ConfigFileLoader($a->getBasePath());
+		$configLoader = (new Config())->createConfigFileManager($a->getBasePath(), $_SERVER);
 		$configCache = new Cache();
 		$configLoader->setupCache($configCache);
 		$confBasepath = $configCache->get('system', 'basepath');
@@ -182,27 +191,6 @@ class Summary extends BaseAdmin
 			}
 		}
 
-		$accounts = [
-			[DI::l10n()->t('Normal Account'), 0],
-			[DI::l10n()->t('Automatic Follower Account'), 0],
-			[DI::l10n()->t('Public Forum Account'), 0],
-			[DI::l10n()->t('Automatic Friend Account'), 0],
-			[DI::l10n()->t('Blog Account'), 0],
-			[DI::l10n()->t('Private Forum Account'), 0]
-		];
-
-		$users = 0;
-		$pageFlagsCountStmt = DBA::p('SELECT `page-flags`, COUNT(`uid`) AS `count` FROM `user` GROUP BY `page-flags`');
-		while ($pageFlagsCount = DBA::fetch($pageFlagsCountStmt)) {
-			$accounts[$pageFlagsCount['page-flags']][1] = $pageFlagsCount['count'];
-			$users += $pageFlagsCount['count'];
-		}
-		DBA::close($pageFlagsCountStmt);
-
-		Logger::debug('accounts', ['accounts' => $accounts]);
-
-		$pending = Register::getPendingCount();
-
 		$deferred = DBA::count('workerqueue', ['NOT `done` AND `retrial` > ?', 0]);
 
 		$workerqueue = DBA::count('workerqueue', ['NOT `done` AND `retrial` = ?', 0]);
@@ -215,10 +203,12 @@ class Summary extends BaseAdmin
 
 		$server_settings = [
 			'label' => DI::l10n()->t('Server Settings'),
-			'php' => [
+			'php'   => [
+				'version'             => phpversion(),
+				'php.ini'             => php_ini_loaded_file(),
 				'upload_max_filesize' => ini_get('upload_max_filesize'),
-				'post_max_size' => ini_get('post_max_size'),
-				'memory_limit' => ini_get('memory_limit')
+				'post_max_size'       => ini_get('post_max_size'),
+				'memory_limit'        => ini_get('memory_limit')
 			],
 			'mysql' => [
 				'max_allowed_packet' => $max_allowed_packet
@@ -227,26 +217,23 @@ class Summary extends BaseAdmin
 
 		$t = Renderer::getMarkupTemplate('admin/summary.tpl');
 		return Renderer::replaceMacros($t, [
-			'$title' => DI::l10n()->t('Administration'),
-			'$page' => DI::l10n()->t('Summary'),
-			'$queues' => $queues,
-			'$users' => [DI::l10n()->t('Registered users'), $users],
-			'$accounts' => $accounts,
-			'$pending' => [DI::l10n()->t('Pending registrations'), $pending],
-			'$version' => [DI::l10n()->t('Version'), FRIENDICA_VERSION],
-			'$platform' => FRIENDICA_PLATFORM,
-			'$codename' => FRIENDICA_CODENAME,
-			'$build' => DI::config()->get('system', 'build'),
-			'$addons' => [DI::l10n()->t('Active addons'), Addon::getEnabledList()],
+			'$title'          => DI::l10n()->t('Administration'),
+			'$page'           => DI::l10n()->t('Summary'),
+			'$queues'         => $queues,
+			'$version'        => [DI::l10n()->t('Version'), App::VERSION],
+			'$platform'       => App::PLATFORM,
+			'$codename'       => App::CODENAME,
+			'$build'          => DI::config()->get('system', 'build'),
+			'$addons'         => [DI::l10n()->t('Active addons'), Addon::getEnabledList()],
 			'$serversettings' => $server_settings,
-			'$warningtext' => $warningtext
+			'$warningtext'    => $warningtext,
 		]);
 	}
 
 	private static function checkSelfHostMeta()
 	{
 		// Fetch the host-meta to check if this really is a vital server
-		return DI::httpRequest()->get(DI::baseUrl()->get() . '/.well-known/host-meta')->isSuccess();
+		return DI::httpClient()->get(DI::baseUrl() . Probe::HOST_META, HttpClientAccept::XRD_XML)->isSuccess();
 	}
 
 }

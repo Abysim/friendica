@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,14 +21,14 @@
 
 namespace Friendica\Test\src\Core\Cache;
 
-use Friendica\Core\Cache\APCuCache;
+use Friendica\Core\Cache\Type\APCuCache;
 
 /**
  * @group APCU
  */
 class APCuCacheTest extends MemoryCacheTest
 {
-	protected function setUp()
+	protected function setUp(): void
 	{
 		if (!APCuCache::isAvailable()) {
 			static::markTestSkipped('APCu is not available');
@@ -43,7 +43,7 @@ class APCuCacheTest extends MemoryCacheTest
 		return $this->cache;
 	}
 
-	protected function tearDown()
+	protected function tearDown(): void
 	{
 		$this->cache->clear(false);
 		parent::tearDown();

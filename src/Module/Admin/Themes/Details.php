@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -30,13 +30,13 @@ use Friendica\Util\Strings;
 
 class Details extends BaseAdmin
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		parent::content($parameters);
+		parent::content();
 
-		$theme = Strings::sanitizeFilePathItem($parameters['theme']);
+		$theme = Strings::sanitizeFilePathItem($this->parameters['theme']);
 		if (!is_dir("view/theme/$theme")) {
-			notice(DI::l10n()->t("Item not found."));
+			DI::sysmsg()->addNotice(DI::l10n()->t("Item not found."));
 			return '';
 		}
 
@@ -54,11 +54,11 @@ class Details extends BaseAdmin
 
 			if ($isEnabled) {
 				Theme::uninstall($theme);
-				info(DI::l10n()->t('Theme %s disabled.', $theme));
+				DI::sysmsg()->addInfo(DI::l10n()->t('Theme %s disabled.', $theme));
 			} elseif (Theme::install($theme)) {
-				info(DI::l10n()->t('Theme %s successfully enabled.', $theme));
+				DI::sysmsg()->addInfo(DI::l10n()->t('Theme %s successfully enabled.', $theme));
 			} else {
-				notice(DI::l10n()->t('Theme %s failed to install.', $theme));
+				DI::sysmsg()->addNotice(DI::l10n()->t('Theme %s failed to install.', $theme));
 			}
 
 			DI::baseUrl()->redirect('admin/themes/' . $theme);
@@ -76,7 +76,7 @@ class Details extends BaseAdmin
 			require_once "view/theme/$theme/config.php";
 
 			if (function_exists('theme_admin')) {
-				$admin_form = '<iframe onload="resizeIframe(this);" src="/admin/themes/' . $theme . '/embed?mode=minimal" width="100%" height="600px" frameborder="no"></iframe>';
+				$admin_form = '<iframe onload="resizeIframe(this);" src="' . DI::baseUrl() . '/admin/themes/' . $theme . '/embed?mode=minimal" width="100%" height="600px" frameborder="no"></iframe>';
 			}
 		}
 
@@ -91,7 +91,6 @@ class Details extends BaseAdmin
 			'$page' => DI::l10n()->t('Themes'),
 			'$toggle' => DI::l10n()->t('Toggle'),
 			'$settings' => DI::l10n()->t('Settings'),
-			'$baseurl' => DI::baseUrl()->get(true),
 			'$addon' => $theme,
 			'$status' => $status,
 			'$action' => $action,

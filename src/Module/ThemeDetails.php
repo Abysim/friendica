@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,6 +22,7 @@
 namespace Friendica\Module;
 
 use Friendica\BaseModule;
+use Friendica\Core\System;
 use Friendica\Core\Theme;
 
 /**
@@ -29,7 +30,7 @@ use Friendica\Core\Theme;
  */
 class ThemeDetails extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		if (!empty($_REQUEST['theme'])) {
 			$theme = $_REQUEST['theme'];
@@ -40,13 +41,13 @@ class ThemeDetails extends BaseModule
 			$version     = $info['version']     ?? '';
 			$credits     = $info['credits']     ?? '';
 
-			echo json_encode([
+			System::jsonExit([
 				'img'     => Theme::getScreenshot($theme),
 				'desc'    => $description,
 				'version' => $version,
 				'credits' => $credits,
 			]);
 		}
-		exit();
+		System::exit();
 	}
 }

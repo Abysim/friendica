@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,12 +22,13 @@
 namespace Friendica\Util\EMailer;
 
 use Exception;
+use Friendica\App;
 use Friendica\App\BaseURL;
-use Friendica\Core\Config\IConfig;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Friendica\Core\L10n;
 use Friendica\Core\Renderer;
 use Friendica\Model\User;
-use Friendica\Network\HTTPException\InternalServerErrorException;
+use Friendica\Network\HTTPException\UnprocessableEntityException;
 use Friendica\Object\Email;
 use Friendica\Object\EMail\IEmail;
 use Psr\Log\LoggerInterface;
@@ -42,7 +43,7 @@ abstract class MailBuilder
 
 	/** @var L10n */
 	protected $l10n;
-	/** @var IConfig */
+	/** @var IManageConfigValues */
 	protected $config;
 	/** @var BaseURL */
 	protected $baseUrl;
@@ -64,14 +65,14 @@ abstract class MailBuilder
 	/** @var int */
 	protected $recipientUid = null;
 
-	public function __construct(L10n $l10n, BaseURL $baseUrl, IConfig $config, LoggerInterface $logger)
+	public function __construct(L10n $l10n, BaseURL $baseUrl, IManageConfigValues $config, LoggerInterface $logger)
 	{
 		$this->l10n    = $l10n;
 		$this->baseUrl = $baseUrl;
 		$this->config  = $config;
 		$this->logger  = $logger;
 
-		$hostname = $baseUrl->getHostname();
+		$hostname = $baseUrl->getHost();
 		if (strpos($hostname, ':')) {
 			$hostname = substr($hostname, 0, strpos($hostname, ':'));
 		}
@@ -79,10 +80,10 @@ abstract class MailBuilder
 		$this->headers = [
 			'Precedence'           => ['list'],
 			'X-Friendica-Host'     => [$hostname],
-			'X-Friendica-Platform' => [FRIENDICA_PLATFORM],
-			'X-Friendica-Version'  => [FRIENDICA_VERSION],
+			'X-Friendica-Platform' => [App::PLATFORM],
+			'X-Friendica-Version'  => [App::VERSION],
 			'List-ID'              => ['<notification.' . $hostname . '>'],
-			'List-Archive'         => ['<' . $baseUrl->get() . '/notifications/system>'],
+			'List-Archive'         => ['<' . $baseUrl . '/notifications/system>'],
 		];
 	}
 
@@ -119,7 +120,7 @@ abstract class MailBuilder
 	{
 		$this->recipientUid = $user['uid'] ?? 0;
 		try {
-			$this->l10n = $user['language'] ? $this->l10n->withLang($user['language']) : $this->l10n;
+			$this->l10n = isset($user['language']) ? $this->l10n->withLang($user['language']) : $this->l10n;
 		} catch (Exception $e) {
 			$this->logger->warning('cannot use language.', ['user' => $user, 'exception' => $e]);
 		}
@@ -164,7 +165,7 @@ abstract class MailBuilder
 	 *
 	 * @return string[][]
 	 */
-	public function getHeaders()
+	public function getHeaders(): array
 	{
 		return $this->headers;
 	}
@@ -182,7 +183,7 @@ abstract class MailBuilder
 	 * @param string[][] $headers
 	 * @return $this
 	 */
-	public function withHeaders(array $headers)
+	public function withHeaders(array $headers): MailBuilder
 	{
 		$this->headers = $headers;
 
@@ -226,7 +227,7 @@ abstract class MailBuilder
 	 *
 	 * @return IEmail A new generated email
 	 *
-	 * @throws InternalServerErrorException
+	 * @throws UnprocessableEntityException
 	 * @throws Exception
 	 */
 	public function build(bool $raw = false)
@@ -241,11 +242,11 @@ abstract class MailBuilder
 		}
 
 		if (empty($this->recipientAddress)) {
-			throw new InternalServerErrorException('Recipient address is missing.');
+			throw new UnprocessableEntityException('Recipient address is missing.');
 		}
 
 		if (empty($this->senderAddress) || empty($this->senderName)) {
-			throw new InternalServerErrorException('Sender address or name is missing.');
+			throw new UnprocessableEntityException('Sender address or name is missing.');
 		}
 
 		$this->senderNoReply = $this->senderNoReply ?? $this->senderAddress;
@@ -257,11 +258,11 @@ abstract class MailBuilder
 			$tpl     = Renderer::getMarkupTemplate('email/html.tpl');
 			$msgHtml = Renderer::replaceMacros($tpl, [
 				'$title'       => $this->l10n->t('Friendica Notification'),
-				'$product'     => FRIENDICA_PLATFORM,
+				'$product'     => App::PLATFORM,
 				'$htmlversion' => $msgHtml,
 				'$sitename'    => $this->config->get('config', 'sitename'),
 				'$banner'      => $this->config->get('system', 'email_banner',
-					$this->baseUrl->get(true) . DIRECTORY_SEPARATOR . self::DEFAULT_EMAIL_BANNER),
+					$this->baseUrl . DIRECTORY_SEPARATOR . self::DEFAULT_EMAIL_BANNER),
 			]);
 		}
 

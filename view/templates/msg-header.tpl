@@ -1,12 +1,12 @@
 <script language="javascript" type="text/javascript">
 	$("#prvmail-text").editor_autocomplete(baseurl + '/search/acl');
 </script>
-<script type="text/javascript" src="view/js/ajaxupload.js?v={{$smarty.const.FRIENDICA_VERSION}}" ></script>
+<script type="text/javascript" src="view/js/ajaxupload.js?v={{$smarty.const.FRIENDICA_VERSION}}"></script>
 <script>
 	$(document).ready(function() {
 		var uploader = new window.AjaxUpload(
 			'prvmail-upload',
-			{ action: 'wall_upload/{{$nickname}}',
+			{ action: 'profile/{{$nickname}}/photos/upload',
 				name: 'userfile',
 				onSubmit: function(file,ext) { $('#profile-rotator').show(); },
 				onComplete: function(file,response) {
@@ -23,7 +23,7 @@
 		reply = prompt("{{$linkurl}}");
 		if(reply && reply.length) {
 			$('#profile-rotator').show();
-			$.get('parse_url?url=' + reply, function(data) {
+			$.get('parseurl?url=' + reply, function(data) {
 				addeditortext(data);
 				$('#profile-rotator').hide();
 			});
@@ -42,7 +42,7 @@
 		event.preventDefault();
 		if(reply && reply.length) {
 			$('#profile-rotator').show();
-			$.get('parse_url?url=' + reply, function(data) {
+			$.get('parseurl?url=' + reply, function(data) {
 				addeditortext(data);
 				$('#profile-rotator').hide();
 			});

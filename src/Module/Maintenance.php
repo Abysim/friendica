@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,6 +22,7 @@
 namespace Friendica\Module;
 
 use Friendica\BaseModule;
+use Friendica\Core\Renderer;
 use Friendica\Core\System;
 use Friendica\DI;
 use Friendica\Network\HTTPException;
@@ -33,9 +34,9 @@ use Friendica\Util\Strings;
  */
 class Maintenance extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		$reason = DI::config()->get('system', 'maintenance_reason');
+		$reason = DI::config()->get('system', 'maintenance_reason') ?? '';
 
 		if ((substr(Strings::normaliseLink($reason), 0, 7) === 'http://') ||
 			(substr(Strings::normaliseLink($reason), 0, 8) === 'https://')) {
@@ -43,7 +44,17 @@ class Maintenance extends BaseModule
 		}
 
 		$exception = new HTTPException\ServiceUnavailableException($reason);
-		$exception->httpdesc = DI::l10n()->t('System down for maintenance');
-		throw $exception;
+
+		header($_SERVER['SERVER_PROTOCOL'] . ' ' . $exception->getCode() . ' ' . DI::l10n()->t('System down for maintenance'));
+
+		$tpl = Renderer::getMarkupTemplate('exception.tpl');
+
+		return Renderer::replaceMacros($tpl, [
+			'$title' => DI::l10n()->t('System down for maintenance'),
+			'$message' => DI::l10n()->t('This Friendica node is currently in maintenance mode, either automatically because it is self-updating or manually by the node administrator. This condition should be temporary, please come back in a few minutes.'),
+			'$thrown' => $reason,
+			'$stack_trace' => '',
+			'$trace' => '',
+		]);
 	}
 }

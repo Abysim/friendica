@@ -312,17 +312,21 @@ a:hover {
 }
 .fakelink {
 	color: #36c;
-	/* color: #3e3e8c; */
-	/* color: #3465A4; */
-	/* color: #3E3E8C; */
 	text-decoration: none;
 	cursor: pointer;
 }
 .fakelink:hover {
-	/* color: blue;*/
-	/* color: #005c94; */
 	text-decoration: underline;
 }
+.btn.btn-link.fakelink {
+	background: none;
+	border: none;
+	box-shadow: none;
+	padding: 0 2px;
+	vertical-align: baseline;
+	outline-offset: 0;
+}
+
 pre code {
 	font-family: Courier, monospace;
 	white-space: pre;
@@ -417,7 +421,7 @@ pre code {
 .tool a {
 	/* color: #000; */
 }
-.tool a:hover, .widget a:hover, #nets-sidear a:hover, #forum-widget-collapse:hover, .admin.link a:hover, aside h4 a:hover, right_aside h4 a:hover {
+.tool a:hover, .widget a:hover, #nets-sidebar a:hover, #forum-widget-collapse:hover, .admin.link a:hover, aside h4 a:hover, right_aside h4 a:hover {
 	/* text-decoration: underline; */
 	text-decoration: none;
 	color: black;
@@ -1438,10 +1442,6 @@ section.minimal {
 	font-size: 12px;
 }
 
-.shared_header {
-	line-height: 14px;
-}
-
 .wall-item-network {
 	color: #999;
 	font-size: 12px;
@@ -1782,8 +1782,14 @@ section.minimal {
 	padding: 0.3em;
 	margin-bottom: 10px;
 }
-
-#profile-jot-form #jot-title, #profile-jot-form #jot-category {
+#post-length {
+	width: 20px;
+	float: left;
+	margin-left: 15px;
+	margin-top: 3px;
+	color: #9c9c9c;
+}
+profile-jot-form #jot-title, #profile-jot-form #jot-category {
 	border-radius: 5px 5px 5px 5px;
 	font-weight: bold;
 	height: 20px;
@@ -2073,21 +2079,10 @@ section.minimal {
 	margin-left: 15px;
 	cursor: pointer;
 }
-#profile-smiley-wrapper {
+#profile-emojis-wrapper {
 	float: left;
 	margin-left: 15px;
 	cursor: pointer;
-	margin-top: 3px;
-	height: 10px;
-	display: inline-block;
-}
-#smileybutton {
-	position: absolute;
-	z-index: 99;
-}
-table.smiley-preview {
-	background-color: #FFF;
-	box-shadow: 0px 5px 10px rgba(0, 0, 0, 0.7);
 }
 #jot-perms-icon {
 	float: right;
@@ -3275,7 +3270,7 @@ img.photo-album-photo {
 }
 
 /* upload/select popup */
-fbrowser.image .photo-album-image-wrapper { margin-left: 10px; }
+fbrowser.photo .photo-album-image-wrapper { margin-left: 10px; }
 #message-preview { margin-top: 15px; }
 #message-preview span { width: 100%; }
 #message-preview .mail-count, #message-preview .mail-delete { display:none; }

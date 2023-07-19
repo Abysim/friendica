@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,43 +21,33 @@
 
 namespace Friendica\Test\src\Core\Lock;
 
-use Friendica\Core\Lock\DatabaseLock;
-use Friendica\Factory\ConfigFactory;
-use Friendica\Test\DatabaseTestTrait;
-use Friendica\Test\Util\Database\StaticDatabase;
-use Friendica\Test\Util\VFSTrait;
-use Friendica\Util\ConfigFileLoader;
-use Friendica\Util\Profiler;
-use Mockery;
-use Psr\Log\NullLogger;
+use Friendica\Core\Lock\Type\DatabaseLock;
+use Friendica\Test\Util\CreateDatabaseTrait;
 
 class DatabaseLockDriverTest extends LockTest
 {
-	use VFSTrait;
-	use DatabaseTestTrait;
+	use CreateDatabaseTrait;
 
 	protected $pid = 123;
 
-	protected function setUp()
+	protected function setUp(): void
 	{
 		$this->setUpVfsDir();
+
+		$this->setUpDb();
 
 		parent::setUp();
 	}
 
 	protected function getInstance()
 	{
-		$logger   = new NullLogger();
-		$profiler = Mockery::mock(Profiler::class);
-		$profiler->shouldReceive('saveTimestamp')->withAnyArgs()->andReturn(true);
+		return new DatabaseLock($this->getDbInstance(), $this->pid);
+	}
 
-		// load real config to avoid mocking every config-entry which is related to the Database class
-		$configFactory = new ConfigFactory();
-		$loader        = new ConfigFileLoader($this->root->url());
-		$configCache   = $configFactory->createCache($loader);
+	protected function tearDown(): void
+	{
+		parent::tearDown();
 
-		$dba = new StaticDatabase($configCache, $profiler, $logger);
-
-		return new DatabaseLock($dba, $this->pid);
+		$this->tearDownDb();
 	}
 }

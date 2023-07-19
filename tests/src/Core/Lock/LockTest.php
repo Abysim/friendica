@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,7 +21,7 @@
 
 namespace Friendica\Test\src\Core\Lock;
 
-use Friendica\Core\Lock\ILock;
+use Friendica\Core\Lock\Capability\ICanLock;
 use Friendica\Test\MockedTest;
 
 abstract class LockTest extends MockedTest
@@ -32,13 +32,13 @@ abstract class LockTest extends MockedTest
 	protected $startTime = 1417011228;
 
 	/**
-	 * @var ILock
+	 * @var ICanLock
 	 */
 	protected $instance;
 
 	abstract protected function getInstance();
 
-	protected function setUp()
+	protected function setUp(): void
 	{
 		parent::setUp();
 
@@ -46,7 +46,7 @@ abstract class LockTest extends MockedTest
 		$this->instance->releaseAll(true);
 	}
 
-	protected function tearDown()
+	protected function tearDown(): void
 	{
 		$this->instance->releaseAll(true);
 		parent::tearDown();

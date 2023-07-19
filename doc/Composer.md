@@ -6,7 +6,7 @@ Using Composer
 
 Friendica uses [Composer](https://getcomposer.org) to manage dependencies libraries and the class autoloader both for libraries and namespaced Friendica classes.
 
-It's a command-line tool that downloads required libraries into the `vendor` folder and makes any namespaced class in `src` available through the whole application through `boot.php`.
+It's a command-line tool that downloads required libraries into the `vendor` folder and makes any namespaced class in `src` available through the whole application.
 
 * [Class autoloading](help/autoloader)
 
@@ -20,7 +20,7 @@ Composer requires PHP CLI and the following examples assume it's available syste
 
 #### From Archive
 
-If you just unpacked a Friendica release archive, you don't have to use Commposer at all, all the required libraries are already bundled in the archive.
+If you just unpacked a Friendica release archive, you don't have to use Composer at all, all the required libraries are already bundled in the archive.
 
 #### Installing with Git
 

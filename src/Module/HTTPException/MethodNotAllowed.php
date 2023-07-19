@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,13 +22,12 @@
 namespace Friendica\Module\HTTPException;
 
 use Friendica\BaseModule;
-use Friendica\DI;
 use Friendica\Network\HTTPException;
 
 class MethodNotAllowed extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		throw new HTTPException\MethodNotAllowedException(DI::l10n()->t('Method Not Allowed.'));
+		throw new HTTPException\MethodNotAllowedException($this->t('Method Not Allowed.'));
 	}
 }

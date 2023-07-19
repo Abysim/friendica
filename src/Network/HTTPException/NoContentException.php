@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,6 @@ use Friendica\Network\HTTPException;
 
 class NoContentException extends HTTPException
 {
-	protected $code = 204;
+	protected $code     = 204;
+	protected $httpdesc = 'No Content';
 }

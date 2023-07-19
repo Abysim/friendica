@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -37,8 +37,13 @@ return [
 		// Can be used instead of adding a port number to the hostname
 		'port' => null,
 
+		// socket (String)
+		// Socket of the database server.
+		// Can be used instead of adding a socket location to the hostname
+		'socket' => '',
+
 		// user (String)
-		// Database user name. Please don't use "root".
+		// Database username. Please don't use "root".
 		'username' => '',
 
 		// pass (String)
@@ -56,10 +61,10 @@ return [
 		// pdo_emulate_prepares (Boolean)
 		// If enabled, the builtin emulation for prepared statements is used.
 		// This can be used as a workaround for the database error "Prepared statement needs to be re-prepared".
-		'pdo_emulate_prepares' => false,
+		'pdo_emulate_prepares' => true,
 
 		// disable_pdo (Boolean)
-		// PDO is used by default (if available). Otherwise MySQLi will be used.
+		// PDO is used by default (if available). Otherwise, MySQLi will be used.
 		'disable_pdo' => false,
 
 		// persistent (Boolean)
@@ -101,7 +106,7 @@ return [
 		'always_show_preview' => false,
 
 		// ap_always_bcc (Boolean)
-		// Adresses non-mentioned ActivityPub receivers by BCC instead of CC. Increases privacy, decreases performance.
+		// Addresses non-mentioned ActivityPub receivers by BCC instead of CC. Increases privacy, decreases performance.
 		'ap_always_bcc' => false,
 
 		// archival_days (Integer)
@@ -113,20 +118,46 @@ return [
 		// chose "Remember me" when logging in is considered logged out.
 		'auth_cookie_lifetime' => 7,
 
+		// avatar_cache (Boolean)
+		// Cache avatar pictures as files (experimental)
+		'avatar_cache' => false,
+
+		// avatar_cache_path (String)
+		// File path to the avatar cache. Default is /(your basepath)/avatar/
+		// The value has to be an absolute path and has to end with a "/"
+		'avatar_cache_path' => '',
+
+		// avatar_cache_url (String)
+		// Base URL of the avatar cache. Default is http(s)://(your hostname)/avatar/
+		// The value has to start with the scheme and end with a "/"
+		'avatar_cache_url' => '',
+
+		// basicauth (Boolean)
+		// Controls if login via BasicAuth is possible (default is true)
+		'basicauth' => true,
+
 		// big_emojis (Boolean)
 		// Display "Emoji Only" posts in big.
 		'big_emojis' => false,
 
+		// bulk_delivery (Boolean)
+		// Delivers AP messages in a bulk (experimental)
+		'bulk_delivery' => false,
+
 		// block_local_dir (Boolean)
 		// Deny public access to the local user directory.
 		'block_local_dir' => false,
+
+		// blocked_tags (String)
+		// Comma separated list of hashtags that shouldn't be displayed in the trending tags
+		'blocked_tags' => '',
 
 		// community_no_sharer (Boolean)
 		// Don't display sharing accounts on the global community
 		'community_no_sharer' => false,
 
 		// contact_update_limit (Integer)
-		// How much contacts should be checked at a time?
+		// How many contacts should be checked at a time?
 		'contact_update_limit' => 100,
 
 		// cron_interval (Integer)
@@ -136,6 +167,18 @@ return [
 		// cache_driver (database|memcache|memcached|redis|apcu)
 		// Whether to use Memcache, Memcached, Redis or APCu to store temporary cache.
 		'cache_driver' => 'database',
+
+		// decoupled_receiver (Boolean)
+		// Decouple incoming AP posts by doing the processing in the background.
+		'decoupled_receiver' => false,
+
+		// distributed_cache_driver (database|memcache|memcached|redis)
+		// Whether to use database, Memcache, Memcached or Redis as a distributed cache.
+		'distributed_cache_driver' => 'database',
+
+		// fetch_parents (Boolean)
+		// Fetch missing parent posts
+		'fetch_parents' => true,
 
 		// config_adapter (jit|preload)
 		// Allow to switch the configuration adapter to improve performances at the cost of memory consumption.
@@ -194,6 +237,18 @@ return [
 		// If it is not running and hadn't been terminated normally, it will be started automatically.
 		'daemon_watchdog' => false,
 
+		// delete_sleeping_processes (Boolean)
+		// Periodically delete waiting database processes.
+		'delete_sleeping_processes' => false,
+
+		// delete-blocked-servers (Boolean)
+		// Delete blocked servers if there are no foreign key violations.
+		'delete-blocked-servers' => false,
+
+		// dice_profiler_threshold (Float)
+		// For profiling Dice class creation (0 = disabled, >0 = seconds threshold for profiling)
+		'dice_profiler_threshold' => 0.5,
+
 		// diaspora_test (Boolean)
 		// For development only. Disables the message transfer.
 		'diaspora_test' => false,
@@ -212,7 +267,7 @@ return [
 		'disable_implicit_mentions' => false,
 
 		// disable_url_validation (Boolean)
-		// Disables the DNS lookup of an URL.
+		// Disables the DNS lookup of a URL.
 		'disable_url_validation' => false,
 
 		// disable_password_exposed (Boolean)
@@ -235,25 +290,33 @@ return [
 		// restricts develop log writes to requests originating from this IP address.
 		'dlogip' => '',
 
+		// emoji_activities (Boolean)
+		// Display received activities (like, dislike, reshare) as emojis
+		'emoji_activities' => false,
+
 		// expire-notify-priority (integer)
-		// Priority for the expirary notification 
-		'expire-notify-priority' => PRIORITY_LOW,
+		// Priority for the expiry notification
+		'expire-notify-priority' => Friendica\Core\Worker::PRIORITY_LOW,
+
+		// fetch_by_worker (Boolean)
+		// Fetch missing posts via a background process
+		'fetch_by_worker' => false,
+
+		// fetch_featured_posts (Boolean)
+		// Fetch featured posts from all contacts
+		'fetch_featured_posts' => false,
 
 		// free_crawls (Integer)
 		// Number of "free" searches when system => permit_crawling is enabled.
 		'free_crawls' => 10,
 
-		// frontend_worker_timeout (Integer)
-		// Value in minutes after we think that a frontend task was killed by the webserver.
-		'frontend_worker_timeout' => 10,
-
 		// groupedit_image_limit (Integer)
 		// Number of contacts at which the group editor should switch from display the profile pictures of the contacts to only display the names.
-		// This can alternatively be set on a per account basis in the pconfig table.
+		// This can alternatively be set on a per-account basis in the pconfig table.
 		'groupedit_image_limit' => 400,
 
 		// gserver_update_limit (Integer)
-		// How much servers should be checked at a time?
+		// How many servers should be checked at a time?
 		'gserver_update_limit' => 100,
 
 		// hsts (Boolean)
@@ -278,8 +341,16 @@ return [
 		// Resolve IPV4 addresses only. Don't resolve to IPV6.
 		'ipv4_resolve' => false,
 
+		// ini_max_execution_time (False|Integer)
+		// Set the number of seconds a script is allowed to run. Default unlimited for Friendica, false to use the system value.
+		'ini_max_execution_time' => 0,
+
+		// ini_pcre_backtrack_limit (False|Integer)
+		// This has to be quite large to deal with embedded private photos. False to use the system value.
+		'ini_pcre_backtrack_limit' => 500000,
+
 		// invitation_only (Boolean)
-		// If set true registration is only possible after a current member of the node has send an invitation.
+		// If set true registration is only possible after a current member of the node has sent an invitation.
 		'invitation_only' => false,
 
 		// itemspage_network (Integer)
@@ -290,6 +361,12 @@ return [
 		// default number of items per page in stream pages (network, community, profile/contact statuses, search)
 		// on detected mobile devices
 		'itemspage_network_mobile' => 20,
+
+		// jpeg_quality (Integer)
+		//
+		// Lower numbers save space at cost of image detail
+		// where n is between 1 and 100, and with very poor results below about 50
+		'jpeg_quality' => 100,
 
 		// like_no_comment (Boolean)
 		// Don't update the "commented" value of an item when it is liked.
@@ -307,9 +384,22 @@ return [
 		// If activated, all hashtags will point to the local server.
 		'local_tags' => false,
 
+		// lock_driver (semaphore|database|memcache|memcached|redis|apcu)
+		// Whether to use semaphores, the database, Memcache, Memcached, Redis or APCu to handle locks.
+		// Default is auto detection which tries semaphores first, then falls back to the cache driver.
+		'lock_driver' => '',
+
 		// logger_config (String)
 		// Sets the logging adapter of Friendica globally (monolog, syslog, stream)
 		'logger_config' => 'stream',
+
+		// syslog flags (Integer)
+		// Sets the syslog flags in case 'logger_config' is set to 'syslog'
+		'syslog_flags' => LOG_CONS | LOG_PID | LOG_ODELAY,
+
+		// syslog flags (Integer)
+		// Sets the syslog facility in case 'logger_config' is set to 'syslog'
+		'syslog_facility' => LOG_USER,
 
 		// maintenance_start (String)
 		// Start of the window for the daily maintenance cron call.
@@ -350,10 +440,14 @@ return [
 
 		// max_image_length (Integer)
 		// An alternate way of limiting picture upload sizes.
-		// Specify the maximum pixel  length that pictures are allowed to be (for non-square pictures, it will apply to the longest side).
+		// Specify the maximum pixel length that pictures are allowed to be (for non-square pictures, it will apply to the longest side).
 		// Pictures longer than this length will be resized to be this length (on the longest side, the other side will be scaled appropriately).
 		// If you don't want to set a maximum length, set to -1.
 		'max_image_length' => -1,
+
+		// max_likers (Integer)
+		// Maximum number of "people who like (or don't like) this" that we will list by name
+		'max_likers' => 75,
 
 		// max_processes_backend (Integer)
 		// Maximum number of concurrent database processes for background tasks.
@@ -362,6 +456,10 @@ return [
 		// max_processes_frontend (Integer)
 		// Maximum number of concurrent database processes for foreground tasks.
 		'max_processes_frontend' => 20,
+
+		// max_recursion_depth (Integer)
+		// Maximum recursion depth when fetching posts until the job is delegated to a worker task or finished.
+		'max_recursion_depth' => 50,
 
 		// maximagesize (Integer)
 		// Maximum size in bytes of an uploaded photo.
@@ -398,23 +496,23 @@ return [
 		'no_oembed' => false,
 
 		// no_redirect_list (Array)
-		// List of domains where HTTP redirects should be ignored. 
+		// List of domains where HTTP redirects should be ignored.
 		'no_redirect_list' => [],
 
 		// no_smilies (Boolean)
 		// Don't show smilies.
 		'no_smilies' => false,
 
-		// optimize_items (Boolean)
-		// Triggers an SQL command to optimize the item table before expiring items.
-		'optimize_items' => false,
+		// optimize_all_tables (Boolean)
+		// Optimizes all tables instead of only tables like workerqueue or the cache
+		'optimize_all_tables' => false,
 
 		// paranoia (Boolean)
 		// Log out users if their IP address changed.
 		'paranoia' => false,
 
 		// permit_crawling (Boolean)
-		// Restricts the search for not logged in users to one search per minute.
+		// Restricts the search for not logged-in users to one search per minute.
 		'permit_crawling' => false,
 
 		// pidfile (Path)
@@ -422,19 +520,19 @@ return [
 		'pidfile' => '',
 
 		// png_quality (Integer)
-		// Sets the ImageMagick compression level for PNG images. Values ranges from 0 (uncompressed) to 9 (most compressed).
+		// Sets the ImageMagick compression level for PNG images. Values range from 0 (uncompressed) to 9 (most compressed).
 		'png_quality' => 8,
+
+		// process_view (Boolean)
+		// Process the "View" activity that is used by Peertube. View activities are displayed, when "emoji_activities" are enabled.
+		'process_view' => false,
 
 		// profiler (Boolean)
 		// Enable internal timings to help optimize code. Needed for "rendertime" addon.
 		'profiler' => false,
 
-		// proxy_cache_time (Integer)
-		// Period in seconds after which the cache is cleared.
-		'proxy_cache_time' => 86400,
-
 		// pushpoll_frequency (Integer)
-		// Frequency of contact poll for subhub contact using the DFRM or OStatus network.
+		// Frequency of contact poll for subhub contact using the DFRN or OStatus network.
 		// Available values:
 		// - 5 = every month
 		// - 4 = every week
@@ -460,6 +558,18 @@ return [
 		// The authentication password for the redis database
 		'redis_password' => null,
 
+		// redistribute_activities (Boolean)
+		// Redistribute incoming activities via ActivityPub
+		'redistribute_activities' => true,
+
+		// relay_deny_languages (Array)
+		// Array of languages (two digit format) that are rejected.
+		'relay_deny_languages' => [],
+
+		// relay_deny_undetected_language (Boolean)
+		// Deny undetected languages
+		'relay_deny_undetected_language' => false,
+
 		// session_handler (database|cache|native)
 		// Whether to use Cache to store session data or to use PHP native session storage.
 		'session_handler' => 'database',
@@ -472,18 +582,30 @@ return [
 		// If enabled, multiple linefeeds in items are stripped to a single one.
 		'remove_multiplicated_lines' => false,
 
+		// runtime_ignore (Array)
+		// List of ignored commands for the runtime logging.
+		'runtime_ignore' => [],
+
+		// runtime_loglimit (Integer)
+		// The runtime is logged, When the program execution time is higher than this value.
+		'runtime_loglimit' => 0,
+
 		// sendmail_params (Boolean)
 		// Normal sendmail command parameters will be added when the PHP mail() function is called for sending e-mails.
 		// This ensures the Sender Email address setting is applied to the message envelope rather than the host's default address.
 		// Set to false if your non-sendmail agent is incompatible, or to restore old behavior of using the host address.
 		'sendmail_params' => true,
 
+		// set_creation_date (Boolean)
+		// When enabled, the user can enter a creation date when composing a post.
+		'set_creation_date' => false,
+
 		// show_global_community_hint (Boolean)
-		// When the global community page is enabled, use this option to display a hint above the stream, that this is a collection of all public top-level postings that arrive on your node.
+		// When the global community page is enabled, use this option to display a hint above the stream, that this is a collection of all public top-level postings that arrive at your node.
 		'show_global_community_hint' => false,
 
 		// show_received (Boolean)
-		// Show the receive data along with the post creation date
+		// Show the received date along with the post creation date
 		'show_received' => true,
 
 		// show_received_seconds (Integer)
@@ -510,24 +632,28 @@ return [
 		// Maximum number of posts that a user can send per month with the API. 0 to disable monthly throttling.
 		'throttle_limit_month' => 0,
 
+		// transmit_pending_events (Boolean)
+		// Transmit pending events upon accepted contact request for forums
+		'transmit_pending_events' => false,
+
 		// update_active_contacts (Boolean)
 		// When activated, only public contacts will be activated regularly that are used for example in items or tags.
 		'update_active_contacts' => false,
 
 		// username_min_length (Integer)
 		// The minimum character length a username can be.
-		// This length is check once the username has been trimmed and multiple spaces have been collapsed into one.
+		// This length is checked once the username has been trimmed and multiple spaces have been collapsed into one.
 		// Minimum for this config value is 1. Maximum is 64 as the resulting profile URL mustn't be longer than 255 chars.
 		'username_min_length' => 3,
 
 		// username_max_length (Integer)
 		// The maximum character length a username can be.
-		// This length is check once the username has been trimmed and multiple spaces have been collapsed into one.
+		// This length is checked once the username has been trimmed and multiple spaces have been collapsed into one.
 		// Minimum for this config value is 1. Maximum is 64 as the resulting profile URL mustn't be longer than 255 chars.
 		'username_max_length' => 48,
 
-		// worker_cooldown (Integer)
-		// Cooldown period in seconds after each worker function call.
+		// worker_cooldown (Float)
+		// Cooldown period in seconds before each worker function call.
 		'worker_cooldown' => 0,
 
 		// worker_debug (Boolean)
@@ -538,6 +664,11 @@ return [
 		// Number of worker tasks that are fetched in a single query.
 		'worker_fetch_limit' => 1,
 
+		// worker_fork (Boolean)
+		// Experimental setting. Use pcntl_fork to spawn a new worker process.
+		// Does not work when "worker_multiple_fetch" is enabled (Needs more testing)
+		'worker_fork' => false,
+
 		// worker_jpm (Boolean)
 		// If enabled, it prints out the jobs per minute.
 		'worker_jpm' => false,
@@ -546,24 +677,54 @@ return [
 		// List of minutes for the jobs per minute (JPM) calculation
 		'worker_jpm_range' => '1, 10, 60',
 
+		// worker_load_cooldown (Integer)
+		// Maximum load that causes a cooldown before each worker function call.
+		'worker_load_cooldown' => 0,
+
 		// worker_load_exponent (Integer)
 		// Default 3, which allows only 25% of the maximum worker queues when server load reaches around 37% of maximum load.
 		// For a linear response where 25% of worker queues are allowed at 75% of maximum load, set this to 1.
 		// Setting 0 would allow maximum worker queues at all times, which is not recommended.
 		'worker_load_exponent' => 3,
 
+		// worker_max_duration (Array)
+		// Maximum runtime per priority. Worker processes that exceed this runtime will be terminated.
+		'worker_max_duration' => [
+			Friendica\Core\Worker::PRIORITY_CRITICAL   => 720,
+			Friendica\Core\Worker::PRIORITY_HIGH       => 10,
+			Friendica\Core\Worker::PRIORITY_MEDIUM     => 60,
+			Friendica\Core\Worker::PRIORITY_LOW        => 180,
+			Friendica\Core\Worker::PRIORITY_NEGLIGIBLE => 720
+		],
+
+		// worker_processes_cooldown (Integer)
+		// Maximum number per processes that causes a cooldown before each worker function call.
+		'worker_processes_cooldown' => 0,
+
 		// worker_multiple_fetch (Boolean)
 		// When activated, the worker fetches jobs for multiple workers (not only for itself).
 		// This is an experimental setting without knowing the performance impact.
+		// Does not work when "worker_fork" is enabled (Needs more testing)
 		'worker_multiple_fetch' => false,
-		
+
 		// worker_defer_limit (Integer)
 		// Per default the systems tries delivering for 15 times before dropping it.
 		'worker_defer_limit' => 15,
 
 		// xrd_timeout (Integer)
-		// Timeout in seconds for fetching the XRD links.
+		// Timeout in seconds for fetching the XRD links and other requests with an expected shorter timeout
 		'xrd_timeout' => 20,
+	],
+	'proxy' => [
+		// forwarded_for_headers (String)
+		// A comma separated list of all allowed header values to retrieve the real client IP
+		// The headers are evaluated in order.
+		'forwarded_for_headers' => 'HTTP_X_FORWARDED_FOR',
+
+		// trusted_proxies (String)
+		// A comma separated list of all trusted proxies, which will get skipped during client IP retrieval
+		// IP ranges and CIDR notations are allowed
+		'trusted_proxies' => '',
 	],
 	'experimental' => [
 		// exp_themes (Boolean)
@@ -583,17 +744,41 @@ return [
 		// Must be writable by the ejabberd process. if set then it will prevent the running of multiple processes.
 		'lockpath' => '',
 	],
+	'diaspora' => [
+		// native_photos (Boolean)
+		// If enabled, photos to Diaspora will be transmitted via the "photo" element instead of embedding them to the body.
+		// This is some visual improvement over the embedding but comes with the cost of losing accessibility.
+		// Is is disabled by default until Diaspora eventually will work on issue https://github.com/diaspora/diaspora/issues/8297
+		'native_photos' => false,
+	],
 	'debug' => [
 		// ap_inbox_log (Boolean)
 		// Logs every call to /inbox as a JSON file in Friendica's temporary directory
 		'ap_inbox_log' => false,
 
-		// show_direction (Boolean)
-		// Display if a post had been fetched or had been pushed towards our server
-		'show_direction' => false,
+		// ap_inbox_store_untrusted (Boolean)
+		// Store untrusted content in the inbox entries
+		'ap_inbox_store_untrusted' => false,
 
-		// total_ap_delivery (Boolean)
-		// Deliver via AP to every possible receiver and we suppress the delivery to these contacts with other protocols
-		'total_ap_delivery' => false,
-	]
+		// ap_log_unknown (Boolean)
+		// Logs every unknown ActivityPub activity
+		'ap_log_unknown' => false,
+
+		// ap_log_failure (Boolean)
+		// Logs every ActivityPub activity that couldn't be compacted
+		'ap_log_failure' => false,
+
+		// store_source (Boolean)
+		// Store the source of any post that arrived
+		'store_source' => false,
+	],
+	'smarty3' => [
+		// config_dir (String)
+		// Base working directory for the templating engine, must be writeable by the webserver user
+		'config_dir' => 'view/smarty3',
+
+		// use_sub_dirs (Boolean)
+		// By default the template cache is stored in several subdirectories.
+		'use_sub_dirs' => true,
+	],
 ];

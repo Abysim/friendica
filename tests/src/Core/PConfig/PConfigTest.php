@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,22 +21,25 @@
 
 namespace Friendica\Test\src\Core\PConfig;
 
-use Friendica\Core\PConfig\Cache;
-use Friendica\Core\BasePConfig;
-use Friendica\Model\Config\PConfig as PConfigModel;
+use DMS\PHPUnitExtensions\ArraySubset\ArraySubsetAsserts;
+use Friendica\Core\PConfig\Type\AbstractPConfigValues;
+use Friendica\Core\PConfig\Repository\PConfig as PConfigModel;
+use Friendica\Core\PConfig\ValueObject\Cache;
 use Friendica\Test\MockedTest;
 use Mockery;
 use Mockery\MockInterface;
 
 abstract class PConfigTest extends MockedTest
 {
+	use ArraySubsetAsserts;
+
 	/** @var PConfigModel|MockInterface */
 	protected $configModel;
 
 	/** @var Cache */
 	protected $configCache;
 
-	/** @var BasePConfig */
+	/** @var AbstractPConfigValues */
 	protected $testedConfig;
 
 	/**
@@ -57,7 +60,7 @@ abstract class PConfigTest extends MockedTest
 	}
 
 
-	protected function setUp()
+	protected function setUp(): void
 	{
 		parent::setUp();
 
@@ -67,7 +70,7 @@ abstract class PConfigTest extends MockedTest
 	}
 
 	/**
-	 * @return BasePConfig
+	 * @return \Friendica\Core\PConfig\Type\AbstractPConfigValues
 	 */
 	abstract public function getInstance();
 
@@ -321,7 +324,7 @@ abstract class PConfigTest extends MockedTest
 		// without refresh
 		self::assertNull($this->testedConfig->get(0, 'test', 'it'));
 
-		/// beware that the cache returns '!<unset>!' and not null for a non existing value
+		/// beware that the cache returns '!<unset>!' and not null for a nonexistent value
 		self::assertNull($this->testedConfig->getCache()->get(0, 'test', 'it'));
 
 		// with default value

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -42,7 +42,7 @@ class PageInfo
 	 */
 	public static function searchAndAppendToBody(string $body, bool $searchNakedUrls = false, bool $no_photos = false)
 	{
-		Logger::info('add_page_info_to_body: fetch page info for body', ['body' => $body]);
+		Logger::debug('add_page_info_to_body: fetch page info for body', ['body' => $body]);
 
 		$url = self::getRelevantUrlFromBody($body, $searchNakedUrls);
 		if (!$url) {
@@ -64,7 +64,7 @@ class PageInfo
 	 * @return string
 	 * @throws HTTPException\InternalServerErrorException
 	 */
-	public static function appendDataToBody(string $body, array $data, bool $no_photos = false)
+	public static function appendDataToBody(string $body, array $data, bool $no_photos = false): string
 	{
 		// Only one [attachment] tag per body is allowed
 		$existingAttachmentPos = strpos($body, '[attachment');
@@ -73,7 +73,7 @@ class PageInfo
 			// Additional link attachments are prepended before the existing [attachment] tag
 			$body = substr_replace($body, "\n[bookmark=" . $data['url'] . ']' . $linkTitle . "[/bookmark]\n", $existingAttachmentPos, 0);
 		} else {
-			$footer = PageInfo::getFooterFromData($data, $no_photos);
+			$footer = self::getFooterFromData($data, $no_photos);
 			$body = self::stripTrailingUrlFromBody($body, $data['url']);
 			$body .= "\n" . $footer;
 		}
@@ -90,7 +90,7 @@ class PageInfo
 	 * @return string
 	 * @throws HTTPException\InternalServerErrorException
 	 */
-	public static function getFooterFromUrl(string $url, bool $no_photos = false, string $photo = '', bool $keywords = false, string $keyword_denylist = '')
+	public static function getFooterFromUrl(string $url, bool $no_photos = false, string $photo = '', bool $keywords = false, string $keyword_denylist = ''): string
 	{
 		$data = self::queryUrl($url, $photo, $keywords, $keyword_denylist);
 
@@ -103,7 +103,7 @@ class PageInfo
 	 * @return string
 	 * @throws HTTPException\InternalServerErrorException
 	 */
-	public static function getFooterFromData(array $data, bool $no_photos = false)
+	public static function getFooterFromData(array $data, bool $no_photos = false): string
 	{
 		Hook::callAll('page_info_data', $data);
 
@@ -129,24 +129,19 @@ class PageInfo
 		}
 
 		// Escape some bad characters
-		$data['url'] = str_replace(['[', ']'], ['&#91;', '&#93;'], htmlentities($data['url'], ENT_QUOTES, 'UTF-8', false));
-		$data['title'] = str_replace(['[', ']'], ['&#91;', '&#93;'], htmlentities($data['title'], ENT_QUOTES, 'UTF-8', false));
+		$text = "[attachment";
 
-		$text = "[attachment type='" . $data['type'] . "'";
-
-		if (!empty($data['url'])) {
-			$text .= " url='" . $data['url'] . "'";
-		}
-
-		if (!empty($data['title'])) {
-			$text .= " title='" . $data['title'] . "'";
+		foreach (['type', 'url', 'title', 'alternative_title', 'publisher_name', 'publisher_url', 'publisher_img', 'author_name', 'author_url', 'author_img'] as $field) {
+			if (!empty($data[$field])) {
+				$text .= " " . $field . "='" . str_replace(['[', ']'], ['&#91;', '&#93;'], htmlentities($data[$field], ENT_QUOTES, 'UTF-8', false)) . "'";
+			}
 		}
 
 		if (empty($data['text'])) {
 			$data['text'] = '';
 		}
 
-		// Only embedd a picture link when it seems to be a valid picture ("width" is set)
+		// Only embed a picture link when it seems to be a valid picture ("width" is set)
 		if (!empty($data['images']) && !empty($data['images'][0]['width'])) {
 			$preview = str_replace(['[', ']'], ['&#91;', '&#93;'], htmlentities($data['images'][0]['src'], ENT_QUOTES, 'UTF-8', false));
 			// if the preview picture is larger than 500 pixels then show it in a larger mode
@@ -160,14 +155,14 @@ class PageInfo
 				if (empty($data['text'])) {
 					$data['text'] = $data['title'];
 				}
-		
+
 				if (empty($data['text'])) {
 					$data['text'] = $data['url'];
 				}
 			}
 		}
 
-		$text .= ']' . $data['text'] . '[/attachment]';
+		$text .= ']' . str_replace(['[', ']'], ['&#91;', '&#93;'], $data['text']) . '[/attachment]';
 
 		$hashtags = '';
 		if (!empty($data['keywords'])) {
@@ -192,7 +187,7 @@ class PageInfo
 	 */
 	public static function queryUrl(string $url, string $photo = '', bool $keywords = false, string $keyword_denylist = '')
 	{
-		$data = ParseUrl::getSiteinfoCached($url, true);
+		$data = ParseUrl::getSiteinfoCached($url);
 
 		if ($photo != '') {
 			$data['images'][0]['src'] = $photo;
@@ -213,7 +208,7 @@ class PageInfo
 			}
 		}
 
-		Logger::info('fetch page info for URL', ['url' => $url, 'data' => $data]);
+		Logger::debug('fetch page info for URL', ['url' => $url, 'data' => $data]);
 
 		return $data;
 	}
@@ -225,7 +220,7 @@ class PageInfo
 	 * @return array
 	 * @throws HTTPException\InternalServerErrorException
 	 */
-	public static function getTagsFromUrl(string $url, string $photo = '', string $keyword_denylist = '')
+	public static function getTagsFromUrl(string $url, string $photo = '', string $keyword_denylist = ''): array
 	{
 		$data = self::queryUrl($url, $photo, true, $keyword_denylist);
 
@@ -251,17 +246,22 @@ class PageInfo
 	 * @param bool   $searchNakedUrls Whether we should pick a naked URL (outside of BBCode tags) as a last resort
 	 * @return string|null
 	 */
-	protected static function getRelevantUrlFromBody(string $body, bool $searchNakedUrls = false)
+	public static function getRelevantUrlFromBody(string $body, bool $searchNakedUrls = false)
 	{
 		$URLSearchString = 'https?://[^\[\]]*';
 
 		// Fix for Mastodon where the mentions are in a different format
 		$body = preg_replace("~\[url=($URLSearchString)]([#!@])(.*?)\[/url]~is", '$2[url=$1]$3[/url]', $body);
 
-		preg_match("~(?<![!#@])\[url]($URLSearchString)\[/url]$~is", $body, $matches);
+		// Remove all hashtags and mentions
+		$body = preg_replace("/([#@!])\[url\=(.*?)\](.*?)\[\/url\]/ism", '', $body);
+
+		// Search for pure links
+		preg_match("/\[url\](https?:.*?)\[\/url\]/ism", $body, $matches);
 
 		if (!$matches) {
-			preg_match("~(?<![!#@])\[url=($URLSearchString)].*\[/url]$~is", $body, $matches);
+			// Search for links with descriptions
+			preg_match("/\[url\=(https?:.*?)\].*?\[\/url\]/ism", $body, $matches);
 		}
 
 		if (!$matches && $searchNakedUrls) {
@@ -282,7 +282,7 @@ class PageInfo
 	 * @param string $url
 	 * @return string
 	 */
-	protected static function stripTrailingUrlFromBody(string $body, string $url)
+	protected static function stripTrailingUrlFromBody(string $body, string $url): string
 	{
 		$quotedUrl = preg_quote($url, '#');
 		$body = preg_replace_callback("#(?:
@@ -297,7 +297,8 @@ class PageInfo
 			}
 
 			// Stripping link labels that include a shortened version of the URL
-			if (strpos($url, trim($match[1], '.…')) !== false) {
+			$trimMatch = trim($match[1], '.…');
+			if (!empty($trimMatch) && strpos($url, $trimMatch) !== false) {
 				return '';
 			}
 

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,5 +25,7 @@ use Friendica\Network\HTTPException;
 
 class UnauthorizedException extends HTTPException
 {
-	protected $code = 401;
+	protected $code        = 401;
+	protected $httpdesc    = 'Unauthorized';
+	protected $explanation = 'Authentication is required and has failed or has not yet been provided.';
 }

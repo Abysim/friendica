@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,14 +22,14 @@
 namespace Friendica\Object\Api\Mastodon;
 
 use Friendica\App\BaseURL;
-use Friendica\BaseEntity;
+use Friendica\BaseDataTransferObject;
 
 /**
  * Class Mention
  *
  * @see https://docs.joinmastodon.org/entities/mention
  */
-class Mention extends BaseEntity
+class Mention extends BaseDataTransferObject
 {
 	/** @var string */
 	protected $id;
@@ -50,15 +50,17 @@ class Mention extends BaseEntity
 	 */
 	public function __construct(BaseURL $baseUrl, array $tag, array $contact)
 	{
-		$this->id       = $contact['id'] ?? 0;
+		$this->id       = (string)($contact['id'] ?? 0);
 		$this->username = $tag['name'];
 		$this->url      = $tag['url'];
 
 		if (!empty($contact)) {
 			$this->acct =
-				strpos($contact['url'], $baseUrl->get() . '/') === 0 ?
+				strpos($contact['url'], $baseUrl . '/') === 0 ?
 					$contact['nick'] :
 					$contact['addr'];
+
+			$this->username = $contact['nick'];
 		} else {
 			$this->acct = '';
 		}

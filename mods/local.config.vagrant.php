@@ -38,5 +38,6 @@ return [
 		'default_timezone' => 'UTC',
 		'language' => 'en',
 		'basepath' => '/vagrant',
+		'url' => 'https://192.168.56.10',
 	],
 ];

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,11 +21,18 @@
 
 namespace Friendica\Module\Security\TwoFactor;
 
+use Friendica\App;
 use Friendica\BaseModule;
+use Friendica\Core\L10n;
 use Friendica\Core\Renderer;
-use Friendica\Core\Session;
+use Friendica\Core\Session\Capability\IHandleUserSessions;
 use Friendica\DI;
-use Friendica\Model\TwoFactor\RecoveryCode;
+use Friendica\Model\User;
+use Friendica\Module\Response;
+use Friendica\Security\Authentication;
+use Friendica\Security\TwoFactor\Model\RecoveryCode;
+use Friendica\Util\Profiler;
+use Psr\Log\LoggerInterface;
 
 /**
  * // Page 1a: Recovery code verification
@@ -34,57 +41,66 @@ use Friendica\Model\TwoFactor\RecoveryCode;
  */
 class Recovery extends BaseModule
 {
-	public static function init(array $parameters = [])
+	/** @var IHandleUserSessions */
+	protected $session;
+	/** @var App */
+	protected $app;
+	/** @var Authentication */
+	protected $auth;
+
+	public function __construct(App $app, L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, Response $response, Authentication $auth, IHandleUserSessions $session, array $server, array $parameters = [])
 	{
-		if (!local_user()) {
-			return;
-		}
+		parent::__construct($l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
+
+		$this->app     = $app;
+		$this->auth    = $auth;
+		$this->session = $session;
 	}
 
-	public static function post(array $parameters = [])
+	protected function post(array $request = [])
 	{
-		if (!local_user()) {
+		if (!$this->session->getLocalUserId()) {
 			return;
 		}
 
 		if (($_POST['action'] ?? '') == 'recover') {
 			self::checkFormSecurityTokenRedirectOnError('2fa', 'twofactor_recovery');
 
-			$a = DI::app();
-
 			$recovery_code = $_POST['recovery_code'] ?? '';
 
-			if (RecoveryCode::existsForUser(local_user(), $recovery_code)) {
-				RecoveryCode::markUsedForUser(local_user(), $recovery_code);
-				Session::set('2fa', true);
-				info(DI::l10n()->t('Remaining recovery codes: %d', RecoveryCode::countValidForUser(local_user())));
+			if (RecoveryCode::existsForUser($this->session->getLocalUserId(), $recovery_code)) {
+				RecoveryCode::markUsedForUser($this->session->getLocalUserId(), $recovery_code);
+				$this->session->set('2fa', true);
+				DI::sysmsg()->addInfo($this->t('Remaining recovery codes: %d', RecoveryCode::countValidForUser($this->session->getLocalUserId())));
 
-				DI::auth()->setForUser($a, $a->user, true, true);
+				$this->auth->setForUser($this->app, User::getById($this->app->getLoggedInUserId()), true, true);
+
+				$this->baseUrl->redirect($this->session->pop('return_path', ''));
 			} else {
-				notice(DI::l10n()->t('Invalid code, please retry.'));
+				DI::sysmsg()->addNotice($this->t('Invalid code, please retry.'));
 			}
 		}
 	}
 
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		if (!local_user()) {
-			DI::baseUrl()->redirect();
+		if (!$this->session->getLocalUserId()) {
+			$this->baseUrl->redirect();
 		}
 
 		// Already authenticated with 2FA token
-		if (Session::get('2fa')) {
-			DI::baseUrl()->redirect();
+		if ($this->session->get('2fa')) {
+			$this->baseUrl->redirect();
 		}
 
 		return Renderer::replaceMacros(Renderer::getMarkupTemplate('twofactor/recovery.tpl'), [
 			'$form_security_token' => self::getFormSecurityToken('twofactor_recovery'),
 
-			'$title'            => DI::l10n()->t('Two-factor recovery'),
-			'$message'          => DI::l10n()->t('<p>You can enter one of your one-time recovery codes in case you lost access to your mobile device.</p>'),
-			'$recovery_message' => DI::l10n()->t('Don’t have your phone? <a href="%s">Enter a two-factor recovery code</a>', '2fa/recovery'),
-			'$recovery_code'    => ['recovery_code', DI::l10n()->t('Please enter a recovery code'), '', '', '', 'placeholder="000000-000000"'],
-			'$recovery_label'   => DI::l10n()->t('Submit recovery code and complete login'),
+			'$title'            => $this->t('Two-factor recovery'),
+			'$message'          => $this->t('<p>You can enter one of your one-time recovery codes in case you lost access to your mobile device.</p>'),
+			'$recovery_message' => $this->t('Don’t have your phone? <a href="%s">Enter a two-factor recovery code</a>', '2fa/recovery'),
+			'$recovery_code'    => ['recovery_code', $this->t('Please enter a recovery code'), '', '', '', 'placeholder="000000-000000"'],
+			'$recovery_label'   => $this->t('Submit recovery code and complete login'),
 		]);
 	}
 }

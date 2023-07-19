@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -34,7 +34,7 @@ class Verb
 	 * @return integer verb id
 	 * @throws \Exception
 	 */
-	public static function getID(string $verb)
+	public static function getID(string $verb): int
 	{
 		if (empty($verb)) {
 			return 0;
@@ -56,7 +56,7 @@ class Verb
 	 * @param integer $id
 	 * @return string verb
 	 */
-	public static function getByID(int $id)
+	public static function getByID(int $id): string
 	{
 		if (empty($id)) {
 			return '';

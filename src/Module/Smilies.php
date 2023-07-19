@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,6 +23,7 @@ namespace Friendica\Module;
 
 use Friendica\BaseModule;
 use Friendica\Content;
+use Friendica\Core\Logger;
 use Friendica\Core\Renderer;
 use Friendica\Core\System;
 use Friendica\DI;
@@ -32,11 +33,9 @@ use Friendica\DI;
  */
 class Smilies extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-		$app = DI::app();
-
-		if (!empty($app->argv[1]) && ($app->argv[1] === "json")) {
+		if (!empty(DI::args()->getArgv()[1]) && (DI::args()->getArgv()[1] === "json")) {
 			$smilies = Content\Smilies::getList();
 			$results = [];
 			for ($i = 0; $i < count($smilies['texts']); $i++) {
@@ -46,7 +45,7 @@ class Smilies extends BaseModule
 		}
 	}
 
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
 		$smilies = Content\Smilies::getList();
 		$count = count($smilies['texts'] ?? []);

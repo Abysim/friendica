@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,8 +24,12 @@ namespace Friendica\Worker;
 use Friendica\Core\Hook;
 use Friendica\Core\Logger;
 use Friendica\Core\Worker;
+use Friendica\Database\DBA;
 use Friendica\DI;
 use Friendica\Model\Tag;
+use Friendica\Protocol\ActivityPub\Queue;
+use Friendica\Protocol\Relay;
+use Friendica\Util\DateTimeFormat;
 
 class Cron
 {
@@ -33,14 +37,14 @@ class Cron
 	{
 		$a = DI::app();
 
-		$last = DI::config()->get('system', 'last_cron');
+		$last = DI::keyValue()->get('last_cron');
 
 		$poll_interval = intval(DI::config()->get('system', 'cron_interval'));
 
 		if ($last) {
 			$next = $last + ($poll_interval * 60);
 			if ($next > time()) {
-				Logger::notice('cron intervall not reached');
+				Logger::notice('cron interval not reached');
 				return;
 			}
 		}
@@ -54,87 +58,111 @@ class Cron
 			copy($basepath . '/.htaccess-dist', $basepath . '/.htaccess');
 		}
 
+		if (DI::config()->get('system', 'delete_sleeping_processes')) {
+			self::deleteSleepingProcesses();
+		}
+
 		// Fork the cron jobs in separate parts to avoid problems when one of them is crashing
-		Hook::fork(PRIORITY_MEDIUM, 'cron');
+		Hook::fork(Worker::PRIORITY_MEDIUM, 'cron');
 
 		// Poll contacts
-		Worker::add(PRIORITY_MEDIUM, 'PollContacts');
+		Worker::add(Worker::PRIORITY_MEDIUM, 'PollContacts');
 
 		// Update contact information
-		Worker::add(PRIORITY_LOW, 'UpdateContacts');
+		Worker::add(Worker::PRIORITY_LOW, 'UpdateContacts');
 
 		// Update server information
-		Worker::add(PRIORITY_LOW, 'UpdateGServers');
+		Worker::add(Worker::PRIORITY_LOW, 'UpdateGServers');
 
 		// run the process to update server directories in the background
-		Worker::add(PRIORITY_LOW, 'UpdateServerDirectories');
+		Worker::add(Worker::PRIORITY_LOW, 'UpdateServerDirectories');
 
 		// Expire and remove user entries
-		Worker::add(PRIORITY_MEDIUM, 'ExpireAndRemoveUsers');
+		Worker::add(Worker::PRIORITY_MEDIUM, 'ExpireAndRemoveUsers');
 
 		// Call possible post update functions
-		Worker::add(PRIORITY_LOW, 'PostUpdate');
+		Worker::add(Worker::PRIORITY_LOW, 'PostUpdate');
 
 		// Hourly cron calls
-		if (DI::config()->get('system', 'last_cron_hourly', 0) + 3600 < time()) {
-
+		if ((DI::keyValue()->get('last_cron_hourly') ?? 0) + 3600 < time()) {
 			// Update trending tags cache for the community page
 			Tag::setLocalTrendingHashtags(24, 20);
 			Tag::setGlobalTrendingHashtags(24, 20);
 
+			// Remove old pending posts from the queue
+			Queue::clear();
+
+			// Process all unprocessed entries
+			Queue::processAll();
+
 			// Search for new contacts in the directory
 			if (DI::config()->get('system', 'synchronize_directory')) {
-				Worker::add(PRIORITY_LOW, 'PullDirectory');
+				Worker::add(Worker::PRIORITY_LOW, 'PullDirectory');
 			}
 
-			// Delete all done workerqueue entries			
-			Worker::add(PRIORITY_LOW, 'CleanWorkerQueue');
-
 			// Clear cache entries
-			Worker::add(PRIORITY_LOW, 'ClearCache');
+			Worker::add(Worker::PRIORITY_LOW, 'ClearCache');
 
-			DI::config()->set('system', 'last_cron_hourly', time());
+			DI::keyValue()->set('last_cron_hourly', time());
 		}
 
 		// Daily maintenance cron calls
 		if (Worker::isInMaintenanceWindow(true)) {
 
-			Worker::add(PRIORITY_LOW, 'UpdateContactBirthdays');
+			Worker::add(Worker::PRIORITY_LOW, 'UpdateContactBirthdays');
 
-			Worker::add(PRIORITY_LOW, 'UpdatePhotoAlbums');
+			Worker::add(Worker::PRIORITY_LOW, 'UpdatePhotoAlbums');
 
-			// update nodeinfo data
-			Worker::add(PRIORITY_LOW, 'NodeInfo');
+			Worker::add(Worker::PRIORITY_LOW, 'ExpirePosts');
 
-			// Repair entries in the database
-			Worker::add(PRIORITY_LOW, 'RepairDatabase');
+			Worker::add(Worker::PRIORITY_LOW, 'ExpireActivities');
 
-			Worker::add(PRIORITY_LOW, 'Expire');
+			Worker::add(Worker::PRIORITY_LOW, 'RemoveUnusedTags');
 
-			Worker::add(PRIORITY_LOW, 'ExpirePosts');
+			Worker::add(Worker::PRIORITY_LOW, 'RemoveUnusedContacts');
 
-			Worker::add(PRIORITY_LOW, 'ExpireConversations');
-
-			Worker::add(PRIORITY_LOW, 'CleanItemUri');
-
-			Worker::add(PRIORITY_LOW, 'RemoveUnusedContacts');
-
-			Worker::add(PRIORITY_LOW, 'RemoveUnusedAvatars');
+			Worker::add(Worker::PRIORITY_LOW, 'RemoveUnusedAvatars');
 
 			// check upstream version?
-			Worker::add(PRIORITY_LOW, 'CheckVersion');
+			Worker::add(Worker::PRIORITY_LOW, 'CheckVersion');
 
-			Worker::add(PRIORITY_LOW, 'CheckDeletedContacts');
+			Worker::add(Worker::PRIORITY_LOW, 'CheckDeletedContacts');
+
+			Worker::add(Worker::PRIORITY_LOW, 'UpdateAllSuggestions');
 
 			if (DI::config()->get('system', 'optimize_tables')) {
-				Worker::add(PRIORITY_LOW, 'OptimizeTables');
+				Worker::add(Worker::PRIORITY_LOW, 'OptimizeTables');
 			}
-	
-			DI::config()->set('system', 'last_cron_daily', time());
+
+			$users = DBA::select('owner-view', ['uid'], ["`homepage_verified` OR (`last-activity` > ? AND `homepage` != ?)", DateTimeFormat::utc('now - 7 days', 'Y-m-d'), '']);
+			while ($user = DBA::fetch($users)) {
+				Worker::add(Worker::PRIORITY_LOW, 'CheckRelMeProfileLink', $user['uid']);
+			}
+			DBA::close($users);
+
+			// Resubscribe to relay servers
+			Relay::reSubscribe();
+
+			// Update "blocked" status of servers
+			Worker::add(Worker::PRIORITY_LOW, 'UpdateBlockedServers');
+
+			DI::keyValue()->set('last_cron_daily', time());
 		}
 
 		Logger::notice('end');
 
-		DI::config()->set('system', 'last_cron', time());
+		DI::keyValue()->set('last_cron', time());
+	}
+
+	/**
+	 * Kill sleeping database processes
+	 *
+	 * @return void
+	 */
+	private static function deleteSleepingProcesses()
+	{
+		Logger::info('Looking for sleeping processes');
+
+		DBA::deleteSleepingProcesses();
 	}
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,8 +21,8 @@
 
 namespace Friendica\Test\src\Core\Cache;
 
-use Friendica\Core\Cache\ICache;
-use Friendica\Core\Cache\IMemoryCache;
+use Friendica\Core\Cache\Capability\ICanCache;
+use Friendica\Core\Cache\Capability\ICanCacheInMemory;
 use Friendica\Test\MockedTest;
 use Friendica\Util\PidFile;
 
@@ -34,12 +34,12 @@ abstract class CacheTest extends MockedTest
 	protected $startTime = 1417011228;
 
 	/**
-	 * @var ICache
+	 * @var ICanCache
 	 */
 	protected $instance;
 
 	/**
-	 * @var IMemoryCache
+	 * @var \Friendica\Core\Cache\Capability\ICanCacheInMemory
 	 */
 	protected $cache;
 
@@ -81,7 +81,7 @@ abstract class CacheTest extends MockedTest
 
 	abstract protected function getInstance();
 
-	protected function setUp()
+	protected function setUp(): void
 	{
 		parent::setUp();
 
@@ -236,5 +236,14 @@ abstract class CacheTest extends MockedTest
 		self::assertContains('test_value3', $list);
 		self::assertNotContains('value1', $list);
 		self::assertNotContains('value2', $list);
+	}
+
+	/**
+	 * @small
+	 */
+	public function testSpaceInKey()
+	{
+		self::assertTrue($this->instance->set('key space', 'value'));
+		self::assertEquals('value', $this->instance->get('key space'));
 	}
 }

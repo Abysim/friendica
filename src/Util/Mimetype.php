@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -27,12 +27,13 @@ class Mimetype
 	 * Return mimetype based on file extension
 	 *
 	 * @param string $filename filename
+	 *
 	 * @return mixed array or string
 	 */
-	public static function getContentType($filename)
+	public static function getContentType(string $filename)
 	{
 		$mime_types = [
-	
+
 			/*'txt' => 'text/plain',
 			'htm' => 'text/html',
 			'html' => 'text/html',
@@ -43,7 +44,7 @@ class Mimetype
 			'xml' => 'application/xml',
 			'swf' => 'application/x-shockwave-flash',
 			'flv' => 'video/x-flv',
-	
+
 			// images
 			'png' => 'image/png',
 			'jpe' => 'image/jpeg',
@@ -56,14 +57,14 @@ class Mimetype
 			'tif' => 'image/tiff',
 			'svg' => 'image/svg+xml',
 			'svgz' => 'image/svg+xml',
-	
+
 			// archives
 			'zip' => 'application/zip',
 			'rar' => 'application/x-rar-compressed',
 			'exe' => 'application/x-msdownload',
 			'msi' => 'application/x-msdownload',
 			'cab' => 'application/vnd.ms-cab-compressed',
-	
+
 			// audio/video
 			'mp3' => 'audio/mpeg',
 			'wav' => 'audio/wav',
@@ -74,14 +75,14 @@ class Mimetype
 			'avi' => 'video/x-msvideo',
 			'wmv' => 'video/x-ms-wmv',
 			'wma' => 'audio/x-ms-wma',
-	
+
 			// adobe
 			'pdf' => 'application/pdf',
 			'psd' => 'image/vnd.adobe.photoshop',
 			'ai' => 'application/postscript',
 			'eps' => 'application/postscript',
 			'ps' => 'application/postscript',
-	
+
 			// ms office
 			'doc' => 'application/msword',
 			'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -90,12 +91,12 @@ class Mimetype
 			'xlsx' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 			'ppt' => 'application/vnd.ms-powerpoint',
 			'pptx' => 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-	
-	
+
+
 			// open office
 			'odt' => 'application/vnd.oasis.opendocument.text',
 			'ods' => 'application/vnd.oasis.opendocument.spreadsheet',*/
-	
+
 			// Assembled from the original Friendica list and
 			// lists from http://www.freeformatter.com/mime-types-list.html
 			// and http://www.webmaster-toolkit.com/mime-types.shtml
@@ -1087,8 +1088,8 @@ class Mimetype
 			'zoo' => 'application/octet-stream',
 			'zsh' => 'text/x-script.zsh'
 		];
-	
-		$dot = strpos($filename, '.');
+
+		$dot = strrpos($filename, '.');
 		if ($dot !== false) {
 			$ext = strtolower(substr($filename, $dot + 1));
 			if (array_key_exists($ext, $mime_types)) {

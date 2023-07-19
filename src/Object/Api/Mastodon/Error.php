@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,14 +21,14 @@
 
 namespace Friendica\Object\Api\Mastodon;
 
-use Friendica\BaseEntity;
+use Friendica\BaseDataTransferObject;
 
 /**
  * Class Error
  *
  * @see https://docs.joinmastodon.org/entities/error
  */
-class Error extends BaseEntity
+class Error extends BaseDataTransferObject
 {
 	/** @var string */
 	protected $error;
@@ -40,7 +40,6 @@ class Error extends BaseEntity
 	 *
 	 * @param string $error
 	 * @param string error_description
-	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
 	public function __construct(string $error, string $error_description)
 	{
@@ -53,7 +52,7 @@ class Error extends BaseEntity
 	 *
 	 * @return array
 	 */
-	public function toArray()
+	public function toArray(): array
 	{
 		$error = parent::toArray();
 

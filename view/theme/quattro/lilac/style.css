@@ -1437,27 +1437,6 @@ section {
 .type-video blockquote {
   padding-left: 1em;
 }
-.shared_header {
-  height: 32px;
-  color: #999;
-  border-top: 1px solid #cccccc;
-  padding-top: 5px;
-  margin-top: 5px;
-}
-.shared_header img {
-  -webkit-border-radius: 4px;
-  -moz-border-radius: 4px;
-  border-radius: 4px;
-  float: left;
-}
-.shared_header span {
-  margin-left: 9px;
-}
-blockquote.shared_content {
-  margin-left: 32px;
-  color: #000;
-  border: none;
-}
 .oembed.video > a.embed_video {
   display: block;
   position: relative;
@@ -2537,29 +2516,29 @@ footer {
 .fbrowser .list {
   padding: 10px;
 }
-.fbrowser.image .photo-album-image-wrapper {
+.fbrowser.photo .photo-album-image-wrapper {
   width: 48px;
   height: 48px;
 }
-.fbrowser.image a img {
+.fbrowser.photo a img {
   width: auto;
   height: 48px;
 }
-.fbrowser.image a p {
+.fbrowser.photo a p {
   display: none;
 }
-.fbrowser.file .photo-album-image-wrapper {
+.fbrowser.attachment .photo-album-image-wrapper {
   float: none;
   white-space: nowrap;
   width: 100%;
   height: auto;
 }
-.fbrowser.file img {
+.fbrowser.attachment img {
   display: inline;
   width: 16px;
   height: 16px;
 }
-.fbrowser.file p {
+.fbrowser.attachment p {
   display: inline;
   white-space: nowrap;
 }

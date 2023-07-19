@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,8 +22,8 @@
 namespace Friendica\Test\src\Core\Cache;
 
 use Exception;
-use Friendica\Core\Cache\RedisCache;
-use Friendica\Core\Config\IConfig;
+use Friendica\Core\Cache\Type\RedisCache;
+use Friendica\Core\Config\Capability\IManageConfigValues;
 use Mockery;
 
 /**
@@ -34,7 +34,7 @@ class RedisCacheTest extends MemoryCacheTest
 {
 	protected function getInstance()
 	{
-		$configMock = Mockery::mock(IConfig::class);
+		$configMock = Mockery::mock(IManageConfigValues::class);
 
 		$host = $_SERVER['REDIS_HOST'] ?? 'localhost';
 		$port = $_SERVER['REDIS_PORT'] ?? 6379;
@@ -58,14 +58,14 @@ class RedisCacheTest extends MemoryCacheTest
 			->andReturn(null);
 
 		try {
-			$this->cache = new RedisCache($host, $configMock);
+			$this->cache = new \Friendica\Core\Cache\Type\RedisCache($host, $configMock);
 		} catch (Exception $e) {
 			static::markTestSkipped('Redis is not available. Failure: ' . $e->getMessage());
 		}
 		return $this->cache;
 	}
 
-	protected function tearDown()
+	protected function tearDown(): void
 	{
 		$this->cache->clear(false);
 		parent::tearDown();

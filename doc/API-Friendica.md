@@ -24,6 +24,32 @@ Returns a list of [Event](help/API-Entities#Event) entities for the current logg
 - `since_id`: (optional) minimum event id for pagination
 - `count`: maximum number of items returned, default 20
 
+### POST api/friendica/event_create
+
+Create a new event for the current logged in user.
+
+#### Parameters
+
+- `id` : (optional) id of event, event will be amended if supplied
+- `name` : name of the event (required)
+- `start_time` : start of the event (ISO), required
+- `end_time` : (optional) end of the event, event is open end, if not supplied
+- `desc` : (optional) description of the event
+- `place` : (optional) location of the event
+- `publish` : (optional) create message for event
+- `allow_cid` : (optional) ACL-formatted list of allowed contact ids if private event
+- `allow_gid` : (optional) ACL-formatted list of disallowed contact ids if private event
+- `deny_cid` : (optional) ACL-formatted list of allowed group ids if private event
+- `deny_gid` : (optional) ACL-formatted list of disallowed group ids if private event
+
+### POST api/friendica/event_delete
+
+Delete event from calendar (not the message)
+
+#### Parameters
+
+- `id` : id of event to be deleted
+
 ### GET api/externalprofile/show
 
 Returns a [Contact](help/API-Entities#Contact) entity for the provided profile URL.
@@ -109,7 +135,7 @@ Alias of [`api/conversation/show`](#GET+api%2Fconversation%2Fshow).
 
 ### GET api/statusnet/config
 
-Returns the public Friendica node configuration. 
+Returns the public Friendica node configuration.
 
 ### GET api/gnusocial/config
 
@@ -137,7 +163,7 @@ Add or remove an activity from an item.
 * `attendmaybe`
 
 To remove an activity, prepend the verb with "un", eg. "unlike" or "undislike"
-Attend verbs disable eachother: that means that if "attendyes" was added to an item, adding "attendno" remove previous "attendyes".
+Attend verbs disable each other: that means that if "attendyes" was added to an item, adding "attendno" remove previous "attendyes".
 Attend verbs should be used only with event-related items (there is no check at the moment).
 
 #### Parameters
@@ -220,7 +246,7 @@ Deprecated Twitter sent direct message list endpoint. Returns [Private Messages]
 * `friendica_verbose`: "true" enables different error returns (default: "false")
 
 
-### POST/PUT api/direct_messages/new
+### POST api/direct_messages/new
 
 Deprecated Twitter direct message submission endpoint.
 
@@ -232,7 +258,7 @@ Deprecated Twitter direct message submission endpoint.
 * `replyto`: ID of the replied direct message
 * `title`: Title of the direct message
 
-### POST/DELETE api/direct_messages/destroy
+### POST api/direct_messages/destroy
 
 Deprecated Twitter direct message deletion endpoint.
 
@@ -279,7 +305,7 @@ Returns [Private Messages](help/API-Entities#Private+message) matching the provi
 #### Parameters
 
 * `searchstring`: string for which the API call should search as '%searchstring%' in field 'body' of all messages of the authenticated user (caption ignored)
-* `getText` (optional): `plain`|`html` If ommited, the title is prepended to the plaintext body in the `text` attribute of the private message objects.
+* `getText` (optional): `plain`|`html` If omitted, the title is prepended to the plaintext body in the `text` attribute of the private message objects.
 * `getUserObjects` (optional): `true`|`false` If `false`, the `sender` and `recipient` attributes of the private message object are absent.
 
 #### Return values
@@ -313,7 +339,7 @@ Array of:
 * `gid`: id of the group
 * `user`: array of [Contacts](help/API-Entities#Contact)
 
-### POST/PUT api/friendica/group_create
+### POST api/friendica/group_create
 
 Create the group with the posted array of contacts as members.
 
@@ -366,7 +392,7 @@ Array of:
 * `status`: "missing user" | "ok"
 * `wrong users`: array of users, which were not available in the contact table
 
-### POST/DELETE api/friendica/group_delete
+### POST api/friendica/group_delete
 
 Delete the specified group of contacts; API call need to include the correct gid AND name of the group to be deleted.
 
@@ -565,7 +591,7 @@ On error:
 			"unknown error - update photo entry in database failed",
 			"unknown error - this error on uploading or updating a photo should never happen"
 
-### DELETE api/friendica/photo/delete
+### POST api/friendica/photo/delete
 
 Deletes a single image with the specified id, is not reversible -> ensure that client is asking user for being sure to do this
 Sets item table entries for this photo to deleted = 1.
@@ -578,7 +604,7 @@ Sets item table entries for this photo to deleted = 1.
 
 On success:
 
-* JSON return 
+* JSON return
 
 ```json
 {
@@ -595,7 +621,7 @@ On error:
 
 ---
 
-### POST/DELETE api/friendica/photoalbum/delete
+### POST api/friendica/photoalbum/delete
 
 Deletes all images with the specified album name, is not reversible -> ensure that client is asking user for being sure to do this.
 
@@ -607,7 +633,7 @@ Deletes all images with the specified album name, is not reversible -> ensure th
 
 On success:
 
-* JSON return 
+* JSON return
 
 ```json
 {
@@ -620,9 +646,9 @@ On error:
 
 * 403 FORBIDDEN: if not authenticated
 * 400 BADREQUEST: "no albumname specified", "album not available"
-* 500 INTERNALSERVERERROR: "problem with deleting item occured", "unknown error - deleting from database failed"
+* 500 INTERNALSERVERERROR: "problem with deleting item occurred", "unknown error - deleting from database failed"
 
-### POST/PUT api/friendica/photoalbum/update
+### POST api/friendica/photoalbum/update
 
 Changes the album name to album_new for all photos in album.
 
@@ -639,8 +665,8 @@ On success:
 
 ```json
 {
-    "result": "updated",
-    "message":"album 'abc' with all containing photos has been renamed to 'xyz'."
+  "result": "updated",
+  "message":"album 'abc' with all containing photos has been renamed to 'xyz'."
 }
 ```
 
@@ -650,7 +676,91 @@ On error:
 * 400 BADREQUEST: "no albumname specified", "no new albumname specified", "album not available"
 * 500 INTERNALSERVERERROR: "unknown error - updating in database failed"
 
+### GET api/friendica/photoalbums
+
+Get a list of photo albums for the user
+
+#### Parameters
+
+None
+#### Return values
+
+On success a list of photo album objects:
+
+```json
+[
+  {
+    "name": "Wall Photos",
+    "created": "2023-01-22 02:03:19",
+    "count": 4
+  },
+  {
+    "name": "Profile photos",
+    "created": "2022-11-20 14:40:06",
+    "count": 1
+  }
+]
+```
+
+### GET api/friendica/photoalbum
+
+Get a list of images in a photo album
+#### Parameters
+
+* `album` (Required): name of the album to be deleted
+* `limit` (Optional): Maximum number of items to get, defaults to 50, max 500
+* `offset`(Optional): Offset in results to page through total items, defaults to 0
+* `latest_first` (Optional): Reverse the order so the most recent images are first, defaults to false
+
+#### Return values
+
+On success:
+
+* JSON return with the list of Photo items
+
+**Example:**
+`https://<server>/api/friendica/photoalbum?album=Wall Photos&limit=10&offset=2`
+
+```json
+[
+  {
+    "created": "2023-02-14 14:31:06",
+    "edited": "2023-02-14 14:31:14",
+    "title": "",
+    "desc": "",
+    "album": "Wall Photos",
+    "filename": "image.png",
+    "type": "image/png",
+    "height": 835,
+    "width": 693,
+    "datasize": 119523,
+    "profile": 0,
+    "allow_cid": "",
+    "deny_cid": "",
+    "allow_gid": "",
+    "deny_gid": "",
+    "id": "899184972463eb9b2ae3dc2580502826",
+    "scale": 0,
+    "media-id": 52,
+    "scales": [
+      {
+        "id": 52,
+        "scale": 0,
+        "link": "https://<server>/photo/899184972463eb9b2ae3dc2580502826-0.png",
+        "width": 693,
+        "height": 835,
+        "size": 119523
+      },
+      ...
+    ],
+    "thumb": "https://<server>/photo/899184972463eb9b2ae3dc2580502826-2.png"
+  },
+  ...
+]
+```
+
 ---
+
 
 ### GET api/friendica/profile/show
 
@@ -689,14 +799,128 @@ General description of profile data in API returns:
 
 ---
 
-### GET api/friendica/remoteauth
+### POST api/friendica/statuses/:id/dislike
 
-Similar as /redir, redirects to `url` after DFRN authentication.
+Marks the given status as disliked by this user
 
-#### Parameters
+#### Path Parameter
 
-- `c_url`: url of remote contact to auth to
-- `url`: string, url to redirect after auth
+* `id`: the status ID that is being marked
+
+#### Return values
+
+A Mastodon [Status Entity](https://docs.joinmastodon.org/entities/Status/)
+
+#### Example:
+`https://<server_name>/api/friendica/statuses/341/dislike`
+
+```json
+{
+  "id": "341",
+  "created_at": "2023-02-23T01:50:00.000Z",
+  "in_reply_to_id": null,
+  "in_reply_to_status": null,
+  "in_reply_to_account_id": null,
+  "sensitive": false,
+  "spoiler_text": "",
+  "visibility": "public",
+  "language": "en",
+  ...
+  "account": {
+    "id": "8",
+    "username": "testuser2",
+    ...
+  },
+  "media_attachments": [],
+  "mentions": [],
+  "tags": [],
+  "emojis": [],
+  "card": null,
+  "poll": null,
+  "friendica": {
+    "title": "",
+    "dislikes_count": 1,
+    "disliked": true
+  }
+}
+```
+
+
+### GET api/friendica/statuses/:id/disliked_by
+
+Returns the list of accounts that have disliked the status as known by the current server
+
+#### Path Parameter
+
+* `id`: the status ID that is being marked
+
+#### Return values
+
+A list of [Mastodon Account](https://docs.joinmastodon.org/entities/Account/) objects
+in the body and next/previous link headers in the header
+
+#### Example:
+`https://<server_name>/api/friendica/statuses/341/disliked_by`
+
+```json
+[
+  {
+    "id": "6",
+    "username": "testuser1",
+    ...
+  }
+]
+```
+
+
+
+### POST api/friendica/statuses/:id/undislike
+
+Removes the dislike mark (if it exists) on this status for this user
+
+#### Path Parameter
+
+* `id`: the status ID that is being marked
+
+#### Return values
+
+A Mastodon [Status Entity](https://docs.joinmastodon.org/entities/Status/)
+
+#### Example:
+`https://<server_name>/api/friendica/statuses/341/undislike`
+
+```json
+{
+  "id": "341",
+  "created_at": "2023-02-23T01:50:00.000Z",
+  "in_reply_to_id": null,
+  "in_reply_to_status": null,
+  "in_reply_to_account_id": null,
+  "sensitive": false,
+  "spoiler_text": "",
+  "visibility": "public",
+  "language": "en",
+  ...
+  "account": {
+    "id": "8",
+    "username": "testuser2",
+    ...
+  },
+  "media_attachments": [],
+  "mentions": [],
+  "tags": [],
+  "emojis": [],
+  "card": null,
+  "poll": null,
+  "friendica": {
+    "title": "",
+    "dislikes_count": 0,
+    "disliked": false
+  }
+}
+```
+
+---
 
 ## Deprecated endpoints
 

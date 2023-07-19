@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -28,9 +28,9 @@ use Friendica\Module\BaseAdmin;
 
 class Index extends BaseAdmin
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		parent::content($parameters);
+		parent::content();
 
 		// reload active themes
 		if (!empty($_GET['action'])) {
@@ -39,18 +39,18 @@ class Index extends BaseAdmin
 			switch ($_GET['action']) {
 				case 'reload':
 					Addon::reload();
-					info(DI::l10n()->t('Addons reloaded'));
+					DI::sysmsg()->addInfo(DI::l10n()->t('Addons reloaded'));
 					break;
 
 				case 'toggle' :
 					$addon = $_GET['addon'] ?? '';
 					if (Addon::isEnabled($addon)) {
 						Addon::uninstall($addon);
-						info(DI::l10n()->t('Addon %s disabled.', $addon));
+						DI::sysmsg()->addInfo(DI::l10n()->t('Addon %s disabled.', $addon));
 					} elseif (Addon::install($addon)) {
-						info(DI::l10n()->t('Addon %s enabled.', $addon));
+						DI::sysmsg()->addInfo(DI::l10n()->t('Addon %s enabled.', $addon));
 					} else {
-						notice(DI::l10n()->t('Addon %s failed to install.', $addon));
+						DI::sysmsg()->addNotice(DI::l10n()->t('Addon %s failed to install.', $addon));
 					}
 
 					break;
@@ -68,7 +68,6 @@ class Index extends BaseAdmin
 			'$page' => DI::l10n()->t('Addons'),
 			'$submit' => DI::l10n()->t('Save Settings'),
 			'$reload' => DI::l10n()->t('Reload active addons'),
-			'$baseurl' => DI::baseUrl()->get(true),
 			'$function' => 'addons',
 			'$addons' => $addons,
 			'$pcount' => count($addons),

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,36 +22,32 @@
 namespace Friendica\Module\WellKnown;
 
 use Friendica\BaseModule;
+use Friendica\Core\System;
 use Friendica\DI;
 use Friendica\Model\Search;
+use Friendica\Protocol\Relay;
 
 /**
- * Node subscription preferences for social realy systems
+ * Node subscription preferences for social relay systems
  * @see https://git.feneas.org/jaywink/social-relay/blob/master/docs/relays.md
  */
 class XSocialRelay extends BaseModule
 {
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
 		$config = DI::config();
 
-		$subscribe = $config->get('system', 'relay_subscribe', false);
-
-		if ($subscribe) {
-			$scope = $config->get('system', 'relay_scope', SR_SCOPE_ALL);
-		} else {
-			$scope = SR_SCOPE_NONE;
-		}
+		$scope = $config->get('system', 'relay_scope');
 
 		$systemTags = [];
 		$userTags = [];
 
-		if ($scope == SR_SCOPE_TAGS) {
+		if ($scope == Relay::SCOPE_TAGS) {
 			$server_tags = $config->get('system', 'relay_server_tags');
 			$tagitems = explode(',', $server_tags);
 
 			/// @todo Check if it was better to use "strtolower" on the tags
-			foreach ($tagitems AS $tag) {
+			foreach ($tagitems as $tag) {
 				$systemTags[] = trim($tag, '# ');
 			}
 
@@ -63,26 +59,24 @@ class XSocialRelay extends BaseModule
 		$tagList = array_unique(array_merge($systemTags, $userTags));
 
 		$relay = [
-			'subscribe' => $subscribe,
+			'subscribe' => ($scope != Relay::SCOPE_NONE),
 			'scope'     => $scope,
 			'tags'      => $tagList,
 			'protocols' => [
 				'activitypub' => [
-					'actor' => DI::baseUrl()->get() . '/friendica',
-					'receive' => DI::baseUrl()->get() . '/inbox'
+					'actor' => DI::baseUrl() . '/friendica',
+					'receive' => DI::baseUrl() . '/inbox'
 				],
 				'dfrn'     => [
-					'receive' => DI::baseUrl()->get() . '/dfrn_notify'
+					'receive' => DI::baseUrl() . '/dfrn_notify'
 				]
 			]
 		];
 
 		if (DI::config()->get("system", "diaspora_enabled")) {
-			$relay['protocols']['diaspora'] = ['receive' => DI::baseUrl()->get() . '/receive/public'];
+			$relay['protocols']['diaspora'] = ['receive' => DI::baseUrl() . '/receive/public'];
 		}
 
-		header('Content-type: application/json; charset=utf-8');
-		echo json_encode($relay, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-		exit;
+		System::jsonExit($relay);
 	}
 }

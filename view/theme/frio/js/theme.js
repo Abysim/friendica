@@ -1,10 +1,10 @@
 // @license magnet:?xt=urn:btih:0b31508aeb0634b347b8270c7bee4d411b5d4109&dn=agpl-3.0.txt AGPLv3-or-later
 
-var jotcache = ''; //The jot cache. We use it as cache to restore old/original jot content
+var jotcache = ""; //The jot cache. We use it as cache to restore old/original jot content
 
-$(document).ready(function(){
+$(document).ready(function () {
 	// Destroy unused perfect scrollbar in aside element
-	$('aside').perfectScrollbar('destroy');
+	$("aside").perfectScrollbar("destroy");
 
 	//fade in/out based on scrollTop value
 	var scrollStart;
@@ -27,28 +27,31 @@ $(document).ready(function(){
 
 	// scroll body to 0px on click
 	$("#back-to-top").click(function () {
-		$("body,html").animate({
-			scrollTop: 0
-		}, 400);
+		$("body,html").animate(
+			{
+				scrollTop: 0,
+			},
+			400,
+		);
 		return false;
 	});
 
-	// add the class "selected" to group widges li if li > a does have the class group-selected
-	if( $("#sidebar-group-ul li a").hasClass("group-selected")) {
+	// add the class "selected" to group widgets li if li > a does have the class group-selected
+	if ($("#sidebar-group-ul li a").hasClass("group-selected")) {
 		$("#sidebar-group-ul li a.group-selected").parent("li").addClass("selected");
 	}
 
-	// add the class "selected" to forums widges li if li > a does have the class forum-selected
-	if( $("#forumlist-sidbar-ul li a").hasClass("forum-selected")) {
-		$("#forumlist-sidbar-ul li a.forum-selected").parent("li").addClass("selected");
+	// add the class "selected" to forums widgets li if li > a does have the class forum-selected
+	if ($("#forumlist-sidebar-ul li a").hasClass("forum-selected")) {
+		$("#forumlist-sidebar-ul li a.forum-selected").parent("li").addClass("selected");
 	}
 
 	// add the class "active" to tabmenuli if li > a does have the class active
-	if( $("#tabmenu ul li a").hasClass("active")) {
+	if ($("#tabmenu ul li a").hasClass("active")) {
 		$("#tabmenu ul li a.active").parent("li").addClass("active");
 	}
 
-	// give select fields an boostrap classes
+	// give select fields Bootstrap classes
 	// @todo: this needs to be changed in friendica core
 	$(".field.select, .field.custom").addClass("form-group");
 	$(".field.select > select, .field.custom > select").addClass("form-control");
@@ -58,23 +61,23 @@ $(document).ready(function(){
 
 	// add mask css url to the logo-img container
 	//
-	// This is for firefox - we use a mask which looks like the friendica logo to apply user collers
-	// to the friendica logo (the mask is in nav.tpl at the botom). To make it work we need to apply the
+	// This is for firefox - we use a mask which looks like the friendica logo to apply user colors
+	// to the friendica logo (the mask is in nav.tpl at the bottom). To make it work we need to apply the
 	// correct url. The only way which comes to my mind was to do this with js
 	// So we apply the correct url (with the link to the id of the mask) after the page is loaded.
-	if($("#logo-img").length ) {
+	if ($("#logo-img").length) {
 		var pageurl = "url('" + window.location.href + "#logo-mask')";
-		$("#logo-img").css({"mask": pageurl});
+		$("#logo-img").css({ mask: pageurl });
 	}
 
 	// make responsive tabmenu with flexmenu.js
 	// the menupoints which doesn't fit in the second nav bar will moved to a
 	// dropdown menu. Look at common_tabs.tpl
 	$("ul.tabs.flex-nav").flexMenu({
-		'cutoff': 2,
-		'popupClass': "dropdown-menu pull-right",
-		'popupAbsolute': false,
-		'target': ".flex-target"
+		cutoff: 2,
+		popupClass: "dropdown-menu pull-right",
+		popupAbsolute: false,
+		target: ".flex-target",
 	});
 
 	// add Jot button to the second navbar
@@ -84,71 +87,80 @@ $(document).ready(function(){
 		if ($("#jot-popup").is(":hidden")) {
 			$jotButton.hide();
 		}
-		$jotButton.on('click', function (e) {
-			e.preventDefault();
-			jotShow();
-		});
+		if ($jotButton.hasClass('modal-open')) {
+			$jotButton.on("click", function (e) {
+				e.preventDefault();
+				jotShow();
+			});
+		}
 	}
 
-	let $body = $('body');
+	let $body = $("body");
 
 	// show bulk deletion button at network page if checkbox is checked
-	$body.change("input.item-select", function(){
+	$body.change("input.item-select", function () {
 		var checked = false;
 
 		// We need to get all checked items, so it would close the delete button
 		// if we uncheck one item and others are still checked.
 		// So return checked = true if there is any checked item
-		$('input.item-select').each( function() {
-			if($(this).is(':checked')) {
+		$("input.item-select").each(function () {
+			if ($(this).is(":checked")) {
 				checked = true;
 				return false;
 			}
 		});
 
-		if(checked) {
+		if (checked) {
 			$("#item-delete-selected").fadeTo(400, 1);
 			$("#item-delete-selected").show();
 		} else {
-			$("#item-delete-selected").fadeTo(400, 0, function(){
+			$("#item-delete-selected").fadeTo(400, 0, function () {
 				$("#item-delete-selected").hide();
 			});
 		}
 	});
 
-	// initialize the bootstrap tooltips
+	// initialize the Bootstrap tooltips
 	$body.tooltip({
 		selector: '[data-toggle="tooltip"]',
-		container: 'body',
+		container: "body",
 		animation: true,
 		html: true,
-		placement: 'auto',
-		trigger: 'hover',
+		placement: "auto",
+		trigger: "hover",
 		delay: {
 			show: 500,
-			hide: 100
+			hide: 100,
 		},
 		sanitizeFn: function (content) {
-			return DOMPurify.sanitize(content)
+			return DOMPurify.sanitize(content);
 		},
 	});
 
 	// initialize the bootstrap-select
-	$('.selectpicker').selectpicker();
+	$(".selectpicker").selectpicker();
 
-	// add search-heading to the seccond navbar
-	if( $(".search-heading").length) {
+	// add search-heading to the second navbar
+	if ($(".search-heading").length) {
 		$(".search-heading").appendTo("#topbar-second > .container > #tabmenu");
 	}
 
 	// add search results heading to the second navbar
 	// and insert the search value to the top nav search input
-	if( $(".search-content-wrapper").length ) {
+	if ($(".search-content-wrapper").length) {
 		// get the text of the heading (we catch the plain text because we don't
 		// want to have a h4 heading in the navbar
 		var searchText = $(".section-title-wrapper > h2").html();
+
+		// temporary workaround to avoid 'undefined' being displayed (issue #9789)
+		// https://github.com/friendica/friendica/issues/9789
+		// TODO: find a way to localize this string
+		if (typeof searchText === "undefined") {
+			searchText = "No results";
+		}
 		// insert the plain text in a <h4> heading and give it a class
-		var newText = '<h4 class="search-heading">'+searchText+'</h4>';
+		var newText = '<h4 class="search-heading">' + searchText + "</h4>";
 		// append the new heading to the navbar
 		$("#topbar-second > .container > #tabmenu").append(newText);
 
@@ -157,19 +169,19 @@ $(document).ready(function(){
 		var searchValue = $("#search-wrapper .form-group-search input").val();
 
 		// if the orignal search value isn't available use the location path as value
-		if( typeof searchValue === "undefined") {
+		if (typeof searchValue === "undefined") {
 			// get the location path
-			var urlPath = window.location.search
+			var urlPath = window.location.search;
 			// and split it up in its parts
 			var splitPath = urlPath.split(/(\?search?=)(.*$)/);
 
-			if(typeof splitPath[2] !== 'undefined') {
+			if (typeof splitPath[2] !== "undefined") {
 				// decode the path (e.g to decode %40 to the character @)
 				var searchValue = decodeURIComponent(splitPath[2]);
 			}
 		}
 
-		if( typeof searchValue !== "undefined") {
+		if (typeof searchValue !== "undefined") {
 			$("#nav-search-input-field").val(searchValue);
 		}
 	}
@@ -179,7 +191,7 @@ $(document).ready(function(){
 
 	// append the vcard-short-info to the second nav after passing the element
 	// with .fn (vcard username). Use scrollspy to get the scroll position.
-	if( $("aside .vcard .fn").length) {
+	if ($("aside .vcard .fn").length) {
 		$(".vcard .fn").scrollspy({
 			min: $(".vcard .fn").position().top - 50,
 			onLeaveTop: function onLeave(element) {
@@ -187,7 +199,7 @@ $(document).ready(function(){
 					$("#vcard-short-info").appendTo("#vcard-short-info-wrapper");
 				});
 			},
-			onEnter: function(element) {
+			onEnter: function (element) {
 				$("#vcard-short-info").appendTo("#nav-short-info");
 				$("#vcard-short-info").fadeIn(500);
 			},
@@ -195,53 +207,56 @@ $(document).ready(function(){
 	}
 
 	// move the forum contact information of the network page into the second navbar
-	if( $(".network-content-wrapper > #viewcontact_wrapper-network").length) {
+	if ($(".network-content-wrapper > #viewcontact_wrapper-network").length) {
 		// get the contact-wrapper element and append it to the second nav bar
 		// Note: We need the first() element with this class since at the present time we
 		// store also the js template information in the html code and thats why
 		// there are two elements with this class but we don't want the js template
-		$(".network-content-wrapper > #viewcontact_wrapper-network .contact-wrapper").first().appendTo("#nav-short-info");
+		$(".network-content-wrapper > #viewcontact_wrapper-network .contact-wrapper")
+			.first()
+			.appendTo("#nav-short-info");
 	}
 
 	// move heading from network stream to the second navbar nav-short-info section
-	if( $(".network-content-wrapper > .section-title-wrapper").length) {
+	if ($(".network-content-wrapper > .section-title-wrapper").length) {
 		// get the heading element
 		var heading = $(".network-content-wrapper > .section-title-wrapper > h2");
 		// get the text of the heading
 		var headingContent = heading.html();
 		// create a new element with the content of the heading
-		var newText = '<h4 class="heading" data-toggle="tooltip" title="'+headingContent+'">'+headingContent+'</h4>';
+		var newText =
+			'<h4 class="heading" data-toggle="tooltip" title="' + headingContent + '">' + headingContent + "</h4>";
 		// remove the old heading element
 		heading.remove(),
-		// put the new element to the second nav bar
-		$("#topbar-second #nav-short-info").append(newText);
+			// put the new element to the second nav bar
+			$("#topbar-second #nav-short-info").append(newText);
 	}
 
-	if( $(".community-content-wrapper").length) {
+	if ($(".community-content-wrapper").length) {
 		// get the heading element
 		var heading = $(".community-content-wrapper > h3").first();
 		// get the text of the heading
 		var headingContent = heading.html();
 		// create a new element with the content of the heading
-		var newText = '<h4 class="heading">'+headingContent+'</h4>';
+		var newText = '<h4 class="heading">' + headingContent + "</h4>";
 		// remove the old heading element
 		heading.remove(),
-		// put the new element to the second nav bar
-		$("#topbar-second > .container > #tabmenu").append(newText);
+			// put the new element to the second nav bar
+			$("#topbar-second > .container > #tabmenu").append(newText);
 	}
 
 	// Dropdown menus with the class "dropdown-head" will display the active tab
 	// as button text
-	$body.on('click', '.dropdown-head .dropdown-menu li a, .dropdown-head .dropdown-menu li button', function(){
+	$body.on("click", ".dropdown-head .dropdown-menu li a, .dropdown-head .dropdown-menu li button", function () {
 		toggleDropdownText(this);
 	});
 
 	// Change the css class while clicking on the switcher elements
-	$(".toggle label, .toggle .toggle-handle").click(function(event){
+	$(".toggle label, .toggle .toggle-handle").click(function (event) {
 		event.preventDefault();
 		// Get the value of the input element
 		var input = $(this).siblings("input");
-		var val = 1-input.val();
+		var val = 1 - input.val();
 		var id = input.attr("id");
 
 		// The css classes for "on" and "off"
@@ -250,9 +265,11 @@ $(document).ready(function(){
 
 		// According to the value of the input element we need to decide
 		// which class need to be added and removed when changing the switch
-		var removedclass = (val == 0 ? onstyle : offstyle);
-		var addedclass = (val == 0 ? offstyle : onstyle)
-		$("#"+id+"_onoff").addClass(addedclass).removeClass(removedclass);
+		var removedclass = val == 0 ? onstyle : offstyle;
+		var addedclass = val == 0 ? offstyle : onstyle;
+		$("#" + id + "_onoff")
+			.addClass(addedclass)
+			.removeClass(removedclass);
 
 		// After changing the switch the input element is getting
 		// the newvalue
@@ -262,23 +279,22 @@ $(document).ready(function(){
 	// Set the padding for input elements with inline buttons
 	//
 	// In Frio we use some input elements where the submit button is visually
-	// inside the the input field (through css). We need to set a padding-right
+	// inside the input field (through css). We need to set a padding-right
 	// to the input element where the padding value would be at least the width
 	// of the button. Otherwise long user input would be invisible because it is
 	// behind the button.
-	$body.on('click', '.form-group-search > input', function() {
+	$body.on("click", ".form-group-search > input", function () {
 		// Get the width of the button (if the button isn't available
 		// buttonWidth will be null
-		var buttonWidth = $(this).next('.form-button-search').outerWidth();
+		var buttonWidth = $(this).next(".form-button-search").outerWidth();
 
 		if (buttonWidth) {
 			// Take the width of the button and ad 5px
 			var newWidth = buttonWidth + 5;
 			// Set the padding of the input element according
 			// to the width of the button
-			$(this).css('padding-right', newWidth);
+			$(this).css("padding-right", newWidth);
 		}
-
 	});
 
 	/*
@@ -288,18 +304,18 @@ $(document).ready(function(){
 	 * We are making an exception for buttons because of a race condition with the
 	 * comment opening button that results in an already closed comment UI.
 	 */
-	$(document).on('mousedown', function(event) {
-		if (event.target.type === 'button') {
+	$(document).on("mousedown", function (event) {
+		if (event.target.type === "button") {
 			return true;
 		}
 
-		var $dontclosethis = $(event.target).closest('.wall-item-comment-wrapper').find('.comment-edit-form');
-		$('.wall-item-comment-wrapper .comment-edit-submit-wrapper:visible').each(function() {
-			var $parent = $(this).parent('.comment-edit-form');
-			var itemId = $parent.data('itemId');
+		var $dontclosethis = $(event.target).closest(".wall-item-comment-wrapper").find(".comment-edit-form");
+		$(".wall-item-comment-wrapper .comment-edit-submit-wrapper:visible").each(function () {
+			var $parent = $(this).parent(".comment-edit-form");
+			var itemId = $parent.data("itemId");
 
 			if ($dontclosethis[0] != $parent[0]) {
-				var textarea = $parent.find('textarea').get(0)
+				var textarea = $parent.find("textarea").get(0);
 
 				commentCloseUI(textarea, itemId);
 			}
@@ -307,10 +323,10 @@ $(document).ready(function(){
 	});
 
 	// Customize some elements when the app is used in standalone mode on Android
-	if (window.matchMedia('(display-mode: standalone)').matches) {
+	if (window.matchMedia("(display-mode: standalone)").matches) {
 		// Open links to source outside of the webview
-		$('body').on('click', '.plink', function (e) {
-			$(e.target).attr('target', '_blank');
+		$("body").on("click", ".plink", function (e) {
+			$(e.target).attr("target", "_blank");
 		});
 	}
 
@@ -318,7 +334,7 @@ $(document).ready(function(){
 	 * This event listeners ensures that the textarea size is updated event if the
 	 * value is changed externally (textcomplete, insertFormatting, fbrowser...)
 	 */
-	$(document).on('change', 'textarea', function(event) {
+	$(document).on("change", "textarea", function (event) {
 		autosize.update(event.target);
 	});
 
@@ -336,11 +352,11 @@ $(document).ready(function(){
 	if ($(window).width() > 976) {
 		$("aside").stick_in_parent({
 			offset_top: 100, // px, header + tab bar + spacing
-			recalc_every: 10
+			recalc_every: 10,
 		});
 		// recalculate sticky aside on clicks on <a> elements
 		// this handle height changes on expanding submenus
-		$("aside").on("click", "a", function(){
+		$("aside").on("click", "a", function () {
 			$(document.body).trigger("sticky_kit:recalc");
 		});
 	}
@@ -352,22 +368,45 @@ $(document).ready(function(){
 	 * is shown.
 	 */
 	$("aside")
-		.on("shown.bs.offcanvas", function() {
+		.on("shown.bs.offcanvas", function () {
 			$body.addClass("aside-out");
 		})
-		.on("hidden.bs.offcanvas", function() {
+		.on("hidden.bs.offcanvas", function () {
 			$body.removeClass("aside-out");
 		});
 
+	// Right offcanvas elements
+	let $offcanvas_right_toggle = $(".offcanvas-right-toggle");
+	let $offcanvas_right_container = $("#offcanvasUsermenu"); // Use ID for faster lookup, class is .offcanvas-right
+
+	$offcanvas_right_toggle.on("click", function (event) {
+		event.preventDefault();
+		$("body").toggleClass("offcanvas-right-active");
+	});
+
+	// Close the right offcanvas menu when clicking somewhere
+	$(document).on("mouseup touchend", function (event) {
+		if (
+			// Clicked element is not inside the menu
+			!$offcanvas_right_container.is(event.target) &&
+			$offcanvas_right_container.has(event.target).length === 0 &&
+			// Clicked element is not the toggle button (taken care by the toggleClass above)
+			!$offcanvas_right_toggle.is(event.target) &&
+			$offcanvas_right_toggle.has(event.target).length === 0
+		) {
+			$("body").removeClass("offcanvas-right-active");
+		}
+	});
+
 	// Event listener for 'Show & hide event map' button in the network stream.
-	$body.on("click", ".event-map-btn", function() {
+	$body.on("click", ".event-map-btn", function () {
 		showHideEventMap(this);
 	});
 
 	// Comment form submit
-	$body.on('submit', '.comment-edit-form', function(e) {
+	$body.on("submit", ".comment-edit-form", function (e) {
 		let $form = $(this);
-		let id = $form.data('item-id');
+		let id = $form.data("item-id");
 
 		// Compose page form exception: id is always 0 and form must not be submitted asynchronously
 		if (id === 0) {
@@ -376,86 +415,64 @@ $(document).ready(function(){
 
 		e.preventDefault();
 
-		let $commentSubmit = $form.find('.comment-edit-submit').button('loading');
+		let $commentSubmit = $form.find(".comment-edit-submit").button("loading");
 
 		unpause();
 		commentBusy = true;
 
-		$.post(
-			'item',
-			$form.serialize(),
-			'json'
-		)
-		.then(function(data) {
-			if (data.success) {
-				$('#comment-edit-wrapper-' + id).hide();
-				let $textarea = $('#comment-edit-text-' + id);
-				$textarea.val('');
-				if ($textarea.get(0)) {
-					commentClose($textarea.get(0), id);
+		$.post("item", $form.serialize(), "json")
+			.then(function (data) {
+				if (data.success) {
+					$("#comment-edit-wrapper-" + id).hide();
+					let $textarea = $("#comment-edit-text-" + id);
+					$textarea.val("");
+					if ($textarea.get(0)) {
+						commentClose($textarea.get(0), id);
+					}
+					if (timer) {
+						clearTimeout(timer);
+					}
+					timer = setTimeout(NavUpdate, 10);
+					force_update = true;
+					update_item = id;
 				}
-				if (timer) {
-					clearTimeout(timer);
+				if (data.reload) {
+					window.location.href = data.reload;
 				}
-				timer = setTimeout(NavUpdate,10);
-				force_update = true;
-				update_item = id;
-			}
-			if (data.reload) {
-				window.location.href = data.reload;
-			}
-		})
-		.always(function() {
-			$commentSubmit.button('reset');
-		});
+			})
+			.always(function () {
+				$commentSubmit.button("reset");
+			});
 	});
 
-	$body.on('submit', '.modal-body #poke-wrapper', function(e) {
-		e.preventDefault();
-
-		let $form = $(this);
-		let $pokeSubmit = $form.find('button[type=submit]').button('loading');
-
-		$.post(
-			$form.attr('action'),
-			$form.serialize(),
-			'json'
-		)
-		.then(function(data) {
-			if (data.success) {
-				$('#modal').modal('hide');
-			}
-		})
-		.always(function() {
-			$pokeSubmit.button('reset');
-		});
-	})
+	try {
+		navigator.canShare({ url: "#", });
+	} catch(err) {
+		$('.button-browser-share').hide();
+	}
 });
 
 function openClose(theID) {
 	var elem = document.getElementById(theID);
 
-	if( $(elem).is(':visible')) {
+	if ($(elem).is(":visible")) {
 		$(elem).slideUp(200);
-	}
-	else {
+	} else {
 		$(elem).slideDown(200);
 	}
 }
 
 function showHide(theID) {
 	var elem = document.getElementById(theID);
-	var edit = document.getElementById("comment-edit-submit-wrapper-" + theID.match('[0-9$]+'));
+	var edit = document.getElementById("comment-edit-submit-wrapper-" + theID.match("[0-9$]+"));
 
-	if ($(elem).is(':visible')) {
-		if (!$(edit).is(':visible')) {
+	if ($(elem).is(":visible")) {
+		if (!$(edit).is(":visible")) {
 			edit.style.display = "block";
-		}
-		else {
+		} else {
 			elem.style.display = "none";
 		}
-	}
-	else {
+	} else {
 		elem.style.display = "block";
 	}
 }
@@ -463,28 +480,28 @@ function showHide(theID) {
 // Show & hide event map in the network stream by button click.
 function showHideEventMap(elm) {
 	// Get the id of the map element - it should be provided through
-	// the atribute "data-map-id".
-	var mapID = elm.getAttribute('data-map-id');
+	// the attribute "data-map-id".
+	var mapID = elm.getAttribute("data-map-id");
 
 	// Get translation labels.
-	var mapshow = elm.getAttribute('data-show-label');
-	var maphide = elm.getAttribute('data-hide-label');
+	var mapshow = elm.getAttribute("data-show-label");
+	var maphide = elm.getAttribute("data-hide-label");
 
 	// Change the button labels.
 	if (elm.innerText == mapshow) {
-		$('#' + elm.id).text(maphide);
+		$("#" + elm.id).text(maphide);
 	} else {
-		$('#' + elm.id).text(mapshow);
+		$("#" + elm.id).text(mapshow);
 	}
 	// Because maps are iframe elements, we cant hide it through css (display: none).
 	// We solve this issue by putting the map outside the screen with css.
 	// So the first time the 'Show map' button is pressed we move the map
 	// element into the screen area.
-	var mappos = $('#' + mapID).css('position');
+	var mappos = $("#" + mapID).css("position");
 
-	if (mappos === 'absolute') {
-		$('#' + mapID).hide();
-		$('#' + mapID).css({position: 'relative', left: 'auto', top: 'auto'});
+	if (mappos === "absolute") {
+		$("#" + mapID).hide();
+		$("#" + mapID).css({ position: "relative", left: "auto", top: "auto" });
 		openClose(mapID);
 	} else {
 		openClose(mapID);
@@ -494,18 +511,22 @@ function showHideEventMap(elm) {
 
 function justifyPhotos() {
 	justifiedGalleryActive = true;
-	$('#photo-album-contents').justifiedGallery({
-		margins: 3,
-		border: 0,
-		sizeRangeSuffixes: {
-			'lt48': '-6',
-			'lt80': '-5',
-			'lt300': '-4',
-			'lt320': '-2',
-			'lt640': '-1',
-			'lt1024': '-0'
-		}
-	}).on('jg.complete', function(e){ justifiedGalleryActive = false; });
+	$("#photo-album-contents")
+		.justifiedGallery({
+			margins: 3,
+			border: 0,
+			sizeRangeSuffixes: {
+				lt48: "-6",
+				lt80: "-5",
+				lt300: "-4",
+				lt320: "-2",
+				lt640: "-1",
+				lt1024: "-0",
+			},
+		})
+		.on("jg.complete", function (e) {
+			justifiedGalleryActive = false;
+		});
 }
 
 // Load a js script to the html head.
@@ -518,9 +539,9 @@ function loadScript(url, callback) {
 		oscript.remove();
 	}
 	// Adding the script tag to the head as suggested before.
-	var head = document.getElementsByTagName('head')[0];
-	var script = document.createElement('script');
-	script.type = 'text/javascript';
+	var head = document.getElementsByTagName("head")[0];
+	var script = document.createElement("script");
+	script.type = "text/javascript";
 	script.src = url;
 
 	// Then bind the event to the callback function.
@@ -534,44 +555,45 @@ function loadScript(url, callback) {
 
 // Does we need a ? or a & to append values to a url
 function qOrAmp(url) {
-	if(url.search('\\?') < 0) {
-		return '?';
+	if (url.search("\\?") < 0) {
+		return "?";
 	} else {
-		return '&';
+		return "&";
 	}
 }
 
 String.prototype.normalizeLink = function () {
-	var ret = this.replace('https:', 'http:');
-	var ret = ret.replace('//www', '//');
+	var ret = this.replace("https:", "http:");
+	var ret = ret.replace("//www", "//");
 	return ret.rtrim();
 };
 
 function cleanContactUrl(url) {
 	var parts = parseUrl(url);
 
-	if(! ("scheme" in parts) || ! ("host" in parts)) {
+	if (!("scheme" in parts) || !("host" in parts)) {
 		return url;
 	}
 
-	var newUrl =parts["scheme"] + "://" + parts["host"];
+	var newUrl = parts["scheme"] + "://" + parts["host"];
 
-	if("port" in parts) {
+	if ("port" in parts) {
 		newUrl += ":" + parts["port"];
 	}
 
-	if("path" in parts) {
+	if ("path" in parts) {
 		newUrl += parts["path"];
 	}
 
-//	if(url != newUrl) {
-//		console.log("Cleaned contact url " + url + " to " + newUrl);
-//	}
+	//	if(url != newUrl) {
+	//		console.log("Cleaned contact url " + url + " to " + newUrl);
+	//	}
 
 	return newUrl;
 }
 
-function parseUrl (str, component) { // eslint-disable-line camelcase
+function parseUrl(str, component) {
+	// eslint-disable-line camelcase
 	//       discuss at: http://locutusjs.io/php/parse_url/
 	//      original by: Steven Levithan (http://blog.stevenlevithan.com)
 	// reimplemented by: Brett Zamir (http://brett-zamir.me)
@@ -596,82 +618,91 @@ function parseUrl (str, component) { // eslint-disable-line camelcase
 	//        example 4: parse_url('https://gooduser:secretpassword@www.example.com/a@b.c/folder?foo=bar')
 	//        returns 4: { scheme: 'https', host: 'www.example.com', path: '/a@b.c/folder', query: 'foo=bar', user: 'gooduser', pass: 'secretpassword' }
 
-	var query
+	var query;
 
-	var mode = (typeof require !== 'undefined' ? require('../info/ini_get')('locutus.parse_url.mode') : undefined) || 'php'
+	var mode =
+		(typeof require !== "undefined" ? require("../info/ini_get")("locutus.parse_url.mode") : undefined) || "php";
 
 	var key = [
-		'source',
-		'scheme',
-		'authority',
-		'userInfo',
-		'user',
-		'pass',
-		'host',
-		'port',
-		'relative',
-		'path',
-		'directory',
-		'file',
-		'query',
-		'fragment'
-	]
+		"source",
+		"scheme",
+		"authority",
+		"userInfo",
+		"user",
+		"pass",
+		"host",
+		"port",
+		"relative",
+		"path",
+		"directory",
+		"file",
+		"query",
+		"fragment",
+	];
 
 	// For loose we added one optional slash to post-scheme to catch file:/// (should restrict this)
 	var parser = {
-		php: new RegExp([
-			'(?:([^:\\/?#]+):)?',
-			'(?:\\/\\/()(?:(?:()(?:([^:@\\/]*):?([^:@\\/]*))?@)?([^:\\/?#]*)(?::(\\d*))?))?',
-			'()',
-			'(?:(()(?:(?:[^?#\\/]*\\/)*)()(?:[^?#]*))(?:\\?([^#]*))?(?:#(.*))?)'
-		].join('')),
-		strict: new RegExp([
-			'(?:([^:\\/?#]+):)?',
-			'(?:\\/\\/((?:(([^:@\\/]*):?([^:@\\/]*))?@)?([^:\\/?#]*)(?::(\\d*))?))?',
-			'((((?:[^?#\\/]*\\/)*)([^?#]*))(?:\\?([^#]*))?(?:#(.*))?)'
-		].join('')),
-		loose: new RegExp([
-			'(?:(?![^:@]+:[^:@\\/]*@)([^:\\/?#.]+):)?',
-			'(?:\\/\\/\\/?)?',
-			'((?:(([^:@\\/]*):?([^:@\\/]*))?@)?([^:\\/?#]*)(?::(\\d*))?)',
-			'(((\\/(?:[^?#](?![^?#\\/]*\\.[^?#\\/.]+(?:[?#]|$)))*\\/?)?([^?#\\/]*))',
-			'(?:\\?([^#]*))?(?:#(.*))?)'
-		].join(''))
-	}
+		php: new RegExp(
+			[
+				"(?:([^:\\/?#]+):)?",
+				"(?:\\/\\/()(?:(?:()(?:([^:@\\/]*):?([^:@\\/]*))?@)?([^:\\/?#]*)(?::(\\d*))?))?",
+				"()",
+				"(?:(()(?:(?:[^?#\\/]*\\/)*)()(?:[^?#]*))(?:\\?([^#]*))?(?:#(.*))?)",
+			].join(""),
+		),
+		strict: new RegExp(
+			[
+				"(?:([^:\\/?#]+):)?",
+				"(?:\\/\\/((?:(([^:@\\/]*):?([^:@\\/]*))?@)?([^:\\/?#]*)(?::(\\d*))?))?",
+				"((((?:[^?#\\/]*\\/)*)([^?#]*))(?:\\?([^#]*))?(?:#(.*))?)",
+			].join(""),
+		),
+		loose: new RegExp(
+			[
+				"(?:(?![^:@]+:[^:@\\/]*@)([^:\\/?#.]+):)?",
+				"(?:\\/\\/\\/?)?",
+				"((?:(([^:@\\/]*):?([^:@\\/]*))?@)?([^:\\/?#]*)(?::(\\d*))?)",
+				"(((\\/(?:[^?#](?![^?#\\/]*\\.[^?#\\/.]+(?:[?#]|$)))*\\/?)?([^?#\\/]*))",
+				"(?:\\?([^#]*))?(?:#(.*))?)",
+			].join(""),
+		),
+	};
 
-	var m = parser[mode].exec(str)
-	var uri = {}
-	var i = 14
+	var m = parser[mode].exec(str);
+	var uri = {};
+	var i = 14;
 
 	while (i--) {
 		if (m[i]) {
-			uri[key[i]] = m[i]
+			uri[key[i]] = m[i];
 		}
 	}
 
 	if (component) {
-		return uri[component.replace('PHP_URL_', '').toLowerCase()]
+		return uri[component.replace("PHP_URL_", "").toLowerCase()];
 	}
 
-	if (mode !== 'php') {
-		var name = (typeof require !== 'undefined' ? require('../info/ini_get')('locutus.parse_url.queryKey') : undefined) || 'queryKey'
-		parser = /(?:^|&)([^&=]*)=?([^&]*)/g
-		uri[name] = {}
-		query = uri[key[12]] || ''
+	if (mode !== "php") {
+		var name =
+			(typeof require !== "undefined" ? require("../info/ini_get")("locutus.parse_url.queryKey") : undefined) ||
+			"queryKey";
+		parser = /(?:^|&)([^&=]*)=?([^&]*)/g;
+		uri[name] = {};
+		query = uri[key[12]] || "";
 		query.replace(parser, function ($0, $1, $2) {
 			if ($1) {
-				uri[name][$1] = $2
+				uri[name][$1] = $2;
 			}
-		})
+		});
 	}
 
-	delete uri.source
-	return uri
+	delete uri.source;
+	return uri;
 }
 
-// trim function to replace whithespace after the string
-String.prototype.rtrim = function() {
-	var trimmed = this.replace(/\s+$/g, '');
+// trim function to replace whitespace after the string
+String.prototype.rtrim = function () {
+	var trimmed = this.replace(/\s+$/g, "");
 	return trimmed;
 };
 
@@ -688,34 +719,40 @@ function scrollToItem(elementId) {
 		return;
 	}
 
-	var $el = $('#' + elementId +  ' > .media');
+	var $el = $("#" + elementId + " > .media");
 	// Test if the Item exists
 	if (!$el.length) {
 		return;
 	}
 
 	// Define the colors which are used for highlighting
-	var colWhite = {backgroundColor:'#F5F5F5'};
-	var colShiny = {backgroundColor:'#FFF176'};
+	var colWhite = { backgroundColor: "#F5F5F5" };
+	var colShiny = { backgroundColor: "#FFF176" };
 
 	// Get the Item Position (we need to substract 100 to match correct position
 	var itemPos = $el.offset().top - 100;
 
 	// Scroll to the DIV with the ID (GUID)
-	$('html, body').animate({
-		scrollTop: itemPos
-	}, 400).promise().done( function() {
-		// Highlight post/commenent with ID  (GUID)
-		$el.animate(colWhite, 1000).animate(colShiny).animate({backgroundColor: 'transparent'}, 600);
-	});
+	$("html, body")
+		.animate(
+			{
+				scrollTop: itemPos,
+			},
+			400,
+		)
+		.promise()
+		.done(function () {
+			// Highlight post/comment with ID  (GUID)
+			$el.animate(colWhite, 1000).animate(colShiny).animate({ backgroundColor: "transparent" }, 600);
+		});
 }
 
 // format a html string to pure text
 function htmlToText(htmlString) {
 	// Replace line breaks with spaces
-	var text = htmlString.replace(/<br>/g, ' ');
+	var text = htmlString.replace(/<br>/g, " ");
 	// Strip the text out of the html string
-	text = text.replace(/<[^>]*>/g, '');
+	text = text.replace(/<[^>]*>/g, "");
 
 	return text;
 }
@@ -728,17 +765,115 @@ function htmlToText(htmlString) {
  * @param {string}  verb  The verb of the action
  * @param {boolean} un    Whether to perform an activity removal instead of creation
  */
-function doLikeAction(ident, verb, un) {
-	if (verb.indexOf('attend') === 0) {
-		$('.item-' + ident + ' .button-event:not(#' + verb + '-' + ident + ')').removeClass('active');
+function doActivityItemAction(ident, verb, un) {
+	_verb = un ? 'un' + verb : verb;
+	var thumbsClass = '';
+	switch (verb) {
+		case 'like':
+			thumbsClass = 'fa-thumbs-up';
+			break;
+		case 'dislike':
+			thumbsClass = 'fa-thumbs-down';
+			break;
+		case 'announce':
+			thumbsClass = 'fa-retweet';
+			break;
+		case 'attendyes':
+			thumbsClass = 'fa-check';
+			break;
+		case 'attendno':
+			thumbsClass = 'fa-times';
+			break;
+		case 'attendmaybe':
+			thumbsClass = 'fa-question';
 	}
-	$('#' + verb + '-' + ident).toggleClass('active');
-
-	dolike(ident, verb, un);
+	if (verb.indexOf('announce') === 0 ) {
+		// Share-Button(s)
+		// remove share-symbol, to replace it by rotator
+		$('button[id^=shareMenuOptions-' + ident.toString() + '] i:first-child').removeClass('fa-share');
+		$('button[id^=announce-' + ident.toString() + '] i:first-child').removeClass('fa-retweet');
+		// avoid multiple rotators on like/share-button if klicked multiple times.
+		if ($('img[id^=waitfor-' + verb + '-' + ident.toString() + ']').length == 0) {
+			// append rotator to the shareMenu-button for small media
+			$('<img>')
+				.attr({id: 'waitfor-' + verb + '-' + ident.toString(), src: 'images/rotator.gif'})
+				.addClass('fa')
+				.appendTo($('button[id^=shareMenuOptions-' + ident.toString() + '] i:first-child' ));
+		}
+	}
+	$('button[id^=' + verb + '-' + ident.toString() + '] i:first-child').removeClass(thumbsClass);
+	// if verb is announce, then one rotator is added above to the shareMedia-dropdown button
+	if ($('button:not(button.dropdown-toggle) img#waitfor-' + verb + '-' + ident.toString()).length == 0) {
+		$('<img>')
+			.attr({id: 'waitfor-' + verb + '-' + ident.toString(), src: 'images/rotator.gif'})
+			.addClass('fa')
+			.appendTo($('button[id^=' + verb + '-' + ident.toString() + '] i:first-child'));
+	}
+	$.post('item/' + ident.toString() + '/activity/' + _verb)
+	.success(function(data){
+		$('img[id^=waitfor-' + verb + '-' + ident.toString() + ']').remove();
+		if (data.status == 'ok') {
+			if (verb.indexOf('attend') === 0) {
+				$('button[id^=attend][id$=' + ident.toString() + ']').removeClass('active')
+				$('button#attendyes-' + ident.toString()).attr('onclick', 'javascript:doActivityItemAction(' + ident +', "attendyes")');
+				$('button#attendno-' + ident.toString()).attr('onclick', 'javascript:doActivityItemAction(' + ident +', "attendno")');
+				$('button#attendmaybe-' + ident.toString()).attr('onclick', 'javascript:doActivityItemAction(' + ident +', "attendmaybe")');
+			}
+			if (data.verb == 'un' + verb) {
+				// like/dislike buttons
+				$('button[id^=' + verb + '-' + ident.toString() + ']' )
+					.removeClass('active')
+					.attr('onclick', 'doActivityItemAction(' + ident +', "' + verb + '")');
+				// link in share-menu
+				$('a[id^=' + verb + '-' + ident.toString() + ']' )
+					.removeClass('active')
+					.attr('href', 'javascript:doActivityItemAction(' + ident +', "' + verb + '")');
+				$('a[id^=' + verb + '-' + ident.toString() + '] i:first-child' ).addClass('fa-retweet').removeClass('fa-ban');
+			} else {
+				// like/dislike buttons
+				$('button[id^=' + verb + '-' + ident.toString() + ']' )
+					.addClass('active')
+					.attr('onclick', 'doActivityItemAction(' + ident + ', "' + verb + '", true )');
+				// link in share-menu
+				$('a[id^=' + verb + '-' + ident.toString() + ']' )
+					.addClass('active')
+					.attr('href', 'javascript:doActivityItemAction(' + ident + ', "' + verb + '", true )');
+				$('a[id^=' + verb + '-' + ident.toString() + '] i:first-child' ).removeClass('fa-retweet').addClass('fa-ban');
+			}
+			$('button[id^=' + verb + '-' + ident.toString() + '] i:first-child').addClass(thumbsClass);
+			if (verb.indexOf('announce') === 0 ) {
+				// ShareMenuButton
+				$('button[id^=shareMenuOptions-' + ident.toString() + '] i:first-child').addClass('fa-share');
+				if (data.verb == 'un' + verb) {
+					$('button[id^=shareMenuOptions-' + ident.toString() + ']').removeClass('active');
+				} else {
+					$('button[id^=shareMenuOptions-' + ident.toString() + ']').addClass('active');
+				}
+			}
+		} else {
+			/* server-response was not ok. Database-problems or some changes in
+			 * data?
+			 * reset all buttons
+			 */
+			$('img[id^=waitfor-' + verb + '-' + ident.toString() + ']').remove();
+			$('button[id^=shareMenuOptions-' + ident.toString() + '] i:first-child').addClass('fa-share');
+			$('button[id^=' + verb + '-' + ident.toString() + '] i:first-child').addClass(thumbsClass);
+			$('a[id^=' + verb + '-' + ident.toString() + '] i:first-child').addClass(thumbsClass);
+			$.jGrowl(aActErr[verb] + '<br>(' + aErrType['srvErr'] + ')', {sticky: false, theme: 'info', life: 5000});
+		}
+	})
+	.error(function(data){
+		// Server could not be reached successfully
+		$('img[id^=waitfor-' + verb + '-' + ident.toString() + ']').remove();
+		$('button[id^=shareMenuOptions-' + ident.toString() + '] i:first-child').addClass('fa-share');
+		$('button[id^=' + verb + '-' + ident.toString() + '] i:first-child').addClass(thumbsClass);
+		$('a[id^=' + verb + '-' + ident.toString() + '] i:first-child').addClass(thumbsClass);
+		$.jGrowl(aActErr[verb] + '<br>(' + aErrType['netErr'] + ')', {sticky: false, theme: 'info', life: 5000});
+	});
 }
 
 // Decodes a hexadecimally encoded binary string
-function hex2bin (s) {
+function hex2bin(s) {
 	//  discuss at: http://locutus.io/php/hex2bin/
 	// original by: Dumitru Uzun (http://duzun.me)
 	//   example 1: hex2bin('44696d61')
@@ -750,7 +885,7 @@ function hex2bin (s) {
 	var ret = [];
 	var i = 0;
 	var l;
-	s += '';
+	s += "";
 
 	for (l = s.length; i < l; i += 2) {
 		var c = parseInt(s.substr(i, 1), 16);
@@ -764,7 +899,7 @@ function hex2bin (s) {
 }
 
 // Convert binary data into hexadecimal representation
-function bin2hex (s) {
+function bin2hex(s) {
 	// From: http://phpjs.org/functions
 	// +   original by: Kevin van Zonneveld (http://kevin.vanzonneveld.net)
 	// +   bugfixed by: Onno Marsman
@@ -775,7 +910,10 @@ function bin2hex (s) {
 	// *     example 2: bin2hex(String.fromCharCode(0x00));
 	// *     returns 2: '00'
 
-	var i, l, o = "", n;
+	var i,
+		l,
+		o = "",
+		n;
 
 	s += "";
 
@@ -790,14 +928,17 @@ function bin2hex (s) {
 // Dropdown menus with the class "dropdown-head" will display the active tab
 // as button text
 function toggleDropdownText(elm) {
-		$(elm).closest(".dropdown").find('.btn').html($(elm).html() + ' <span class="caret"></span>');
-		$(elm).closest(".dropdown").find('.btn').val($(elm).data('value'));
-		$(elm).closest("ul").children("li").show();
-		$(elm).parent("li").hide();
+	$(elm)
+		.closest(".dropdown")
+		.find(".btn")
+		.html($(elm).html() + ' <span class="caret"></span>');
+	$(elm).closest(".dropdown").find(".btn").val($(elm).data("value"));
+	$(elm).closest("ul").children("li").show();
+	$(elm).parent("li").hide();
 }
 
 // Check if element does have a specific class
 function hasClass(elem, cls) {
-	return (" " + elem.className + " " ).indexOf( " "+cls+" " ) > -1;
+	return (" " + elem.className + " ").indexOf(" " + cls + " ") > -1;
 }
 // @license-end

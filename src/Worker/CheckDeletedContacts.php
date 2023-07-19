@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -34,7 +34,7 @@ class CheckDeletedContacts
 	{
 		$contacts = DBA::select('contact', ['id'], ['deleted' => true]);
 		while ($contact = DBA::fetch($contacts)) {
-			Worker::add(PRIORITY_MEDIUM, 'RemoveContact', $contact['id']);
+			Worker::add(Worker::PRIORITY_MEDIUM, 'Contact\Remove', $contact['id']);
 		}
 		DBA::close($contacts);
 	}

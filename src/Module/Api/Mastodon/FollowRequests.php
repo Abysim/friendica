@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,6 +23,7 @@ namespace Friendica\Module\Api\Mastodon;
 
 use Friendica\Core\System;
 use Friendica\DI;
+use Friendica\Model\Contact;
 use Friendica\Module\BaseApi;
 use Friendica\Network\HTTPException;
 
@@ -31,19 +32,8 @@ use Friendica\Network\HTTPException;
  */
 class FollowRequests extends BaseApi
 {
-	public static function init(array $parameters = [])
-	{
-		parent::init($parameters);
-
-		if (!self::login()) {
-			throw new HTTPException\UnauthorizedException();
-		}
-	}
-
 	/**
-	 * @param array $parameters
 	 * @throws HTTPException\BadRequestException
-	 * @throws HTTPException\ForbiddenException
 	 * @throws HTTPException\InternalServerErrorException
 	 * @throws HTTPException\NotFoundException
 	 * @throws HTTPException\UnauthorizedException
@@ -52,29 +42,38 @@ class FollowRequests extends BaseApi
 	 * @see https://docs.joinmastodon.org/methods/accounts/follow_requests#accept-follow
 	 * @see https://docs.joinmastodon.org/methods/accounts/follow_requests#reject-follow
 	 */
-	public static function post(array $parameters = [])
+	protected function post(array $request = [])
 	{
-		parent::post($parameters);
+		self::checkAllowedScope(self::SCOPE_FOLLOW);
+		$uid = self::getCurrentUserID();
 
-		$introduction = DI::intro()->selectFirst(['id' => $parameters['id'], 'uid' => self::$current_user_id]);
+		$cdata = Contact::getPublicAndUserContactID($this->parameters['id'], $uid);
+		if (empty($cdata['user'])) {
+			throw new HTTPException\NotFoundException('Contact not found');
+		}
 
-		$contactId = $introduction->{'contact-id'};
+		$introduction = DI::intro()->selectForContact($cdata['user']);
 
-		switch ($parameters['action']) {
+		$contactId = $introduction->cid;
+
+		switch ($this->parameters['action']) {
 			case 'authorize':
-				$introduction->confirm();
+				Contact\Introduction::confirm($introduction);
+				$relationship = DI::mstdnRelationship()->createFromContactId($contactId, $uid);
 
-				$relationship = DI::mstdnRelationship()->createFromContactId($contactId);
+				DI::intro()->delete($introduction);
 				break;
 			case 'ignore':
 				$introduction->ignore();
+				$relationship = DI::mstdnRelationship()->createFromContactId($contactId, $uid);
 
-				$relationship = DI::mstdnRelationship()->createDefaultFromContactId($contactId);
+				DI::intro()->save($introduction);
 				break;
 			case 'reject':
-				$introduction->discard();
+				Contact\Introduction::discard($introduction);
+				$relationship = DI::mstdnRelationship()->createFromContactId($contactId, $uid);
 
-				$relationship = DI::mstdnRelationship()->createDefaultFromContactId($contactId);
+				DI::intro()->delete($introduction);
 				break;
 			default:
 				throw new HTTPException\BadRequestException('Unexpected action parameter, expecting "authorize", "ignore" or "reject"');
@@ -84,54 +83,38 @@ class FollowRequests extends BaseApi
 	}
 
 	/**
-	 * @param array $parameters
 	 * @throws HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
-	 * @see https://docs.joinmastodon.org/methods/accounts/follow_requests#pending-follows
+	 * @see https://docs.joinmastodon.org/methods/accounts/follow_requests/
 	 */
-	public static function rawContent(array $parameters = [])
+	protected function rawContent(array $request = [])
 	{
-		$min_id = $_GET['min_id'] ?? null;
-		$max_id = $_GET['max_id'] ?? null;
-		$limit = intval($_GET['limit'] ?? 40);
+		self::checkAllowedScope(self::SCOPE_READ);
+		$uid = self::getCurrentUserID();
 
-		$baseUrl = DI::baseUrl();
+		$request = $this->getRequest([
+			'min_id' => 0,
+			'max_id' => 0,
+			'limit'  => 40, // Maximum number of results to return. Defaults to 40. Paginate using the HTTP Link header.
+		], $request);
 
-		$introductions = DI::intro()->selectByBoundaries(
-			['`uid` = ? AND NOT `ignore`', self::$current_user_id],
-			['order' => ['id' => 'DESC']],
-			$min_id,
-			$max_id,
-			$limit
-		);
+		$introductions = DI::intro()->selectForUser($uid, $request['min_id'], $request['max_id'], $request['limit']);
 
 		$return = [];
 
 		foreach ($introductions as $key => $introduction) {
 			try {
-				$return[] = DI::mstdnFollowRequest()->createFromIntroduction($introduction);
-			} catch (HTTPException\InternalServerErrorException $exception) {
+				self::setBoundaries($introduction->id);
+				$return[] = DI::mstdnAccount()->createFromContactId($introduction->cid, $introduction->uid);
+			} catch (HTTPException\InternalServerErrorException
+				| HTTPException\NotFoundException
+				| \ImagickException $exception) {
 				DI::intro()->delete($introduction);
 				unset($introductions[$key]);
 			}
 		}
 
-		$base_query = [];
-		if (isset($_GET['limit'])) {
-			$base_query['limit'] = $limit;
-		}
-
-		$links = [];
-		if ($introductions->getTotalCount() > $limit) {
-			$links[] = '<' . $baseUrl->get() . '/api/v1/follow_requests?' . http_build_query($base_query + ['max_id' => $introductions[count($introductions) - 1]->id]) . '>; rel="next"';
-		}
-
-		if (count($introductions)) {
-			$links[] = '<' . $baseUrl->get() . '/api/v1/follow_requests?' . http_build_query($base_query + ['min_id' => $introductions[0]->id]) . '>; rel="prev"';
-		}
-
-		header('Link: ' . implode(', ', $links));
-
+		self::setLinkHeader();
 		System::jsonExit($return);
 	}
 }

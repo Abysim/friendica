@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -37,15 +37,21 @@ use Dice\Dice;
 use Friendica\App;
 use Friendica\Core\Cache;
 use Friendica\Core\Config;
+use Friendica\Core\Hooks\Capabilities\ICanManageInstances;
+use Friendica\Core\Hooks\Model\InstanceManager;
+use Friendica\Core\PConfig;
 use Friendica\Core\L10n;
-use Friendica\Core\Lock\ILock;
-use Friendica\Core\Process;
-use Friendica\Core\Session\ISession;
-use Friendica\Core\StorageManager;
+use Friendica\Core\Lock;
+use Friendica\Core\Session\Capability\IHandleSessions;
+use Friendica\Core\Session\Capability\IHandleUserSessions;
+use Friendica\Core\Storage\Repository\StorageManager;
 use Friendica\Database\Database;
+use Friendica\Database\Definition\DbaDefinition;
+use Friendica\Database\Definition\ViewDefinition;
 use Friendica\Factory;
-use Friendica\Model\Storage\IStorage;
+use Friendica\Core\Storage\Capability\ICanWriteToStorage;
 use Friendica\Model\User\Cookie;
+use Friendica\Model\Log\ParsedLogIterator;
 use Friendica\Network;
 use Friendica\Util;
 use Psr\Log\LoggerInterface;
@@ -72,39 +78,66 @@ return [
 			$_SERVER
 		]
 	],
-	Util\ConfigFileLoader::class => [
-		'shared'          => true,
+	ICanManageInstances::class => [
+		'instanceOf' => InstanceManager::class,
 		'constructParams' => [
-			[Dice::INSTANCE => '$basepath'],
+			[Dice::INSTANCE => Dice::SELF],
 		],
 	],
-	Config\Cache::class          => [
-		'instanceOf' => Factory\ConfigFactory::class,
+	Config\Util\ConfigFileManager::class => [
+		'instanceOf' => Config\Factory\Config::class,
 		'call'       => [
-			['createCache', [$_SERVER], Dice::CHAIN_CALL],
+			['createConfigFileManager', [
+				[Dice::INSTANCE => '$basepath'],
+				$_SERVER,
+			], Dice::CHAIN_CALL],
+		],
+	],
+	Config\ValueObject\Cache::class => [
+		'instanceOf' => Config\Factory\Config::class,
+		'call'       => [
+			['createCache', [], Dice::CHAIN_CALL],
 		],
 	],
 	App\Mode::class              => [
 		'call' => [
 			['determineRunMode', [true, $_SERVER], Dice::CHAIN_CALL],
-			['determine', [], Dice::CHAIN_CALL],
+			['determine', [
+				[Dice::INSTANCE => '$basepath']
+			], Dice::CHAIN_CALL],
 		],
 	],
-	Config\IConfig::class                   => [
-		'instanceOf' => Factory\ConfigFactory::class,
-		'call'       => [
-			['createConfig', [], Dice::CHAIN_CALL],
+	Config\Capability\IManageConfigValues::class => [
+		'instanceOf' => Config\Model\DatabaseConfig::class,
+		'constructParams' => [
+			$_SERVER,
 		],
 	],
-	\Friendica\Core\PConfig\IPConfig::class => [
-		'instanceOf' => Factory\ConfigFactory::class,
+	PConfig\Capability\IManagePersonalConfigValues::class => [
+		'instanceOf' => PConfig\Factory\PConfig::class,
 		'call'       => [
-			['createPConfig', [], Dice::CHAIN_CALL],
+			['create', [], Dice::CHAIN_CALL],
 		]
+	],
+	DbaDefinition::class => [
+		'constructParams' => [
+			[Dice::INSTANCE => '$basepath'],
+		],
+		'call' => [
+			['load', [false], Dice::CHAIN_CALL],
+		],
+	],
+	ViewDefinition::class => [
+		'constructParams' => [
+			[Dice::INSTANCE => '$basepath'],
+		],
+		'call' => [
+			['load', [false], Dice::CHAIN_CALL],
+		],
 	],
 	Database::class                         => [
 		'constructParams' => [
-			[Dice::INSTANCE => \Psr\Log\NullLogger::class],
+			[Dice::INSTANCE => Config\Model\ReadOnlyFileConfig::class],
 		],
 	],
 	/**
@@ -136,16 +169,16 @@ return [
 	 *    and is automatically passed as an argument with the same name
 	 */
 	LoggerInterface::class          => [
-		'instanceOf' => Factory\LoggerFactory::class,
+		'instanceOf' => \Friendica\Core\Logger\Factory\Logger::class,
 		'constructParams' => [
 			'index',
 		],
 		'call'       => [
-			['create', ['index'], Dice::CHAIN_CALL],
+			['create', [], Dice::CHAIN_CALL],
 		],
 	],
 	'$devLogger'                    => [
-		'instanceOf' => Factory\LoggerFactory::class,
+		'instanceOf' => \Friendica\Core\Logger\Factory\Logger::class,
 		'constructParams' => [
 			'dev',
 		],
@@ -153,20 +186,26 @@ return [
 			['createDev', [], Dice::CHAIN_CALL],
 		]
 	],
-	Cache\ICache::class             => [
-		'instanceOf' => Factory\CacheFactory::class,
-		'call'       => [
-			['create', [], Dice::CHAIN_CALL],
+	\Friendica\Core\Logger\Capabilities\IHaveCallIntrospections::class => [
+		'instanceOf' => \Friendica\Core\Logger\Util\Introspection::class,
+		'constructParams' => [
+			\Friendica\Core\Logger\Util\Introspection::IGNORE_CLASS_LIST,
 		],
 	],
-	Cache\IMemoryCache::class       => [
-		'instanceOf' => Factory\CacheFactory::class,
+	Cache\Capability\ICanCache::class => [
+		'instanceOf' => Cache\Factory\Cache::class,
 		'call'       => [
-			['create', [], Dice::CHAIN_CALL],
+			['createLocal', [], Dice::CHAIN_CALL],
 		],
 	],
-	ILock::class                    => [
-		'instanceOf' => Factory\LockFactory::class,
+	Cache\Capability\ICanCacheInMemory::class => [
+		'instanceOf' => Cache\Factory\Cache::class,
+		'call'       => [
+			['createLocal', [], Dice::CHAIN_CALL],
+		],
+	],
+	Lock\Capability\ICanLock::class => [
+		'instanceOf' => Lock\Factory\Lock::class,
 		'call'       => [
 			['create', [], Dice::CHAIN_CALL],
 		],
@@ -177,22 +216,16 @@ return [
 			['determine', [$_SERVER, $_GET], Dice::CHAIN_CALL],
 		],
 	],
-	App\Module::class => [
-		'instanceOf' => App\Module::class,
-		'call' => [
-			['determineModule', [], Dice::CHAIN_CALL],
-		],
-	],
-	Process::class => [
+	\Friendica\Core\System::class => [
 		'constructParams' => [
 			[Dice::INSTANCE => '$basepath'],
-			getmypid(),
 		],
 	],
 	App\Router::class => [
 		'constructParams' => [
 			$_SERVER,
 			__DIR__ . '/routes.config.php',
+			[Dice::INSTANCE => Dice::SELF],
 			null
 		],
 	],
@@ -201,25 +234,62 @@ return [
 			$_SERVER, $_GET
 		],
 	],
-	ISession::class => [
-		'instanceOf' => Factory\SessionFactory::class,
+	IHandleSessions::class => [
+		'instanceOf' => \Friendica\Core\Session\Factory\Session::class,
 		'call' => [
-			['createSession', [$_SERVER], Dice::CHAIN_CALL],
+			['create', [$_SERVER], Dice::CHAIN_CALL],
 			['start', [], Dice::CHAIN_CALL],
 		],
 	],
+	IHandleUserSessions::class => [
+		'instanceOf' => \Friendica\Core\Session\Model\UserSession::class,
+	],
 	Cookie::class => [
 		'constructParams' => [
-			$_SERVER, $_COOKIE
+			$_COOKIE
 		],
 	],
-	IStorage::class => [
+	ICanWriteToStorage::class => [
 		'instanceOf' => StorageManager::class,
 		'call' => [
 			['getBackend', [], Dice::CHAIN_CALL],
 		],
 	],
-	Network\IHTTPRequest::class => [
-		'instanceOf' => Network\HTTPRequest::class,
-	]
+	\Friendica\Core\KeyValueStorage\Capabilities\IManageKeyValuePairs::class => [
+		'instanceOf' => \Friendica\Core\KeyValueStorage\Type\DBKeyValueStorage::class,
+	],
+	Network\HTTPClient\Capability\ICanSendHttpRequests::class => [
+		'instanceOf' => Network\HTTPClient\Factory\HttpClient::class,
+		'call'       => [
+			['createClient', [], Dice::CHAIN_CALL],
+		],
+	],
+	Factory\Api\Mastodon\Error::class => [
+		'constructParams' => [
+			$_SERVER
+		],
+	],
+	ParsedLogIterator::class => [
+		'constructParams' => [
+			[Dice::INSTANCE => Util\ReversedFileReader::class],
+		]
+	],
+	\Friendica\Core\Worker\Repository\Process::class => [
+		'constructParams' => [
+			$_SERVER
+		],
+	],
+	App\Request::class => [
+		'constructParams' => [
+			$_SERVER
+		],
+	],
+	\Psr\Clock\ClockInterface::class => [
+		'instanceOf' => Util\Clock\SystemClock::class
+	],
+	\Friendica\Module\Special\HTTPException::class => [
+		'constructParams' => [
+			$_SERVER
+		],
+	],
 ];

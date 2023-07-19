@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,12 +22,11 @@
 namespace Friendica;
 
 /**
- * The Collection classes inheriting from this abstract class are meant to represent a list of database record.
- * The associated model class has to be provided in the child classes.
+ * The Collection classes inheriting from this class are meant to represent a list of structured objects of a single type.
  *
  * Collections can be used with foreach(), accessed like an array and counted.
  */
-abstract class BaseCollection extends \ArrayIterator
+class BaseCollection extends \ArrayIterator
 {
 	/**
 	 * This property is used with paginated results to hold the total number of items satisfying the paginated request.
@@ -49,31 +48,35 @@ abstract class BaseCollection extends \ArrayIterator
 	/**
 	 * @inheritDoc
 	 */
-	public function offsetSet($offset, $value)
+	#[\ReturnTypeWillChange]
+	public function offsetSet($key, $value): void
 	{
-		if (is_null($offset)) {
+		if (is_null($key)) {
 			$this->totalCount++;
 		}
 
-		parent::offsetSet($offset, $value);
+		parent::offsetSet($key, $value);
 	}
 
 	/**
 	 * @inheritDoc
 	 */
-	public function offsetUnset($offset)
+	#[\ReturnTypeWillChange]
+	public function offsetUnset($key): void
 	{
-		if ($this->offsetExists($offset)) {
+		if ($this->offsetExists($key)) {
 			$this->totalCount--;
 		}
 
-		parent::offsetUnset($offset);
+		parent::offsetUnset($key);
 	}
 
 	/**
-	 * @return int
+	 * Getter for total count
+	 *
+	 * @return int Total count
 	 */
-	public function getTotalCount()
+	public function getTotalCount(): int
 	{
 		return $this->totalCount;
 	}
@@ -86,9 +89,9 @@ abstract class BaseCollection extends \ArrayIterator
 	 * @return array
 	 * @see array_column()
 	 */
-	public function column($column, $index_key = null)
+	public function column(string $column, $index_key = null): array
 	{
-		return array_column($this->getArrayCopy(), $column, $index_key);
+		return array_column($this->getArrayCopy(true), $column, $index_key);
 	}
 
 	/**
@@ -98,7 +101,7 @@ abstract class BaseCollection extends \ArrayIterator
 	 * @return BaseCollection
 	 * @see array_map()
 	 */
-	public function map(callable $callback)
+	public function map(callable $callback): BaseCollection
 	{
 		return new static(array_map($callback, $this->getArrayCopy()), $this->getTotalCount());
 	}
@@ -111,8 +114,35 @@ abstract class BaseCollection extends \ArrayIterator
 	 * @return BaseCollection
 	 * @see array_filter()
 	 */
-	public function filter(callable $callback = null, int $flag = 0)
+	public function filter(callable $callback = null, int $flag = 0): BaseCollection
 	{
 		return new static(array_filter($this->getArrayCopy(), $callback, $flag));
+	}
+
+	/**
+	 * Reverse the orders of the elements in the collection
+	 *
+	 * @return $this
+	 */
+	public function reverse(): BaseCollection
+	{
+		return new static(array_reverse($this->getArrayCopy()), $this->getTotalCount());
+	}
+
+	/**
+	 * @inheritDoc
+	 *
+	 * includes recursion for entity::toArray() function
+	 * @see BaseEntity::toArray()
+	 */
+	public function getArrayCopy(bool $recursive = false): array
+	{
+		if (!$recursive) {
+			return parent::getArrayCopy();
+		}
+
+		return array_map(function ($item) {
+			return is_object($item) ? $item->toArray() : $item;
+		}, parent::getArrayCopy());
 	}
 }

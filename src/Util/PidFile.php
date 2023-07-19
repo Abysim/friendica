@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -31,9 +31,10 @@ class PidFile
 	 *
 	 * @param string $file Filename of pid file
 	 *
-	 * @return boolean|string PID or "false" if not existent
+	 * @return boolean|string PID or "false" if nonexistent
 	 */
-	static private function pidFromFile($file) {
+	private static function pidFromFile(string $file)
+	{
 		if (!file_exists($file)) {
 			return false;
 		}
@@ -48,7 +49,8 @@ class PidFile
 	 *
 	 * @return boolean Is it running?
 	 */
-	static public function isRunningProcess($file) {
+	public static function isRunningProcess(string $file): bool
+	{
 		$pid = self::pidFromFile($file);
 
 		if (!$pid) {
@@ -72,7 +74,8 @@ class PidFile
 	 *
 	 * @return boolean Was it killed successfully?
 	 */
-	static public function killProcess($file) {
+	public static function killProcess(string $file): bool
+	{
 		$pid = self::pidFromFile($file);
 
 		// We don't have a process id? then we quit
@@ -97,7 +100,8 @@ class PidFile
 	 *
 	 * @return boolean|string PID or "false" if not created
 	 */
-	static public function create($file) {
+	public static function create(string $file)
+	{
 		$pid = self::pidFromFile($file);
 
 		// We have a process id? then we quit
@@ -119,7 +123,8 @@ class PidFile
 	 *
 	 * @return boolean Is it running?
 	 */
-	static public function delete($file) {
+	public static function delete(string $file): bool
+	{
 		return @unlink($file);
 	}
 }

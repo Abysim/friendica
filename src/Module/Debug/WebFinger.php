@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -31,12 +31,10 @@ use Friendica\Network\Probe;
  */
 class WebFinger extends BaseModule
 {
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		if (!local_user()) {
-			$e           = new \Friendica\Network\HTTPException\ForbiddenException(DI::l10n()->t('Only logged in users are permitted to perform a probing.'));
-			$e->httpdesc = DI::l10n()->t('Public access denied.');
-			throw $e;
+		if (!DI::userSession()->getLocalUserId()) {
+			throw new \Friendica\Network\HTTPException\ForbiddenException(DI::l10n()->t('Only logged in users are permitted to perform a probing.'));
 		}
 
 		$addr = $_GET['addr'] ?? '';
@@ -49,8 +47,11 @@ class WebFinger extends BaseModule
 
 		$tpl = Renderer::getMarkupTemplate('webfinger.tpl');
 		return Renderer::replaceMacros($tpl, [
-			'$addr' => $addr,
-			'$res'  => $res,
+			'$title'  => DI::l10n()->t('Webfinger Diagnostic'),
+			'$submit' => DI::l10n()->t('Submit'),
+			'$lookup' => DI::l10n()->t('Lookup address:'),
+			'$addr'   => $addr,
+			'$res'    => $res,
 		]);
 	}
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,37 +21,54 @@
 
 namespace Friendica\Module;
 
+use Friendica\App;
 use Friendica\BaseModule;
+use Friendica\Core\L10n;
 use Friendica\Core\Protocol;
 use Friendica\Core\Renderer;
 use Friendica\Core\Worker;
+use Friendica\Database\Database;
 use Friendica\DI;
 use Friendica\Model\Contact as ContactModel;
 use Friendica\Network\HTTPException\ForbiddenException;
 use Friendica\Network\HTTPException\NotFoundException;
-use Friendica\Util\DateTimeFormat;
+use Friendica\Protocol\Delivery;
+use Friendica\Util\Profiler;
 use Friendica\Util\Strings;
-use Friendica\Worker\Delivery;
+use Psr\Log\LoggerInterface;
 
 /**
  * Suggest friends to a known contact
  */
 class FriendSuggest extends BaseModule
 {
-	public static function init(array $parameters = [])
+	/** @var Database */
+	protected $dba;
+	/** @var \Friendica\Contact\FriendSuggest\Repository\FriendSuggest */
+	protected $friendSuggestRepo;
+	/** @var \Friendica\Contact\FriendSuggest\Factory\FriendSuggest */
+	protected $friendSuggestFac;
+
+	public function __construct(L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, Response $response, Database $dba, \Friendica\Contact\FriendSuggest\Repository\FriendSuggest $friendSuggestRepo, \Friendica\Contact\FriendSuggest\Factory\FriendSuggest $friendSuggestFac, array $server, array $parameters = [])
 	{
-		if (!local_user()) {
-			throw new ForbiddenException(DI::l10n()->t('Permission denied.'));
+		parent::__construct($l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
+
+		if (!DI::userSession()->getLocalUserId()) {
+			throw new ForbiddenException($this->t('Permission denied.'));
 		}
+
+		$this->dba               = $dba;
+		$this->friendSuggestRepo = $friendSuggestRepo;
+		$this->friendSuggestFac  = $friendSuggestFac;
 	}
 
-	public static function post(array $parameters = [])
+	protected function post(array $request = [])
 	{
-		$cid = intval($parameters['contact']);
+		$cid = intval($this->parameters['contact']);
 
 		// We do query the "uid" as well to ensure that it is our contact
-		if (!DI::dba()->exists('contact', ['id' => $cid, 'uid' => local_user()])) {
-			throw new NotFoundException(DI::l10n()->t('Contact not found.'));
+		if (!$this->dba->exists('contact', ['id' => $cid, 'uid' => DI::userSession()->getLocalUserId()])) {
+			throw new NotFoundException($this->t('Contact not found.'));
 		}
 
 		$suggest_contact_id = intval($_POST['suggest']);
@@ -60,41 +77,40 @@ class FriendSuggest extends BaseModule
 		}
 
 		// We do query the "uid" as well to ensure that it is our contact
-		$contact = DI::dba()->selectFirst('contact', ['name', 'url', 'request', 'avatar'], ['id' => $suggest_contact_id, 'uid' => local_user()]);
+		$contact = $this->dba->selectFirst('contact', ['name', 'url', 'request', 'avatar'], ['id' => $suggest_contact_id, 'uid' => DI::userSession()->getLocalUserId()]);
 		if (empty($contact)) {
-			notice(DI::l10n()->t('Suggested contact not found.'));
+			DI::sysmsg()->addNotice($this->t('Suggested contact not found.'));
 			return;
 		}
 
 		$note = Strings::escapeHtml(trim($_POST['note'] ?? ''));
 
-		$suggest = DI::fsuggest()->insert([
-			'uid'     => local_user(),
-			'cid'     => $cid,
-			'name'    => $contact['name'],
-			'url'     => $contact['url'],
-			'request' => $contact['request'],
-			'photo'   => $contact['avatar'],
-			'note'    => $note,
-			'created' => DateTimeFormat::utcNow()
-		]);
+		$suggest = $this->friendSuggestRepo->save($this->friendSuggestFac->createNew(
+			DI::userSession()->getLocalUserId(),
+			$cid,
+			$contact['name'],
+			$contact['url'],
+			$contact['request'],
+			$contact['avatar'],
+			$note
+		));
 
-		Worker::add(PRIORITY_HIGH, 'Notifier', Delivery::SUGGESTION, $suggest->id);
+		Worker::add(Worker::PRIORITY_HIGH, 'Notifier', Delivery::SUGGESTION, $suggest->id);
 
-		info(DI::l10n()->t('Friend suggestion sent.'));
+		DI::sysmsg()->addInfo($this->t('Friend suggestion sent.'));
 	}
 
-	public static function content(array $parameters = [])
+	protected function content(array $request = []): string
 	{
-		$cid = intval($parameters['contact']);
+		$cid = intval($this->parameters['contact']);
 
-		$contact = DI::dba()->selectFirst('contact', [], ['id' => $cid, 'uid' => local_user()]);
+		$contact = $this->dba->selectFirst('contact', [], ['id' => $cid, 'uid' => DI::userSession()->getLocalUserId()]);
 		if (empty($contact)) {
-			notice(DI::l10n()->t('Contact not found.'));
-			DI::baseUrl()->redirect();
+			DI::sysmsg()->addNotice($this->t('Contact not found.'));
+			$this->baseUrl->redirect();
 		}
 
-		$contacts = ContactModel::selectToArray(['id', 'name'], [
+		$suggestableContacts = ContactModel::selectToArray(['id', 'name'], [
 			'`uid` = ? 
 			AND `id` != ? 
 			AND `network` = ? 
@@ -104,29 +120,29 @@ class FriendSuggest extends BaseModule
 			AND NOT `archive` 
 			AND NOT `deleted` 
 			AND `notify` != ""',
-			local_user(),
+			DI::userSession()->getLocalUserId(),
 			$cid,
 			Protocol::DFRN,
 		]);
 
 		$formattedContacts = [];
 
-		foreach ($contacts as $contact) {
-			$formattedContacts[$contact['id']] = $contact['name'];
+		foreach ($suggestableContacts as $suggestableContact) {
+			$formattedContacts[$suggestableContact['id']] = $suggestableContact['name'];
 		}
 
 		$tpl = Renderer::getMarkupTemplate('fsuggest.tpl');
 		return Renderer::replaceMacros($tpl, [
 			'$contact_id'      => $cid,
-			'$fsuggest_title'  => DI::l10n()->t('Suggest Friends'),
+			'$fsuggest_title'  => $this->t('Suggest Friends'),
 			'$fsuggest_select' => [
 				'suggest',
-				DI::l10n()->t('Suggest a friend for %s', $contact['name']),
+				$this->t('Suggest a friend for %s', $contact['name']),
 				'',
 				'',
 				$formattedContacts,
 			],
-			'$submit'          => DI::l10n()->t('Submit'),
+			'$submit'          => $this->t('Submit'),
 		]);
 	}
 }

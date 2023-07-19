@@ -1,7 +1,7 @@
 #!/usr/bin/env php
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -26,11 +26,16 @@ if (php_sapi_name() !== 'cli') {
 }
 
 use Dice\Dice;
+use Friendica\DI;
 use Psr\Log\LoggerInterface;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 $dice = (new Dice())->addRules(include __DIR__ . '/../static/dependencies.config.php');
 $dice = $dice->addRule(LoggerInterface::class,['constructParams' => ['console']]);
+
+/// @fixme Necessary until Hooks inside the Logger can get loaded without the DI-class
+DI::init($dice);
+\Friendica\Core\Logger\Handler\ErrorHandler::register($dice->create(\Psr\Log\LoggerInterface::class));
 
 (new Friendica\Core\Console($dice, $argv))->execute();

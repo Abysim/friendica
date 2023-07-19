@@ -48,7 +48,7 @@ function enableOnUser(){
 
 </script>
 
-<script type="text/javascript" src="view/js/ajaxupload.js?v={{$smarty.const.FRIENDICA_VERSION}}" >
+<script type="text/javascript" src="view/js/ajaxupload.js?v={{$smarty.const.FRIENDICA_VERSION}}">
 </script>
 
 <script>
@@ -57,12 +57,13 @@ function enableOnUser(){
 	$(document).ready(function() {
 
 		/* enable editor on focus and click */
-		$("#profile-jot-text").focus(enableOnUser);
-		$("#profile-jot-text").click(enableOnUser);
+		$("#profile-jot-text")
+			.focus(enableOnUser)
+			.click(enableOnUser);
 
 		var uploader = new window.AjaxUpload(
 			'wall-image-upload',
-			{ action: 'wall_upload/{{$nickname}}',
+			{ action: 'profile/{{$nickname}}/photos/upload',
 				name: 'userfile',
 				onSubmit: function(file,ext) { $('#profile-rotator').show(); },
 				onComplete: function(file,response) {
@@ -74,7 +75,7 @@ function enableOnUser(){
 
 		var file_uploader = new window.AjaxUpload(
 			'wall-file-upload',
-			{ action: 'wall_attach/{{$nickname}}',
+			{ action: 'profile/{{$nickname}}/attachment/upload',
 				name: 'userfile',
 				onSubmit: function(file,ext) { $('#profile-rotator').show(); },
 				onComplete: function(file,response) {
@@ -129,7 +130,7 @@ function enableOnUser(){
 		if(reply && reply.length) {
 			reply = bin2hex(reply);
 			$('#profile-rotator').show();
-			$.get('parse_url?binurl=' + reply, function(data) {
+			$.get('parseurl?binurl=' + reply, function(data) {
 				addeditortext(data);
 				$('#profile-rotator').hide();
 			});
@@ -167,13 +168,13 @@ function enableOnUser(){
 
 	function jotShare(id) {
 		$('#like-rotator-' + id).show();
-		$.get('share/' + id, function(data) {
-				if (!editor) $("#profile-jot-text").val("");
-				initEditor(function(){
-					addeditortext(data);
-					$('#like-rotator-' + id).hide();
-					$(window).scrollTop(0);
-				});
+		$.get('post/' + id + '/share', function(data) {
+			if (!editor) $("#profile-jot-text").val("");
+			initEditor(function(){
+				addeditortext(data);
+				$('#like-rotator-' + id).hide();
+				$(window).scrollTop(0);
+			});
 		});
 	}
 
@@ -190,7 +191,7 @@ function enableOnUser(){
 		if(reply && reply.length) {
 			reply = bin2hex(reply);
 			$('#profile-rotator').show();
-			$.get('parse_url?binurl=' + reply, function(data) {
+			$.get('parseurl?binurl=' + reply, function(data) {
 				if (!editor) $("#profile-jot-text").val("");
 				initEditor(function(){
 					addeditortext(data);
@@ -209,7 +210,7 @@ function enableOnUser(){
 				commentBusy = true;
 				$('body').css('cursor', 'wait');
 
-				$.get('tagger/' + id + '?term=' + reply);
+				$.post('post/' + id + '/tag/add', {term: reply});
 				if(timer) clearTimeout(timer);
 				timer = setTimeout(NavUpdate,3000);
 				liking = 1;
@@ -240,6 +241,7 @@ function enableOnUser(){
 //					if(timer) clearTimeout(timer);
 //					timer = setTimeout(NavUpdate,3000);
 					liking = 1;
+					force_update = true;
 					$.colorbox.close();
 				} else {
 					$("#id_term").css("border-color","#FF0000");

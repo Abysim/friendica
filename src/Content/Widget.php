@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,14 +22,17 @@
 namespace Friendica\Content;
 
 use Friendica\Core\Addon;
+use Friendica\Core\Cache\Enum\Duration;
 use Friendica\Core\Protocol;
 use Friendica\Core\Renderer;
+use Friendica\Core\Search;
 use Friendica\Database\DBA;
 use Friendica\DI;
 use Friendica\Model\Contact;
-use Friendica\Model\FileTag;
 use Friendica\Model\Group;
 use Friendica\Model\Item;
+use Friendica\Model\Post;
+use Friendica\Model\Profile;
 use Friendica\Util\DateTimeFormat;
 use Friendica\Util\Temporal;
 
@@ -42,7 +45,7 @@ class Widget
 	 * @return string
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function follow($value = "")
+	public static function follow(string $value = ''): string
 	{
 		return Renderer::replaceMacros(Renderer::getMarkupTemplate('widget/follow.tpl'), array(
 			'$connect' => DI::l10n()->t('Add New Contact'),
@@ -55,14 +58,16 @@ class Widget
 
 	/**
 	 * Return Find People widget
+	 *
+	 * @return string HTML code representing "People Widget"
 	 */
-	public static function findPeople()
+	public static function findPeople(): string
 	{
-		$global_dir = DI::config()->get('system', 'directory');
+		$global_dir = Search::getGlobalDirectory();
 
 		if (DI::config()->get('system', 'invitation_only')) {
-			$x = intval(DI::pConfig()->get(local_user(), 'system', 'invites_remaining'));
-			if ($x || is_site_admin()) {
+			$x = intval(DI::pConfig()->get(DI::userSession()->getLocalUserId(), 'system', 'invites_remaining'));
+			if ($x || DI::app()->isSiteAdmin()) {
 				DI::page()['aside'] .= '<div class="side-link widget" id="side-invite-remain">'
 					. DI::l10n()->tt('%d invitation available', '%d invitations available', $x)
 					. '</div>';
@@ -80,7 +85,7 @@ class Widget
 		$nv['random'] = DI::l10n()->t('Random Profile');
 		$nv['inv'] = DI::l10n()->t('Invite Friends');
 		$nv['directory'] = DI::l10n()->t('Global Directory');
-		$nv['global_dir'] = $global_dir;
+		$nv['global_dir'] = Profile::zrl($global_dir, true);
 		$nv['local_directory'] = DI::l10n()->t('Local Directory');
 
 		$aside = [];
@@ -90,12 +95,14 @@ class Widget
 	}
 
 	/**
-	 * Return unavailable networks
+	 * Return unavailable networks as array
+	 *
+	 * @return array Unsupported networks
 	 */
-	public static function unavailableNetworks()
+	public static function unavailableNetworks(): array
 	{
 		// Always hide content from these networks
-		$networks = [Protocol::PHANTOM, Protocol::FACEBOOK, Protocol::APPNET];
+		$networks = [Protocol::PHANTOM, Protocol::FACEBOOK, Protocol::APPNET, Protocol::ZOT];
 
 		if (!Addon::isEnabled("discourse")) {
 			$networks[] = Protocol::DISCOURSE;
@@ -113,6 +120,10 @@ class Widget
 			$networks[] = Protocol::TWITTER;
 		}
 
+		if (!Addon::isEnabled("tumblr")) {
+			$networks[] = Protocol::TUMBLR;
+		}
+
 		if (DI::config()->get("system", "ostatus_disabled")) {
 			$networks[] = Protocol::OSTATUS;
 		}
@@ -124,16 +135,7 @@ class Widget
 		if (!Addon::isEnabled("pnut")) {
 			$networks[] = Protocol::PNUT;
 		}
-
-		if (!sizeof($networks)) {
-			return "";
-		}
-
-		$network_filter = implode("','", $networks);
-
-		$network_filter = "AND `network` NOT IN ('$network_filter')";
-
-		return $network_filter;
+		return $networks;
 	}
 
 	/**
@@ -158,7 +160,7 @@ class Widget
 	 * @return string
 	 * @throws \Exception
 	 */
-	private static function filter($type, $title, $desc, $all, $baseUrl, array $options, $selected = null)
+	private static function filter(string $type, string $title, string $desc, string $all, string $baseUrl, array $options, string $selected = null): string
 	{
 		$queryString = parse_url($baseUrl, PHP_URL_QUERY);
 		$queryArray = [];
@@ -175,6 +177,10 @@ class Widget
 		} else {
 			$baseUrl = trim($baseUrl, '?') . '?';
 		}
+
+		array_walk($options, function (&$value) {
+			$value['ref'] = rawurlencode($value['ref']);
+		});
 
 		return Renderer::replaceMacros(Renderer::getMarkupTemplate('widget/filter.tpl'), [
 			'$type'      => $type,
@@ -195,9 +201,9 @@ class Widget
 	 * @return string
 	 * @throws \Exception
 	 */
-	public static function groups($baseurl, $selected = '')
+	public static function groups(string $baseurl, string $selected = ''): string
 	{
-		if (!local_user()) {
+		if (!DI::userSession()->getLocalUserId()) {
 			return '';
 		}
 
@@ -206,7 +212,7 @@ class Widget
 				'ref'  => $group['id'],
 				'name' => $group['name']
 			];
-		}, Group::getByUserId(local_user()));
+		}, Group::getByUserId(DI::userSession()->getLocalUserId()));
 
 		return self::filter(
 			'group',
@@ -227,9 +233,9 @@ class Widget
 	 * @return string
 	 * @throws \Exception
 	 */
-	public static function contactRels($baseurl, $selected = '')
+	public static function contactRels(string $baseurl, string $selected = ''): string
 	{
-		if (!local_user()) {
+		if (!DI::userSession()->getLocalUserId()) {
 			return '';
 		}
 
@@ -258,19 +264,19 @@ class Widget
 	 * @return string
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function networks($baseurl, $selected = '')
+	public static function networks(string $baseurl, string $selected = ''): string
 	{
-		if (!local_user()) {
+		if (!DI::userSession()->getLocalUserId()) {
 			return '';
 		}
 
-		$extra_sql = self::unavailableNetworks();
+		$networks = self::unavailableNetworks();
+		$query = "`uid` = ? AND NOT `deleted` AND `network` != '' AND NOT `network` IN (" . substr(str_repeat("?, ", count($networks)), 0, -2) . ")";
+		$condition = array_merge([$query], array_merge([DI::userSession()->getLocalUserId()], $networks));
 
-		$r = DBA::p("SELECT DISTINCT(`network`) FROM `contact` WHERE `uid` = ? AND NOT `deleted` AND `network` != '' $extra_sql ORDER BY `network`",
-			local_user()
-		);
+		$r = DBA::select('contact', ['network'], $condition, ['group_by' => ['network'], 'order' => ['network']]);
 
-		$nets = array();
+		$nets = [];
 		while ($rr = DBA::fetch($r)) {
 			$nets[] = ['ref' => $rr['network'], 'name' => ContactSelector::networkToName($rr['network'])];
 		}
@@ -296,28 +302,19 @@ class Widget
 	 *
 	 * @param string $baseurl  baseurl
 	 * @param string $selected optional, default empty
-	 * @return string|void
+	 * @return string
 	 * @throws \Exception
 	 */
-	public static function fileAs($baseurl, $selected = '')
+	public static function fileAs(string $baseurl, string $selected = ''): string
 	{
-		if (!local_user()) {
+		if (!DI::userSession()->getLocalUserId()) {
 			return '';
 		}
 
-		$saved = DI::pConfig()->get(local_user(), 'system', 'filetags');
-		if (!strlen($saved)) {
-			return;
-		}
-
 		$terms = [];
-		foreach (FileTag::fileToArray($saved) as $savedFolderName) {
+		foreach (Post\Category::getArray(DI::userSession()->getLocalUserId(), Post\Category::FILE) as $savedFolderName) {
 			$terms[] = ['ref' => $savedFolderName, 'name' => $savedFolderName];
 		}
-		
-		usort($terms, function ($a, $b) {
-			return strcmp($a['name'], $b['name']);
-		});
 
 		return self::filter(
 			'file',
@@ -333,28 +330,20 @@ class Widget
 	/**
 	 * Return categories widget
 	 *
-	 * @param string $baseurl  baseurl
-	 * @param string $selected optional, default empty
-	 * @return string|void
+	 * @param int    $uid      Id of the user owning the categories
+	 * @param string $baseurl  Base page URL
+	 * @param string $selected Selected category
+	 * @return string
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function categories($baseurl, $selected = '')
+	public static function categories(int $uid, string $baseurl, string $selected = ''): string
 	{
-		$a = DI::app();
-
-		$uid = intval($a->profile['uid']);
-
 		if (!Feature::isEnabled($uid, 'categories')) {
 			return '';
 		}
 
-		$saved = DI::pConfig()->get($uid, 'system', 'filetags');
-		if (!strlen($saved)) {
-			return;
-		}
-
-		$terms = array();
-		foreach (FileTag::fileToArray($saved, 'category') as $savedFolderName) {
+		$terms = [];
+		foreach (Post\Category::getArray($uid, Post\Category::CATEGORY) as $savedFolderName) {
 			$terms[] = ['ref' => $savedFolderName, 'name' => $savedFolderName];
 		}
 
@@ -374,17 +363,17 @@ class Widget
 	 *
 	 * @param int    $uid      Viewed profile user ID
 	 * @param string $nickname Viewed profile user nickname
-	 * @return string|void
+	 * @return string
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	public static function commonFriendsVisitor(int $uid, string $nickname)
+	public static function commonFriendsVisitor(int $uid, string $nickname): string
 	{
-		if (local_user() == $uid) {
+		if (DI::userSession()->getLocalUserId() == $uid) {
 			return '';
 		}
 
-		$visitorPCid = local_user() ? Contact::getPublicIdByUserId(local_user()) : remote_user();
+		$visitorPCid = DI::userSession()->getPublicContactId() ?: DI::userSession()->getRemoteUserId();
 		if (!$visitorPCid) {
 			return '';
 		}
@@ -409,7 +398,7 @@ class Widget
 		$entries = [];
 		foreach ($commonContacts as $contact) {
 			$entries[] = [
-				'url'   => Contact::magicLink($contact['url']),
+				'url'   => Contact::magicLinkByContact($contact),
 				'name'  => $contact['name'],
 				'photo' => Contact::getThumb($contact),
 			];
@@ -429,23 +418,20 @@ class Widget
 	/**
 	 * Insert a tag cloud widget for the present profile.
 	 *
+	 * @param int $uid   User ID
 	 * @param int $limit Max number of displayed tags.
 	 * @return string HTML formatted output.
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 * @throws \ImagickException
 	 */
-	public static function tagCloud($limit = 50)
+	public static function tagCloud(int $uid, int $limit = 50): string
 	{
-		$a = DI::app();
-
-		$uid = intval($a->profile['uid']);
-
-		if (!$uid || !$a->profile['url']) {
+		if (empty($uid)) {
 			return '';
 		}
 
 		if (Feature::isEnabled($uid, 'tagadelic')) {
-			$owner_id = Contact::getIdForURL($a->profile['url'], 0, false);
+			$owner_id = Contact::getPublicIdByUserId($uid);
 
 			if (!$owner_id) {
 				return '';
@@ -463,7 +449,7 @@ class Widget
 	 * @return string
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
-	public static function postedByYear(string $url, int $uid, bool $wall)
+	public static function postedByYear(string $url, int $uid, bool $wall): string
 	{
 		$o = '';
 
@@ -474,7 +460,13 @@ class Widget
 
 		$ret = [];
 
-		$dthen = Item::firstPostDate($uid, $wall);
+		$cachekey = 'Widget::postedByYear' . $uid . '-' . (int)$wall;
+		$dthen = DI::cache()->get($cachekey);
+		if (empty($dthen)) {
+			$dthen = Item::firstPostDate($uid, $wall);
+			DI::cache()->set($cachekey, $dthen, Duration::HOUR);
+		}
+
 		if ($dthen) {
 			// Set the start and end date to the beginning of the month
 			$dnow = substr($dnow, 0, 8) . '01';
@@ -526,12 +518,12 @@ class Widget
 	/**
 	 * Display the account types sidebar
 	 * The account type value is added as a parameter to the url
-	 * 
+	 *
 	 * @param string $base        Basepath
-	 * @param int    $accounttype Acount type
+	 * @param string $accounttype Account type
 	 * @return string
 	 */
-	public static function accounttypes(string $base, $accounttype)
+	public static function accountTypes(string $base, string $accounttype): string
 	{
 		$accounts = [
 			['ref' => 'person', 'name' => DI::l10n()->t('Persons')],

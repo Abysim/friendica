@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,14 +21,14 @@
 
 namespace Friendica\Object\Api\Mastodon;
 
-use Friendica\BaseEntity;
+use Friendica\BaseDataTransferObject;
 
 /**
  * Class Field
  *
  * @see https://docs.joinmastodon.org/entities/field/
  */
-class Field extends BaseEntity
+class Field extends BaseDataTransferObject
 {
 	/** @var string */
 	protected $name;

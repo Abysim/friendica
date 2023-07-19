@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2020, Friendica
+ * @copyright Copyright (C) 2010-2023, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,17 +24,17 @@ namespace Friendica\Model\Post;
 use Friendica\Database\DBA;
 use \BadMethodCallException;
 use Friendica\Database\Database;
-use Friendica\Database\DBStructure;
+use Friendica\DI;
 
 class User
 {
 	/**
-	 * Insert a new URI user entry
+	 * Insert a new post user entry
 	 *
 	 * @param integer $uri_id
 	 * @param integer $uid
 	 * @param array   $fields
-	 * @return bool
+	 * @return int    ID of inserted post-user
 	 * @throws \Exception
 	 */
 	public static function insert(int $uri_id, int $uid, array $data = [])
@@ -43,11 +43,7 @@ class User
 			throw new BadMethodCallException('Empty URI_id');
 		}
 
-		if (DBA::exists('post-user', ['uri-id' => $uri_id, 'uid' => $uid])) {
-			return false;
-		}
-
-		$fields = DBStructure::getFieldsForTable('post-user', $data);
+		$fields = DI::dbaDefinition()->truncateFieldsForTable('post-user', $data);
 
 		// Additionally assign the key fields
 		$fields['uri-id'] = $uri_id;
@@ -58,25 +54,57 @@ class User
 			$fields['unseen'] = false;
 		}
 
-		return DBA::insert('post-user', $fields, Database::INSERT_IGNORE);
+		// Does the entry already exist?
+		if (DBA::exists('post-user', ['uri-id' => $uri_id, 'uid' => $uid])) {
+			$postuser = DBA::selectFirst('post-user', [], ['uri-id' => $uri_id, 'uid' => $uid]);
+
+			// We quit here, when there are obvious differences
+			foreach (['created', 'owner-id', 'author-id', 'vid', 'network', 'private', 'wall', 'origin'] as $key) {
+				if ($fields[$key] != $postuser[$key]) {
+					return 0;
+				}
+			}
+
+			$update = [];
+			foreach (['gravity', 'parent-uri-id', 'thr-parent-id'] as $key) {
+				if ($fields[$key] != $postuser[$key]) {
+					$update[$key] = $fields[$key];
+				}
+			}
+
+			// When the parents changed, we apply these changes to the existing entry
+			if (!empty($update)) {
+				DBA::update('post-user', $update, ['id' => $postuser['id']]);
+				return $postuser['id'];
+			} else {
+				return 0;
+			}
+		}
+
+		if (!DBA::insert('post-user', $fields, Database::INSERT_IGNORE)) {
+			return 0;
+		}
+
+		return DBA::lastInsertId();
 	}
 
 	/**
-	 * Update a URI user entry
+	 * Update a post user entry
 	 *
 	 * @param integer $uri_id
 	 * @param integer $uid
-	 * @param array   $fields
+	 * @param array   $data
+	 * @param bool    $insert_if_missing
 	 * @return bool
 	 * @throws \Exception
 	 */
-	public static function update(int $uri_id, int $uid, array $data = [])
+	public static function update(int $uri_id, int $uid, array $data = [], bool $insert_if_missing = false)
 	{
 		if (empty($uri_id)) {
 			throw new BadMethodCallException('Empty URI_id');
 		}
 
-		$fields = DBStructure::getFieldsForTable('post-user', $data);
+		$fields = DI::dbaDefinition()->truncateFieldsForTable('post-user', $data);
 
 		// Remove the key fields
 		unset($fields['uri-id']);
@@ -86,6 +114,22 @@ class User
 			return true;
 		}
 
-		return DBA::update('post-user', $fields, ['uri-id' => $uri_id, 'uid' => $uid], true);
+		return DBA::update('post-user', $fields, ['uri-id' => $uri_id, 'uid' => $uid], $insert_if_missing ? true : []);
+	}
+
+	/**
+	 * Delete a row from the post-user table
+	 *
+	 * @param array        $conditions Field condition(s)
+	 * @param array        $options
+	 *                           - cascade: If true we delete records in other tables that depend on the one we're deleting through
+	 *                           relations (default: true)
+	 *
+	 * @return boolean was the delete successful?
+	 * @throws \Exception
+	 */
+	public static function delete(array $conditions, array $options = [])
+	{
+		return DBA::delete('post-user', $conditions, $options);
 	}
 }
