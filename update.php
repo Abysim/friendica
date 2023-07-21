@@ -971,15 +971,15 @@ function update_1419()
 
 function update_1429()
 {
-	if (!DBA::e("UPDATE `contact` SET `uri-id` = null WHERE NOT `uri-id` IS NULL")) {
+	if (!DBA::e('UPDATE `contact` SET `uri-id` = null WHERE NOT `uri-id` IS NULL')) {
 		return Update::FAILED;
 	}
 
-	if (DBStructure::existsTable('fcontact') && !DBA::e("UPDATE `fcontact` SET `uri-id` = null WHERE NOT `uri-id` IS NULL")) {
+	if (DBStructure::existsTable('fcontact') && !DBA::e('UPDATE `fcontact` SET `uri-id` = null WHERE NOT `uri-id` IS NULL')) {
 		return Update::FAILED;
 	}
 
-	if (!DBA::e("UPDATE `apcontact` SET `uri-id` = null WHERE NOT `uri-id` IS NULL")) {
+	if (!DBA::e('UPDATE `apcontact` SET `uri-id` = null WHERE NOT `uri-id` IS NULL')) {
 		return Update::FAILED;
 	}
 
