@@ -848,6 +848,7 @@ function update_1400()
 
 function pre_update_1403()
 {
+	echo '1403';
 	// Necessary before a primary key change
 	if (DBStructure::existsTable('parsed_url') && !DBA::e("DROP TABLE `parsed_url`")) {
 		echo 'WTF';
@@ -860,6 +861,7 @@ function pre_update_1403()
 
 function update_1404()
 {
+	echo '1404';
 	$tasks = DBA::select('workerqueue', ['id', 'command', 'parameter'], ['command' => ['notifier', 'delivery', 'apdelivery', 'done' => false]]);
 	while ($task = DBA::fetch($tasks)) {
 		$parameters = json_decode($task['parameter'], true);
