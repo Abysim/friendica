@@ -218,7 +218,7 @@ function vier_community_info()
 
 		$helperlist = DI::config()->get("vier", "helperlist");
 
-		$helpers = explode(",", $helperlist);
+		$helpers = $helperlist ? explode(",", $helperlist) : [];
 
 		if ($helpers) {
 			foreach ($helpers as $helper) {
