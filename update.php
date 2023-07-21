@@ -801,7 +801,7 @@ function update_1399()
 
 function update_1400()
 {
-	Logger::alert('1400');
+	Logger::error('1400');
 	if (!DBA::e("INSERT IGNORE INTO `post` (`uri-id`, `parent-uri-id`, `thr-parent-id`, `owner-id`, `author-id`, `network`,
 		`created`, `received`, `edited`, `gravity`, `causer-id`, `post-type`, `vid`, `private`, `visible`, `deleted`, `global`)
 		SELECT `uri-id`, `parent-uri-id`, `thr-parent-id`, `owner-id`, `author-id`, `network`, `created`, `received`, `edited`,
@@ -849,10 +849,10 @@ function update_1400()
 
 function pre_update_1403()
 {
-	Logger::alert('1403');
+	Logger::error('1403');
 	// Necessary before a primary key change
 	if (DBStructure::existsTable('parsed_url') && !DBA::e("DROP TABLE `parsed_url`")) {
-		Logger::alert('WTF');
+		Logger::error('WTF');
 
 		return Update::FAILED;
 	}
@@ -862,7 +862,7 @@ function pre_update_1403()
 
 function update_1404()
 {
-	Logger::alert('1404');
+	Logger::error('1404');
 	$tasks = DBA::select('workerqueue', ['id', 'command', 'parameter'], ['command' => ['notifier', 'delivery', 'apdelivery', 'done' => false]]);
 	while ($task = DBA::fetch($tasks)) {
 		$parameters = json_decode($task['parameter'], true);
@@ -923,7 +923,7 @@ function update_1404()
 
 function update_1407()
 {
-	Logger::alert('1407');
+	Logger::error('1407');
 	if (!DBA::e("UPDATE `post` SET `causer-id` = NULL WHERE `causer-id` = 0")) {
 		return Update::FAILED;
 	}
