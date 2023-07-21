@@ -801,6 +801,7 @@ function update_1399()
 
 function update_1400()
 {
+	Logger::alert('1400');
 	if (!DBA::e("INSERT IGNORE INTO `post` (`uri-id`, `parent-uri-id`, `thr-parent-id`, `owner-id`, `author-id`, `network`,
 		`created`, `received`, `edited`, `gravity`, `causer-id`, `post-type`, `vid`, `private`, `visible`, `deleted`, `global`)
 		SELECT `uri-id`, `parent-uri-id`, `thr-parent-id`, `owner-id`, `author-id`, `network`, `created`, `received`, `edited`,
@@ -922,6 +923,7 @@ function update_1404()
 
 function update_1407()
 {
+	Logger::alert('1407');
 	if (!DBA::e("UPDATE `post` SET `causer-id` = NULL WHERE `causer-id` = 0")) {
 		return Update::FAILED;
 	}
