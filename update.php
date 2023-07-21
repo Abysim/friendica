@@ -850,6 +850,8 @@ function pre_update_1403()
 {
 	// Necessary before a primary key change
 	if (DBStructure::existsTable('parsed_url') && !DBA::e("DROP TABLE `parsed_url`")) {
+		echo 'WTF';
+
 		return Update::FAILED;
 	}
 
