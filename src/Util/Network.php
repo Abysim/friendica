@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -217,7 +217,7 @@ class Network
 		}
 
 		foreach ($domain_blocklist as $domain_block) {
-			if (fnmatch(strtolower($domain_block['domain']), strtolower($uri->getHost()))) {
+			if (!empty($domain_block['domain']) && fnmatch(strtolower($domain_block['domain']), strtolower($uri->getHost()))) {
 				return true;
 			}
 		}
@@ -271,14 +271,17 @@ class Network
 			return false;
 		}
 
-		$str_allowed = DI::config()->get('system', 'allowed_email', '');
-		if (empty($str_allowed)) {
+		$allowed = DI::config()->get('system', 'allowed_email');
+		if (!empty($allowed) && self::isDomainMatch($domain, explode(',', $allowed))) {
 			return true;
 		}
 
-		$allowed = explode(',', $str_allowed);
+		$disallowed = DI::config()->get('system', 'disallowed_email');
+		if (!empty($disallowed) && self::isDomainMatch($domain, explode(',', $disallowed))) {
+			return false;
+		}
 
-		return self::isDomainAllowed($domain, $allowed);
+		return true;
 	}
 
 	/**
@@ -289,7 +292,7 @@ class Network
 	 *
 	 * @return boolean
 	 */
-	public static function isDomainAllowed(string $domain, array $domain_list): bool
+	public static function isDomainMatch(string $domain, array $domain_list): bool
 	{
 		$found = false;
 
@@ -640,10 +643,11 @@ class Network
 	 * @param string $url
 	 *
 	 * @return bool
+	 * @deprecated since 2023.09, please use BaseUrl->isLocalUrl or BaseUrl->isLocalUri instead.
 	 */
 	public static function isLocalLink(string $url): bool
 	{
-		return (strpos(Strings::normaliseLink($url), Strings::normaliseLink(DI::baseUrl())) !== false);
+		return DI::baseUrl()->isLocalUrl($url);
 	}
 
 	/**
@@ -656,5 +660,48 @@ class Network
 	{
 		$scheme = parse_url($url, PHP_URL_SCHEME);
 		return !empty($scheme) && in_array($scheme, ['http', 'https']) && parse_url($url, PHP_URL_HOST);
+	}
+
+	/**
+	 * Remove invalid parts from an URL
+	 *
+	 * @param string $url
+	 * @return string sanitized URL
+	 */
+	public static function sanitizeUrl(string $url): string
+	{
+		$sanitized = $url = trim($url);
+
+		foreach (['"', ' '] as $character) {
+			$pos = strpos($sanitized, $character);
+			if ($pos !== false) {
+				$sanitized = trim(substr($sanitized, 0, $pos));
+			}
+		}
+
+		if ($sanitized != $url) {
+			Logger::debug('Link got sanitized', ['url' => $url, 'sanitzed' => $sanitized]);
+		}
+		return $sanitized;
+	}
+
+	/**
+	 * Creates an Uri object out of a given Uri string
+	 *
+	 * @param string|null $uri
+	 * @return UriInterface|null
+	 */
+	public static function createUriFromString(string $uri = null): ?UriInterface
+	{
+		if (empty($uri)) {
+			return null;
+		}
+
+		try {
+			return new Uri($uri);
+		} catch (\Exception $e) {
+			Logger::debug('Invalid URI', ['code' => $e->getCode(), 'message' => $e->getMessage(), 'uri' => $uri]);
+			return null;
+		}
 	}
 }

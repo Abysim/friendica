@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,7 +23,7 @@ namespace Friendica\Module\Profile;
 
 use Friendica\App;
 use Friendica\Content\Feature;
-use Friendica\Content\ForumManager;
+use Friendica\Content\GroupManager;
 use Friendica\Content\Nav;
 use Friendica\Content\Text\BBCode;
 use Friendica\Core\Config\Capability\IManageConfigValues;
@@ -81,15 +81,15 @@ class Profile extends BaseProfile
 	protected function rawContent(array $request = [])
 	{
 		if (ActivityPub::isRequest()) {
-			$user = $this->database->selectFirst('user', ['uid'], ['nickname' => $this->parameters['nickname'] ?? '', 'account_removed' => false]);
+			$user = $this->database->selectFirst('user', ['uid'], ['nickname' => $this->parameters['nickname'] ?? '', 'verified' => true, 'blocked' => false, 'account_removed' => false, 'account_expired' => false]);
 			if ($user) {
 				try {
-					$data = ActivityPub\Transmitter::getProfile($user['uid']);
+					$data = ActivityPub\Transmitter::getProfile($user['uid'], ActivityPub::isAcceptedRequester($user['uid']));
 					header('Access-Control-Allow-Origin: *');
 					header('Cache-Control: max-age=23200, stale-while-revalidate=23200');
-					System::jsonExit($data, 'application/activity+json');
+					$this->jsonExit($data, 'application/activity+json');
 				} catch (HTTPException\NotFoundException $e) {
-					System::jsonError(404, ['error' => 'Record not found']);
+					$this->jsonError(404, ['error' => 'Record not found']);
 				}
 			}
 
@@ -97,10 +97,10 @@ class Profile extends BaseProfile
 				// Known deleted user
 				$data = ActivityPub\Transmitter::getDeletedUser($this->parameters['nickname']);
 
-				System::jsonError(410, $data);
+				$this->jsonError(410, $data);
 			} else {
 				// Any other case (unknown, blocked, nverified, expired, no profile, no self contact)
-				System::jsonError(404, []);
+				$this->jsonError(404, []);
 			}
 		}
 	}
@@ -226,7 +226,7 @@ class Profile extends BaseProfile
 			// Separator is defined in Module\Settings\Profile\Index::cleanKeywords
 			foreach (explode(', ', $profile['pub_keywords']) as $tag_label) {
 				$tags[] = [
-					'url'   => '/search?tag=' . $tag_label,
+					'url'   => '/search?tag=' . urlencode($tag_label),
 					'label' => Tag::TAG_CHARACTER[Tag::HASHTAG] . $tag_label,
 				];
 			}
@@ -254,12 +254,12 @@ class Profile extends BaseProfile
 			);
 		}
 
-		//show subscribed forum if it is enabled in the usersettings
+		//show subscribed group if it is enabled in the usersettings
 		if (Feature::isEnabled($profile['uid'], 'forumlist_profile')) {
 			$custom_fields += self::buildField(
-				'forumlist',
-				$this->t('Forums:'),
-				ForumManager::profileAdvanced($profile['uid'])
+				'group_list',
+				$this->t('Groups:'),
+				GroupManager::profileAdvanced($profile['uid'])
 			);
 		}
 
@@ -348,10 +348,10 @@ class Profile extends BaseProfile
 			$htmlhead .= '<meta content="noindex, noarchive" name="robots" />' . "\n";
 		}
 
-		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $this->baseUrl . '/dfrn_poll/' . $nickname . '" title="DFRN: ' . $this->t('%s\'s timeline', $profile['name']) . '"/>' . "\n";
-		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $this->baseUrl . '/feed/' . $nickname . '/" title="' . $this->t('%s\'s posts', $profile['name']) . '"/>' . "\n";
-		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $this->baseUrl . '/feed/' . $nickname . '/comments" title="' . $this->t('%s\'s comments', $profile['name']) . '"/>' . "\n";
-		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $this->baseUrl . '/feed/' . $nickname . '/activity" title="' . $this->t('%s\'s timeline', $profile['name']) . '"/>' . "\n";
+		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $this->baseUrl . '/dfrn_poll/' . $nickname . '" title="DFRN: ' . $this->t('%s\'s timeline', htmlspecialchars($profile['name'], ENT_COMPAT, 'UTF-8', true)) . '"/>' . "\n";
+		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $this->baseUrl . '/feed/' . $nickname . '/" title="' . $this->t('%s\'s posts', htmlspecialchars($profile['name'], ENT_COMPAT, 'UTF-8', true)) . '"/>' . "\n";
+		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $this->baseUrl . '/feed/' . $nickname . '/comments" title="' . $this->t('%s\'s comments', htmlspecialchars($profile['name'], ENT_COMPAT, 'UTF-8', true)) . '"/>' . "\n";
+		$htmlhead .= '<link rel="alternate" type="application/atom+xml" href="' . $this->baseUrl . '/feed/' . $nickname . '/activity" title="' . $this->t('%s\'s timeline', htmlspecialchars($profile['name'], ENT_COMPAT, 'UTF-8', true)) . '"/>' . "\n";
 		$uri      = urlencode('acct:' . $profile['nickname'] . '@' . $this->baseUrl->getHost() . ($this->baseUrl->getPath() ? '/' . $this->baseUrl->getPath() : ''));
 		$htmlhead .= '<link rel="lrdd" type="application/xrd+xml" href="' . $this->baseUrl . '/xrd/?uri=' . $uri . '" />' . "\n";
 		header('Link: <' . $this->baseUrl . '/xrd/?uri=' . $uri . '>; rel="lrdd"; type="application/xrd+xml"', false);

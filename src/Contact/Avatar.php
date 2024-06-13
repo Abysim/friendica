@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -80,19 +80,24 @@ class Avatar
 			return $fields;
 		}
 
-		$img_str = $fetchResult->getBody();
+		if (!$fetchResult->isSuccess()) {
+			Logger::debug('Fetching was unsuccessful', ['avatar' => $avatar]);
+			return $fields;
+		}
+
+		$img_str = $fetchResult->getBodyString();
 		if (empty($img_str)) {
 			Logger::debug('Avatar is invalid', ['avatar' => $avatar]);
 			return $fields;
 		}
 
-		$image = new Image($img_str, Images::getMimeTypeByData($img_str));
+		$image = new Image($img_str, $fetchResult->getContentType(), $avatar);
 		if (!$image->isValid()) {
 			Logger::debug('Avatar picture is invalid', ['avatar' => $avatar]);
 			return $fields;
 		}
 
-		$filename  = self::getFilename($contact['url']);
+		$filename  = self::getFilename($contact['url'], $avatar);
 		$timestamp = time();
 
 		$fields['blurhash'] = $image->getBlurHash();
@@ -120,7 +125,7 @@ class Avatar
 			return $fields;
 		}
 
-		$filename  = self::getFilename($contact['url']);
+		$filename  = self::getFilename($contact['url'], $contact['avatar']);
 		$timestamp = time();
 
 		$fields['photo'] = self::storeAvatarCache($image, $filename, Proxy::PIXEL_SMALL, $timestamp);
@@ -130,9 +135,9 @@ class Avatar
 		return $fields;
 	}
 
-	private static function getFilename(string $url): string
+	private static function getFilename(string $url, string $host): string
 	{
-		$guid = Item::guidFromUri($url);
+		$guid = Item::guidFromUri($url, $host);
 
 		return substr($guid, 0, 2) . '/' . substr($guid, 3, 2) . '/' . substr($guid, 5, 3) . '/' .
 			substr($guid, 9, 2) .'/' . substr($guid, 11, 2) . '/' . substr($guid, 13, 4). '/' . substr($guid, 18) . '-';
@@ -145,7 +150,7 @@ class Avatar
 			return '';
 		}
 
-		$path = $filename . $size . '.' . $image->getExt();
+		$path = $filename . $size . $image->getExt();
 
 		$basepath = self::basePath();
 		if (empty($basepath)) {

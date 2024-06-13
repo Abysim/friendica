@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -41,7 +41,7 @@ class Context extends BaseApi
 		$uid = self::getCurrentUserID();
 
 		if (empty($this->parameters['id'])) {
-			DI::mstdnError()->UnprocessableEntity();
+			$this->logAndJsonError(422, $this->errorFactory->UnprocessableEntity());
 		}
 
 		$request = $this->getRequest([
@@ -56,6 +56,7 @@ class Context extends BaseApi
 
 		$parents  = [];
 		$children = [];
+		$deleted  = [];
 
 		$parent = Post::selectOriginal(['uri-id', 'parent-uri-id'], ['uri-id' => $id]);
 		if (DBA::isResult($parent)) {
@@ -66,11 +67,11 @@ class Context extends BaseApi
 			if (!empty($request['max_id'])) {
 				$condition = DBA::mergeConditions($condition, ["`uri-id` < ?", $request['max_id']]);
 			}
-	
+
 			if (!empty($request['since_id'])) {
 				$condition = DBA::mergeConditions($condition, ["`uri-id` > ?", $request['since_id']]);
 			}
-	
+
 			if (!empty($request['min_id'])) {
 				$condition = DBA::mergeConditions($condition, ["`uri-id` > ?", $request['min_id']]);
 				$params['order'] = ['uri-id'];
@@ -82,8 +83,8 @@ class Context extends BaseApi
 					["NOT `author-id` IN (SELECT `cid` FROM `user-contact` WHERE `uid` = ? AND (`blocked` OR `ignored`))", $uid]
 				);
 			}
-	
-			$posts = Post::selectPosts(['uri-id', 'thr-parent-id'], $condition, $params);
+
+			$posts = Post::selectPosts(['uri-id', 'thr-parent-id', 'deleted'], $condition, $params);
 			while ($post = Post::fetch($posts)) {
 				if ($post['uri-id'] == $post['thr-parent-id']) {
 					continue;
@@ -93,6 +94,10 @@ class Context extends BaseApi
 				$parents[$post['uri-id']] = $post['thr-parent-id'];
 
 				$children[$post['thr-parent-id']][] = $post['uri-id'];
+
+				if ($post['deleted']) {
+					$deleted[] = $post['uri-id'];
+				}
 			}
 			DBA::close($posts);
 
@@ -111,31 +116,39 @@ class Context extends BaseApi
 				}
 				DBA::close($posts);
 			} else {
-				DI::mstdnError()->RecordNotFound();
+				$this->logAndJsonError(404, $this->errorFactory->RecordNotFound());
 			}
 		}
 
 		$statuses = ['ancestors' => [], 'descendants' => []];
 
-		$ancestors = self::getParents($id, $parents);
+		$ancestors = array_diff(self::getParents($id, $parents), $deleted);
 
 		asort($ancestors);
 
 		$display_quotes = self::appSupportsQuotes();
 
 		foreach (array_slice($ancestors, 0, $request['limit']) as $ancestor) {
-			$statuses['ancestors'][] = DI::mstdnStatus()->createFromUriId($ancestor, $uid, $display_quotes);
+			try {
+				$statuses['ancestors'][] = DI::mstdnStatus()->createFromUriId($ancestor, $uid, $display_quotes);
+			} catch (\Throwable $th) {
+				$this->logger->info('Post not fetchable', ['uri-id' => $ancestor, 'uid' => $uid, 'error' => $th]);
+			}
 		}
 
-		$descendants = self::getChildren($id, $children);
+		$descendants = array_diff(self::getChildren($id, $children), $deleted);
 
 		asort($descendants);
 
 		foreach (array_slice($descendants, 0, $request['limit']) as $descendant) {
-			$statuses['descendants'][] = DI::mstdnStatus()->createFromUriId($descendant, $uid, $display_quotes);
+			try {
+				$statuses['descendants'][] = DI::mstdnStatus()->createFromUriId($descendant, $uid, $display_quotes);
+			} catch (\Throwable $th) {
+				$this->logger->info('Post not fetchable', ['uri-id' => $descendant, 'uid' => $uid, 'error' => $th]);
+			}
 		}
 
-		System::jsonExit($statuses);
+		$this->jsonExit($statuses);
 	}
 
 	private static function getParents(int $id, array $parents, array $list = [])

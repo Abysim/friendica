@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -147,7 +147,7 @@ class Introductions extends BaseNotifications
 						$knowyou = '';
 					}
 
-					$convertedName = BBCode::convert($Introduction->getName());
+					$convertedName = BBCode::toPlaintext($Introduction->getName(), false);
 
 					$helptext  = $this->t('Shall your connection be bidirectional or not?');
 					$helptext2 = $this->t('Accepting %s as a friend allows %s to subscribe to your posts, and you will also receive updates from them in your news feed.', $convertedName, $convertedName);

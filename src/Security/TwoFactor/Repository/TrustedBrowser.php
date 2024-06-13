@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -143,6 +143,7 @@ class TrustedBrowser
 
 	/**
 	 * @param int $local_user
+	 *
 	 * @return bool
 	 */
 	public function removeAllForUser(int $local_user): bool

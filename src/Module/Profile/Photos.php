@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -93,14 +93,14 @@ class Photos extends \Friendica\Module\BaseProfile
 		}
 
 		$str_contact_allow = isset($request['contact_allow']) ? $this->aclFormatter->toString($request['contact_allow']) : $this->owner['allow_cid'] ?? '';
-		$str_group_allow   = isset($request['group_allow'])   ? $this->aclFormatter->toString($request['group_allow'])   : $this->owner['allow_gid'] ?? '';
+		$str_circle_allow  = isset($request['circle_allow'])  ? $this->aclFormatter->toString($request['circle_allow'])  : $this->owner['allow_gid'] ?? '';
 		$str_contact_deny  = isset($request['contact_deny'])  ? $this->aclFormatter->toString($request['contact_deny'])  : $this->owner['deny_cid']  ?? '';
-		$str_group_deny    = isset($request['group_deny'])    ? $this->aclFormatter->toString($request['group_deny'])    : $this->owner['deny_gid']  ?? '';
+		$str_circle_deny   = isset($request['circle_deny'])   ? $this->aclFormatter->toString($request['circle_deny'])   : $this->owner['deny_gid']  ?? '';
 
 		$visibility = $request['visibility'] ?? '';
 		if ($visibility === 'public') {
 			// The ACL selector introduced in version 2019.12 sends ACL input data even when the Public visibility is selected
-			$str_contact_allow = $str_group_allow = $str_contact_deny = $str_group_deny = '';
+			$str_contact_allow = $str_circle_allow = $str_contact_deny = $str_circle_deny = '';
 		} else if ($visibility === 'custom') {
 			// Since we know from the visibility parameter the item should be private, we have to prevent the empty ACL
 			// case that would make it public. So we always append the author's contact id to the allowed contacts.
@@ -184,8 +184,6 @@ class Photos extends \Friendica\Module\BaseProfile
 			return;
 		}
 
-		$type = Images::getMimeTypeBySource($src, $filename, $type);
-
 		$this->logger->info('photos: upload: received file: ' . $filename . ' as ' . $src . ' ('. $type . ') ' . $filesize . ' bytes');
 
 		$maximagesize = Strings::getBytesFromShorthand($this->config->get('system', 'maximagesize'));
@@ -210,7 +208,7 @@ class Photos extends \Friendica\Module\BaseProfile
 
 		$imagedata = @file_get_contents($src);
 
-		$image = new Image($imagedata, $type);
+		$image = new Image($imagedata, $type, $filename);
 
 		if (!$image->isValid()) {
 			$this->logger->notice('unable to process image');
@@ -231,7 +229,7 @@ class Photos extends \Friendica\Module\BaseProfile
 
 		$resource_id = Photo::newResource();
 
-		$preview = Photo::storeWithPreview($image, $this->owner['uid'], $resource_id, $filename, $filesize, $album, '', $str_contact_allow, $str_group_allow, $str_contact_deny, $str_group_deny);
+		$preview = Photo::storeWithPreview($image, $this->owner['uid'], $resource_id, $filename, $filesize, $album, '', $str_contact_allow, $str_circle_allow, $str_contact_deny, $str_circle_deny);
 		if ($preview < 0) {
 			$this->logger->warning('image store failed');
 			$this->systemMessages->addNotice($this->t('Image upload failed.'));
@@ -267,9 +265,9 @@ class Photos extends \Friendica\Module\BaseProfile
 		$arr['author-avatar'] = $this->owner['thumb'];
 		$arr['title']         = '';
 		$arr['allow_cid']     = $str_contact_allow;
-		$arr['allow_gid']     = $str_group_allow;
+		$arr['allow_gid']     = $str_circle_allow;
 		$arr['deny_cid']      = $str_contact_deny;
-		$arr['deny_gid']      = $str_group_deny;
+		$arr['deny_gid']      = $str_circle_deny;
 		$arr['visible']       = $visible;
 		$arr['origin']        = 1;
 
@@ -322,12 +320,12 @@ class Photos extends \Friendica\Module\BaseProfile
 		$photos = $this->database->toArray($this->database->p(
 			"SELECT
 				`resource-id`,
-				ANY_VALUE(`id`) AS `id`,
-				ANY_VALUE(`filename`) AS `filename`,
-				ANY_VALUE(`type`) AS `type`,
-				ANY_VALUE(`album`) AS `album`,
-				max(`scale`) AS `scale`,
-				ANY_VALUE(`created`) AS `created`
+				MIN(`id`) AS `id`,
+				MIN(`filename`) AS `filename`,
+				MIN(`type`) AS `type`,
+				MIN(`album`) AS `album`,
+				MAX(`scale`) AS `scale`,
+				MIN(`created`) AS `created`
 			FROM `photo`
 			WHERE `uid` = ?
 			  AND `photo-type` = ?
@@ -341,14 +339,12 @@ class Photos extends \Friendica\Module\BaseProfile
 			$pager->getItemsPerPage()
 		));
 
-		$phototypes = Images::supportedTypes();
-
-		$photos = array_map(function ($photo) use ($phototypes) {
+		$photos = array_map(function ($photo){
 			return [
 				'id'    => $photo['id'],
 				'link'  => 'photos/' . $this->owner['nickname'] . '/image/' . $photo['resource-id'],
 				'title' => $this->t('View Photo'),
-				'src'   => 'photo/' . $photo['resource-id'] . '-' . ((($photo['scale']) == 6) ? 4 : $photo['scale']) . '.' . $phototypes[$photo['type']],
+				'src'   => 'photo/' . $photo['resource-id'] . '-' . ((($photo['scale']) == 6) ? 4 : $photo['scale']) . Images::getExtensionByMimeType($photo['type']),
 				'alt'   => $photo['filename'],
 				'album' => [
 					'link' => 'photos/' . $this->owner['nickname'] . '/album/' . bin2hex($photo['album']),

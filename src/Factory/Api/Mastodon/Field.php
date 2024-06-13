@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -38,7 +38,7 @@ class Field extends BaseFactory
 	 */
 	public function createFromProfileField(ProfileField $profileField): \Friendica\Object\Api\Mastodon\Field
 	{
-		return new \Friendica\Object\Api\Mastodon\Field($profileField->label, BBCode::convert($profileField->value, false, BBCode::ACTIVITYPUB));
+		return new \Friendica\Object\Api\Mastodon\Field($profileField->label, BBCode::convertForUriId($profileField->uriId, $profileField->value, BBCode::ACTIVITYPUB));
 	}
 
 	/**

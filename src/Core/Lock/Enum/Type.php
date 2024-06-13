@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,7 +21,7 @@
 
 namespace Friendica\Core\Lock\Enum;
 
-use Friendica\Core\Cache\Enum\Type as CacheType;
+use Friendica\Core\Cache\Type\DatabaseCache;
 
 /**
  * Enumeration for lock types
@@ -30,6 +30,6 @@ use Friendica\Core\Cache\Enum\Type as CacheType;
  */
 abstract class Type
 {
-	const DATABASE  = CacheType::DATABASE;
+	const DATABASE  = DatabaseCache::NAME;
 	const SEMAPHORE = 'semaphore';
 }

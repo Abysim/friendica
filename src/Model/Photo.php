@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -229,8 +229,8 @@ class Photo
 
 		return DBA::toArray(
 			DBA::p(
-				"SELECT `resource-id`, ANY_VALUE(`id`) AS `id`, ANY_VALUE(`filename`) AS `filename`, ANY_VALUE(`type`) AS `type`,
-					min(`scale`) AS `hiq`, max(`scale`) AS `loq`, ANY_VALUE(`desc`) AS `desc`, ANY_VALUE(`created`) AS `created`
+				"SELECT `resource-id`, MIN(`id`) AS `id`, MIN(`filename`) AS `filename`, MIN(`type`) AS `type`,
+					min(`scale`) AS `hiq`, max(`scale`) AS `loq`, MIN(`desc`) AS `desc`, MIN(`created`) AS `created`
 					FROM `photo` WHERE `uid` = ? AND NOT `photo-type` IN (?, ?) $sqlExtra
 					GROUP BY `resource-id` $sqlExtra2",
 				$values
@@ -363,6 +363,7 @@ class Photo
 		$photo['backend-class'] = SystemResource::NAME;
 		$photo['backend-ref']   = $filename;
 		$photo['type']          = $mimetype;
+		$photo['filename']      = basename($filename);
 		$photo['cacheable']     = false;
 
 		return $photo;
@@ -394,6 +395,7 @@ class Photo
 		$photo['backend-class'] = ExternalResource::NAME;
 		$photo['backend-ref']   = json_encode(['url' => $url, 'uid' => $uid]);
 		$photo['type']          = $mimetype;
+		$photo['filename'] 	    = basename(parse_url($url, PHP_URL_PATH));
 		$photo['cacheable']     = true;
 		$photo['blurhash']      = $blurhash;
 		$photo['width']         = $width;
@@ -414,9 +416,9 @@ class Photo
 	 * @param integer $scale     Scale
 	 * @param integer $type      Photo type, optional, default: Photo::DEFAULT
 	 * @param string  $allow_cid Permissions, allowed contacts. optional, default = ""
-	 * @param string  $allow_gid Permissions, allowed groups. optional, default = ""
-	 * @param string  $deny_cid  Permissions, denied contacts.optional, default = ""
-	 * @param string  $deny_gid  Permissions, denied group.optional, default = ""
+	 * @param string  $allow_gid Permissions, allowed circles. optional, default = ""
+	 * @param string  $deny_cid  Permissions, denied contacts. optional, default = ""
+	 * @param string  $deny_gid  Permissions, denied circle. optional, default = ""
 	 * @param string  $desc      Photo caption. optional, default = ""
 	 *
 	 * @return boolean True on success
@@ -589,7 +591,7 @@ class Photo
 		$photo_failure = false;
 
 		if (!Network::isValidHttpUrl($image_url)) {
-			Logger::warning('Invalid image url', ['image_url' => $image_url, 'uid' => $uid, 'cid' => $cid, 'callstack' => System::callstack(20)]);
+			Logger::warning('Invalid image url', ['image_url' => $image_url, 'uid' => $uid, 'cid' => $cid]);
 			return false;
 		}
 
@@ -597,7 +599,7 @@ class Photo
 		if (!empty($image_url)) {
 			$ret = DI::httpClient()->get($image_url, HttpClientAccept::IMAGE);
 			Logger::debug('Got picture', ['Content-Type' => $ret->getHeader('Content-Type'), 'url' => $image_url]);
-			$img_str = $ret->getBody();
+			$img_str = $ret->getBodyString();
 			$type = $ret->getContentType();
 		} else {
 			$img_str = '';
@@ -608,9 +610,7 @@ class Photo
 			return false;
 		}
 
-		$type = Images::getMimeTypeByData($img_str, $image_url, $type);
-
-		$image = new Image($img_str, $type);
+		$image = new Image($img_str, $type, $image_url);
 		if ($image->isValid()) {
 			$image->scaleToSquare(300);
 
@@ -619,9 +619,9 @@ class Photo
 
 			if ($maximagesize && ($filesize > $maximagesize)) {
 				Logger::info('Avatar exceeds image limit', ['uid' => $uid, 'cid' => $cid, 'maximagesize' => $maximagesize, 'size' => $filesize, 'type' => $image->getType()]);
-				if ($image->getType() == 'image/gif') {
+				if ($image->getImageType() == IMAGETYPE_GIF) {
 					$image->toStatic();
-					$image = new Image($image->asString(), 'image/png');
+					$image = new Image($image->asString(), image_type_to_mime_type(IMAGETYPE_PNG));
 
 					$filesize = strlen($image->asString());
 					Logger::info('Converted gif to a static png', ['uid' => $uid, 'cid' => $cid, 'size' => $filesize, 'type' => $image->getType()]);
@@ -662,9 +662,9 @@ class Photo
 
 			$suffix = '?ts=' . time();
 
-			$image_url = DI::baseUrl() . '/photo/' . $resource_id . '-4.' . $image->getExt() . $suffix;
-			$thumb = DI::baseUrl() . '/photo/' . $resource_id . '-5.' . $image->getExt() . $suffix;
-			$micro = DI::baseUrl() . '/photo/' . $resource_id . '-6.' . $image->getExt() . $suffix;
+			$image_url = DI::baseUrl() . '/photo/' . $resource_id . '-4' . $image->getExt() . $suffix;
+			$thumb = DI::baseUrl() . '/photo/' . $resource_id . '-5' . $image->getExt() . $suffix;
+			$micro = DI::baseUrl() . '/photo/' . $resource_id . '-6' . $image->getExt() . $suffix;
 		} else {
 			$photo_failure = true;
 		}
@@ -751,7 +751,7 @@ class Photo
 			if (!DI::config()->get('system', 'no_count', false)) {
 				/// @todo This query needs to be renewed. It is really slow
 				// At this time we just store the data in the cache
-				$albums = DBA::toArray(DBA::p("SELECT COUNT(DISTINCT `resource-id`) AS `total`, `album`, ANY_VALUE(`created`) AS `created`
+				$albums = DBA::toArray(DBA::p("SELECT COUNT(DISTINCT `resource-id`) AS `total`, `album`, MIN(`created`) AS `created`
 					FROM `photo`
 					WHERE `uid` = ? AND `photo-type` IN (?, ?, ?) $sql_extra
 					GROUP BY `album` ORDER BY `created` DESC",
@@ -762,9 +762,10 @@ class Photo
 				));
 			} else {
 				// This query doesn't do the count and is much faster
-				$albums = DBA::toArray(DBA::p("SELECT DISTINCT(`album`), '' AS `total`
+				$albums = DBA::toArray(DBA::p("SELECT '' AS `total`, `album`, MIN(`created`) AS `created`
 					FROM `photo` USE INDEX (`uid_album_scale_created`)
-					WHERE `uid` = ? AND `photo-type` IN (?, ?, ?) $sql_extra",
+					WHERE `uid` = ? AND `photo-type` IN (?, ?, ?) $sql_extra
+					GROUP BY `album` ORDER BY `created` DESC",
 					$uid,
 					self::DEFAULT,
 					$banner_type,
@@ -830,13 +831,13 @@ class Photo
 	 * Changes photo permissions that had been embedded in a post
 	 *
 	 * @todo This function currently does have some flaws:
-	 * - Sharing a post with a forum will create a photo that only the forum can see.
+	 * - Sharing a post with a group will create a photo that only the group can see.
 	 * - Sharing a photo again that been shared non public before doesn't alter the permissions.
 	 *
 	 * @return string
 	 * @throws \Exception
 	 */
-	public static function setPermissionFromBody($body, $uid, $original_contact_id, $str_contact_allow, $str_group_allow, $str_contact_deny, $str_group_deny)
+	public static function setPermissionFromBody($body, $uid, $original_contact_id, $str_contact_allow, $str_circle_allow, $str_contact_deny, $str_circle_deny)
 	{
 		// Simplify image codes
 		$img_body = preg_replace("/\[img\=([0-9]*)x([0-9]*)\](.*?)\[\/img\]/ism", '[img]$3[/img]', $body);
@@ -877,11 +878,11 @@ class Photo
 			/**
 			 * @todo Existing permissions need to be mixed with the new ones.
 			 * Otherwise this creates problems with sharing the same picture multiple times
-			 * Also check if $str_contact_allow does contain a public forum.
+			 * Also check if $str_contact_allow does contain a public group.
 			 * Then set the permissions to public.
 			 */
 
-			self::setPermissionForResource($image_rid, $uid, $str_contact_allow, $str_group_allow, $str_contact_deny, $str_group_deny);
+			self::setPermissionForResource($image_rid, $uid, $str_contact_allow, $str_circle_allow, $str_contact_deny, $str_circle_deny);
 		}
 
 		return true;
@@ -894,15 +895,15 @@ class Photo
 	 * @param string $image_rid
 	 * @param integer $uid
 	 * @param string $str_contact_allow
-	 * @param string $str_group_allow
+	 * @param string $str_circle_allow
 	 * @param string $str_contact_deny
-	 * @param string $str_group_deny
+	 * @param string $str_circle_deny
 	 * @return void
 	 */
-	public static function setPermissionForResource(string $image_rid, int $uid, string $str_contact_allow, string $str_group_allow, string $str_contact_deny, string $str_group_deny)
+	public static function setPermissionForResource(string $image_rid, int $uid, string $str_contact_allow, string $str_circle_allow, string $str_contact_deny, string $str_circle_deny)
 	{
-		$fields = ['allow_cid' => $str_contact_allow, 'allow_gid' => $str_group_allow,
-		'deny_cid' => $str_contact_deny, 'deny_gid' => $str_group_deny,
+		$fields = ['allow_cid' => $str_contact_allow, 'allow_gid' => $str_circle_allow,
+		'deny_cid' => $str_contact_deny, 'deny_gid' => $str_circle_deny,
 		'accessible' => DI::pConfig()->get($uid, 'system', 'accessible-photos', false)];
 
 		$condition = ['resource-id' => $image_rid, 'uid' => $uid];
@@ -990,6 +991,35 @@ class Photo
 	}
 
 	/**
+	 * Resize to a given maximum file size
+	 *
+	 * @param Image $image
+	 * @param integer $maximagesize
+	 * @return Image
+	 */
+	public static function resizeToFileSize(Image $image, int $maximagesize): Image
+	{
+		$filesize = strlen($image->asString());
+		$width    = $image->getWidth();
+		$height   = $image->getHeight();
+
+		if ($maximagesize && ($filesize > $maximagesize)) {
+			// Scale down to multiples of 640 until the maximum size isn't exceeded anymore
+			foreach ([5120, 2560, 1280, 640, 320] as $pixels) {
+				if (($filesize > $maximagesize) && (max($width, $height) > $pixels)) {
+					Logger::info('Resize', ['size' => $filesize, 'width' => $width, 'height' => $height, 'max' => $maximagesize, 'pixels' => $pixels]);
+					$image->scaleDown($pixels);
+					$filesize = strlen($image->asString());
+					$width = $image->getWidth();
+					$height = $image->getHeight();
+				}
+			}
+		}
+
+		return $image;
+	}
+
+	/**
 	 * Tries to resize image to wanted maximum size
 	 *
 	 * @param Image $image Image instance
@@ -1003,30 +1033,7 @@ class Photo
 			Logger::info('File upload: Scaling picture to new size', ['max-length' => $max_length]);
 		}
 
-		$filesize = strlen($image->asString());
-		$width    = $image->getWidth();
-		$height   = $image->getHeight();
-
-		$maximagesize = Strings::getBytesFromShorthand(DI::config()->get('system', 'maximagesize'));
-
-		if ($maximagesize && ($filesize > $maximagesize)) {
-			// Scale down to multiples of 640 until the maximum size isn't exceeded anymore
-			foreach ([5120, 2560, 1280, 640] as $pixels) {
-				if (($filesize > $maximagesize) && (max($width, $height) > $pixels)) {
-					Logger::info('Resize', ['size' => $filesize, 'width' => $width, 'height' => $height, 'max' => $maximagesize, 'pixels' => $pixels]);
-					$image->scaleDown($pixels);
-					$filesize = strlen($image->asString());
-					$width = $image->getWidth();
-					$height = $image->getHeight();
-				}
-			}
-			if ($filesize > $maximagesize) {
-				Logger::notice('Image size is too big', ['size' => $filesize, 'max' => $maximagesize]);
-				return null;
-			}
-		}
-
-		return $image;
+		return self::resizeToFileSize($image, Strings::getBytesFromShorthand(DI::config()->get('system', 'maximagesize')));
 	}
 
 	/**
@@ -1041,7 +1048,7 @@ class Photo
 		if (!empty($image_url)) {
 			$ret = DI::httpClient()->get($image_url, HttpClientAccept::IMAGE);
 			Logger::debug('Got picture', ['Content-Type' => $ret->getHeader('Content-Type'), 'url' => $image_url]);
-			$img_str = $ret->getBody();
+			$img_str = $ret->getBodyString();
 			$type = $ret->getContentType();
 		} else {
 			$img_str = '';
@@ -1053,9 +1060,7 @@ class Photo
 			return [];
 		}
 
-		$type = Images::getMimeTypeByData($img_str, $image_url, $type);
-
-		$image = new Image($img_str, $type);
+		$image = new Image($img_str, $type, $image_url);
 
 		$image = self::fitImageSize($image);
 		if (empty($image)) {
@@ -1125,12 +1130,10 @@ class Photo
 			return [];
 		}
 
-		$filetype = Images::getMimeTypeBySource($src, $filename, $filetype);
-
 		Logger::info('File upload', ['src' => $src, 'filename' => $filename, 'size' => $filesize, 'type' => $filetype]);
 
 		$imagedata = @file_get_contents($src);
-		$image = new Image($imagedata, $filetype);
+		$image = new Image($imagedata, $filetype, $filename);
 		if (!$image->isValid()) {
 			Logger::notice('Image is unvalid', ['files' => $files]);
 			return [];
@@ -1228,41 +1231,16 @@ class Photo
 	 * @param string  $album       Album name
 	 * @param string  $description Photo caption
 	 * @param string  $allow_cid   Permissions, allowed contacts
-	 * @param string  $allow_gid   Permissions, allowed groups
+	 * @param string  $allow_gid   Permissions, allowed circles
 	 * @param string  $deny_cid    Permissions, denied contacts
-	 * @param string  $deny_gid    Permissions, denied group
+	 * @param string  $deny_gid    Permissions, denied circles
 	 *
 	 * @return integer preview photo size
 	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
 	 */
 	public static function storeWithPreview(Image $image, int $uid, string $resource_id, string $filename, int $filesize, string $album, string $description, string $allow_cid, string $allow_gid, string $deny_cid, string $deny_gid): int
 	{
-		if ($filesize == 0) {
-			$filesize = strlen($image->asString());
-		}
-
-		$width  = $image->getWidth();
-		$height = $image->getHeight();
-
-		$maximagesize = Strings::getBytesFromShorthand(DI::config()->get('system', 'maximagesize'));
-
-		if ($maximagesize && $filesize > $maximagesize) {
-			// Scale down to multiples of 640 until the maximum size isn't exceeded anymore
-			foreach ([5120, 2560, 1280, 640, 320] as $pixels) {
-				if ($filesize > $maximagesize && max($width, $height) > $pixels) {
-					DI::logger()->info('Resize', ['size' => $filesize, 'width' => $width, 'height' => $height, 'max' => $maximagesize, 'pixels' => $pixels]);
-					$image->scaleDown($pixels);
-					$filesize = strlen($image->asString());
-					$width    = $image->getWidth();
-					$height   = $image->getHeight();
-				}
-			}
-
-			if ($filesize > $maximagesize) {
-				DI::logger()->notice('Image size is too big', ['size' => $filesize, 'max' => $maximagesize]);
-				return -1;
-			}
-		}
+		$image = self::resizeToFileSize($image, Strings::getBytesFromShorthand(DI::config()->get('system', 'maximagesize')));
 
 		$width   = $image->getWidth();
 		$height  = $image->getHeight();
@@ -1274,16 +1252,16 @@ class Photo
 			return -1;
 		}
 
-		if ($width > 640 || $height > 640) {
-			$image->scaleDown(640);
+		if ($width > Proxy::PIXEL_MEDIUM || $height > Proxy::PIXEL_MEDIUM) {
+			$image->scaleDown(Proxy::PIXEL_MEDIUM);
 		}
 
-		if ($width > 320 || $height > 320) {
+		if ($width > Proxy::PIXEL_SMALL || $height > Proxy::PIXEL_SMALL) {
 			$result = self::store($image, $uid, 0, $resource_id, $filename, $album, 1, self::DEFAULT, $allow_cid, $allow_gid, $deny_cid, $deny_gid, $description);
 			if ($result) {
 				$preview = 1;
 			}
-			$image->scaleDown(320);
+			$image->scaleDown(Proxy::PIXEL_SMALL);
 			$result = self::store($image, $uid, 0, $resource_id, $filename, $album, 2, self::DEFAULT, $allow_cid, $allow_gid, $deny_cid, $deny_gid, $description);
 			if ($result && ($preview == 0)) {
 				$preview = 2;

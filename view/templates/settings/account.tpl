@@ -56,10 +56,9 @@
 		{{include file="field_checkbox.tpl" field=$blockwall}}
 		{{include file="field_checkbox.tpl" field=$blocktags}}
 		{{/if}}
-		{{include file="field_checkbox.tpl" field=$unkmail}}
-		{{include file="field_input.tpl" field=$cntunkmail}}
 
-		{{$group_select nofilter}}
+		{{$circle_select nofilter}}
+		{{$circle_select_group nofilter}}
 		{{if not $is_community}}
 		<h3>{{$permissions}}</h3>
 

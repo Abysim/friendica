@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -93,7 +93,7 @@ class Unfollow extends \Friendica\BaseModule
 			Strings::normaliseLink($url), Strings::normaliseLink($url), $url,
 		];
 
-		$contact = $this->database->selectFirst('contact', ['url', 'id', 'uid', 'network', 'addr', 'name'], $condition);
+		$contact = $this->database->selectFirst('contact', ['url', 'alias', 'id', 'uid', 'network', 'addr', 'name'], $condition);
 		if (!$this->database->isResult($contact)) {
 			$this->systemMessages->addNotice($this->t("You aren't following this contact."));
 			$this->baseUrl->redirect($base_return_path);
@@ -138,7 +138,7 @@ class Unfollow extends \Friendica\BaseModule
 		$o .= Renderer::replaceMacros(Renderer::getMarkupTemplate('section_title.tpl'), ['$title' => $this->t('Posts and Replies')]);
 
 		// Show last public posts
-		$o .= Contact::getPostsFromUrl($contact['url']);
+		$o .= Contact::getPostsFromUrl($contact['url'], $this->userSession->getLocalUserId());
 
 		return $o;
 	}

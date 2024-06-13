@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,9 +21,7 @@
 
 namespace Friendica\Test\Util\Hooks\InstanceMocks;
 
-use Friendica\Core\Hooks\Capabilities\IAmAStrategy;
-
-class FakeInstance implements IAmADecoratedInterface, IAmAStrategy
+class FakeInstance implements IAmADecoratedInterface
 {
 	protected $aText = null;
 	protected $cBool = null;
@@ -41,6 +39,8 @@ class FakeInstance implements IAmADecoratedInterface, IAmAStrategy
 		$this->aText = $aText;
 		$this->cBool = $cBool;
 		$this->bText = $bText;
+
+		return '';
 	}
 
 	public function getAText(): ?string

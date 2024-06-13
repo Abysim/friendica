@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -36,7 +36,7 @@ abstract class AbstractLock implements ICanLock
 	/**
 	 * Check if we've locally acquired a lock
 	 *
-	 * @param string key The Name of the lock
+	 * @param string $key The Name of the lock
 	 *
 	 * @return bool      Returns true if the lock is set
 	 */

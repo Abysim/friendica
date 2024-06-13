@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -29,6 +29,8 @@ use Friendica\Core\Cache\Enum;
  */
 class ArrayCache extends AbstractCache implements ICanCacheInMemory
 {
+	const NAME = 'array';
+
 	use CompareDeleteTrait;
 
 	/** @var array Array with the cached data */
@@ -107,13 +109,5 @@ class ArrayCache extends AbstractCache implements ICanCacheInMemory
 		} else {
 			return false;
 		}
-	}
-
-	/**
-	 * {@inheritDoc}
-	 */
-	public function getName(): string
-	{
-		return Enum\Type::ARRAY;
 	}
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -24,7 +24,7 @@ namespace Friendica\Module\Api\Mastodon;
 use Friendica\Core\System;
 use Friendica\DI;
 use Friendica\Module\BaseApi;
-use Friendica\Model\Group;
+use Friendica\Model\Circle;
 
 /**
  * @see https://docs.joinmastodon.org/methods/timelines/lists/
@@ -33,27 +33,27 @@ class Lists extends BaseApi
 {
 	protected function delete(array $request = [])
 	{
-		self::checkAllowedScope(self::SCOPE_WRITE);
+		$this->checkAllowedScope(self::SCOPE_WRITE);
 		$uid = self::getCurrentUserID();
 
 		if (empty($this->parameters['id'])) {
-			DI::mstdnError()->UnprocessableEntity();
+			$this->logAndJsonError(422, $this->errorFactory->UnprocessableEntity());
 		}
 
-		if (!Group::exists($this->parameters['id'], $uid)) {
-			DI::mstdnError()->RecordNotFound();
+		if (!Circle::exists($this->parameters['id'], $uid)) {
+			$this->logAndJsonError(404, $this->errorFactory->RecordNotFound());
 		}
 
-		if (!Group::remove($this->parameters['id'])) {
-			DI::mstdnError()->InternalError();
+		if (!Circle::remove($this->parameters['id'])) {
+			$this->logAndJsonError(500, $this->errorFactory->InternalError());
 		}
 
-		System::jsonExit([]);
+		$this->jsonExit([]);
 	}
 
 	protected function post(array $request = [])
 	{
-		self::checkAllowedScope(self::SCOPE_WRITE);
+		$this->checkAllowedScope(self::SCOPE_WRITE);
 		$uid = self::getCurrentUserID();
 
 		$request = $this->getRequest([
@@ -61,17 +61,17 @@ class Lists extends BaseApi
 		], $request);
 
 		if (empty($request['title'])) {
-			DI::mstdnError()->UnprocessableEntity();
+			$this->logAndJsonError(422, $this->errorFactory->UnprocessableEntity());
 		}
 
-		Group::create($uid, $request['title']);
+		Circle::create($uid, $request['title']);
 
-		$id = Group::getIdByName($uid, $request['title']);
+		$id = Circle::getIdByName($uid, $request['title']);
 		if (!$id) {
-			DI::mstdnError()->InternalError();
+			$this->logAndJsonError(500, $this->errorFactory->InternalError());
 		}
 
-		System::jsonExit(DI::mstdnList()->createFromGroupId($id));
+		$this->jsonExit(DI::mstdnList()->createFromCircleId($id));
 	}
 
 	public function put(array $request = [])
@@ -82,10 +82,10 @@ class Lists extends BaseApi
 		], $request);
 
 		if (empty($request['title']) || empty($this->parameters['id'])) {
-			DI::mstdnError()->UnprocessableEntity();
+			$this->logAndJsonError(422, $this->errorFactory->UnprocessableEntity());
 		}
 
-		Group::update($this->parameters['id'], $request['title']);
+		Circle::update($this->parameters['id'], $request['title']);
 	}
 
 	/**
@@ -93,26 +93,24 @@ class Lists extends BaseApi
 	 */
 	protected function rawContent(array $request = [])
 	{
-		self::checkAllowedScope(self::SCOPE_READ);
+		$this->checkAllowedScope(self::SCOPE_READ);
 		$uid = self::getCurrentUserID();
 
 		if (empty($this->parameters['id'])) {
 			$lists = [];
 
-			$groups = Group::getByUserId($uid);
-
-			foreach ($groups as $group) {
-				$lists[] = DI::mstdnList()->createFromGroupId($group['id']);
+			foreach (Circle::getByUserId($uid) as $circle) {
+				$lists[] = DI::mstdnList()->createFromCircleId($circle['id']);
 			}
 		} else {
 			$id = $this->parameters['id'];
 
-			if (!Group::exists($id, $uid)) {
-				DI::mstdnError()->RecordNotFound();
+			if (!Circle::exists($id, $uid)) {
+				$this->logAndJsonError(404, $this->errorFactory->RecordNotFound());
 			}
-			$lists = DI::mstdnList()->createFromGroupId($id);
+			$lists = DI::mstdnList()->createFromCircleId($id);
 		}
 
-		System::jsonExit($lists);
+		$this->jsonExit($lists);
 	}
 }

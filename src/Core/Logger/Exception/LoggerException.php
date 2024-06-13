@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,9 +23,12 @@ namespace Friendica\Core\Logger\Exception;
 
 use Throwable;
 
+/**
+ * A generic exception of the logging namespace
+ */
 class LoggerException extends \Exception
 {
-	public function __construct($message = "", Throwable $previous = null)
+	public function __construct($message = '', Throwable $previous = null)
 	{
 		parent::__construct($message, 500, $previous);
 	}

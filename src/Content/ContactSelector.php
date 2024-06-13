@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -220,7 +220,9 @@ class ContactSelector
 			'GNU Social' => 'gnu-social', 'gnusocial' => 'gnu-social', 'hubzilla' => 'hubzilla',
 			'mastodon' => 'mastodon', 'peertube' => 'peertube', 'pixelfed' => 'pixelfed',
 			'pleroma' => 'pleroma', 'red' => 'hubzilla', 'redmatrix' => 'hubzilla',
-			'socialhome' => 'social-home', 'wordpress' => 'wordpress'];
+			'socialhome' => 'social-home', 'wordpress' => 'wordpress', 'lemmy' => 'users',
+			'plume' => 'plume', 'funkwhale' => 'funkwhale', 'nextcloud' => 'nextcloud', 'drupal' => 'drupal',
+			'firefish' => 'fire', 'calckey' => 'calculator', 'kbin' => 'check', 'threads' => 'instagram'];
 
 		$search  = array_keys($nets);
 		$replace = array_values($nets);

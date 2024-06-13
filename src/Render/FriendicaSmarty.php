@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -52,6 +52,10 @@ class FriendicaSmarty extends Smarty
 		$this->setCompileDir($work_dir . '/compiled');
 		$this->setConfigDir($work_dir . '/');
 		$this->setCacheDir($work_dir . '/');
+
+		$this->registerPlugin('modifier', 'is_string', function ($value) {
+			return is_string($value);
+		});
 
 		/*
 		 * Enable sub-directory splitting for reducing directory descriptor

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -63,7 +63,7 @@ class Profile extends BaseModule
 			System::htmlUpdateExit($o);
 		}
 
-		// Get permissions SQL - if $remote_contact is true, our remote user has been pre-verified and we already have fetched his/her groups
+		// Get permissions SQL - if $remote_contact is true, our remote user has been pre-verified and we already have fetched their circles
 		$sql_extra = Item::getPermissionsSQLByUserId($a->getProfileOwner());
 
 		$last_updated_array = DI::session()->get('last_updated', []);
@@ -104,9 +104,9 @@ class Profile extends BaseModule
 		$last_updated_array[$last_updated_key] = time();
 		DI::session()->set('last_updated', $last_updated_array);
 
-		if ($is_owner && !$a->getProfileOwner() && !DI::config()->get('theme', 'hide_eventlist')) {
-			$o .= ProfileModel::getBirthdays();
-			$o .= ProfileModel::getEventsReminderHTML();
+		if ($is_owner && !$a->getProfileOwner() && ProfileModel::shouldDisplayEventList(DI::userSession()->getLocalUserId(), DI::mode())) {
+			$o .= ProfileModel::getBirthdays(DI::userSession()->getLocalUserId());
+			$o .= ProfileModel::getEventsReminderHTML(DI::userSession()->getLocalUserId(), DI::userSession()->getPublicContactId());
 		}
 
 		if ($is_owner) {
@@ -116,7 +116,7 @@ class Profile extends BaseModule
 			}
 		}
 
-		$o .= DI::conversation()->create($items, Conversation::MODE_PROFILE, $a->getProfileOwner(), false, 'received', $a->getProfileOwner());
+		$o .= DI::conversation()->render($items, Conversation::MODE_PROFILE, $a->getProfileOwner(), false, 'received', $a->getProfileOwner());
 
 		System::htmlUpdateExit($o);
 	}

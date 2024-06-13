@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -179,7 +179,7 @@ class NotifyMailBuilder extends MailBuilder
 	 */
 	protected function getHtmlMessage()
 	{
-		$htmlVersion = BBCode::convert($this->body);
+		$htmlVersion = BBCode::convertForUriId(0, $this->body, BBCode::EXTERNAL);
 
 		// load the template for private message notifications
 		$tpl = Renderer::getMarkupTemplate('email/notify/html.tpl');

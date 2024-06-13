@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -163,8 +163,8 @@ class Introduction extends BaseFactory
 						'contact_id'     => $intro['contact-id'],
 						'photo'          => Contact::getPhoto($intro),
 						'name'           => $intro['name'],
-						'location'       => BBCode::convert($intro['location'], false),
-						'about'          => BBCode::convert($intro['about'], false),
+						'location'       => BBCode::convertForUriId($intro['uri-id'], $intro['location'], BBCode::EXTERNAL),
+						'about'          => BBCode::convertForUriId ($intro['uri-id'], $intro['about'], BBCode::EXTERNAL),
 						'keywords'       => $intro['keywords'],
 						'hidden'         => $intro['hidden'] == 1,
 						'post_newfriend' => (intval($this->pConfig->get($this->session->getLocalUserId(), 'system', 'post_newfriend')) ? '1' : 0),

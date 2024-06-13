@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -45,7 +45,7 @@ class NPF
 	{
 		$bbcode = self::prepareBody($bbcode);
 
-		$html = BBCode::convert($bbcode, false, BBCode::NPF);
+		$html = BBCode::convertForUriId($uri_id, $bbcode, BBCode::NPF);
 		if (empty($html)) {
 			return [];
 		}

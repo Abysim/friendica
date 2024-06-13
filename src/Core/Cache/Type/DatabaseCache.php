@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -32,6 +32,8 @@ use Friendica\Util\DateTimeFormat;
  */
 class DatabaseCache extends AbstractCache implements ICanCache
 {
+	const NAME = 'database';
+
 	/**
 	 * @var Database
 	 */
@@ -153,13 +155,5 @@ class DatabaseCache extends AbstractCache implements ICanCache
 		} catch (\Exception $exception) {
 			throw new CachePersistenceException('Cannot clear cache', $exception);
 		}
-	}
-
-	/**
-	 * {@inheritDoc}
-	 */
-	public function getName(): string
-	{
-		return Enum\Type::DATABASE;
 	}
 }

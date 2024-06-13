@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -27,7 +27,7 @@
  */
 
 use Friendica\App;
-use Friendica\Content\ForumManager;
+use Friendica\Content\GroupManager;
 use Friendica\Core\Addon;
 use Friendica\Core\Renderer;
 use Friendica\Core\Search;
@@ -208,7 +208,7 @@ function vier_community_info()
 
 	//Community_Pages at right_aside
 	if ($show_pages && DI::userSession()->getLocalUserId()) {
-		$aside['$page'] = ForumManager::widget('network/forum', DI::userSession()->getLocalUserId());;
+		$aside['$page'] = GroupManager::widget(DI::userSession()->getLocalUserId());
 	}
 	// END Community Page
 

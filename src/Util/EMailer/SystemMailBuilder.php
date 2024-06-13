@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -100,7 +100,7 @@ class SystemMailBuilder extends MailBuilder
 			'$preamble'    => str_replace("\n", "<br>\n", $this->preamble),
 			'$thanks'      => $this->l10n->t('thanks'),
 			'$site_admin'  => $this->siteAdmin,
-			'$htmlversion' => BBCode::convert($this->body),
+			'$htmlversion' => BBCode::convertForUriId(0, $this->body, BBCode::EXTERNAL),
 		]);
 	}
 

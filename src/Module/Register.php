@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -150,12 +150,12 @@ class Register extends BaseModule
 			'$invite_label' => DI::l10n()->t('Your invitation code: '),
 			'$invite_id'    => $invite_id,
 			'$regtitle'     => DI::l10n()->t('Registration'),
-			'$registertext' => BBCode::convert(DI::config()->get('config', 'register_text', '')),
+			'$registertext' => BBCode::convertForUriId(User::getSystemUriId(), DI::config()->get('config', 'register_text', '')),
 			'$fillwith'     => $fillwith,
 			'$fillext'      => $fillext,
 			'$oidlabel'     => $oidlabel,
 			'$openid'       => $openid_url,
-			'$namelabel'    => DI::l10n()->t('Your Full Name (e.g. Joe Smith, real or real-looking): '),
+			'$namelabel'    => DI::l10n()->t('Your Display Name (as you would like it to be displayed on this system'),
 			'$addrlabel'    => DI::l10n()->t('Your Email Address: (Initial information will be send there, so this has to be an existing address.)'),
 			'$addrlabel2'   => DI::l10n()->t('Please repeat your e-mail address:'),
 			'$ask_password' => $ask_password,
@@ -284,7 +284,19 @@ class Register extends BaseModule
 			$regdata = ['email' => $arr['email'], 'nickname' => $arr['nickname'], 'username' => $arr['username']];
 			DI::baseUrl()->redirect('register?' . http_build_query($regdata));
 		}
-
+		
+		//Check if nickname contains only US-ASCII and do not start with a digit
+		if (!preg_match('/^[a-zA-Z][a-zA-Z0-9]*$/', $arr['nickname'])) {
+        		if (is_numeric(substr($arr['nickname'], 0, 1))) {
+				DI::sysmsg()->addNotice(DI::l10n()->t("Nickname cannot start with a digit."));
+        		} else {
+				DI::sysmsg()->addNotice(DI::l10n()->t("Nickname can only contain US-ASCII characters."));
+			}
+			$regdata = ['email' => $arr['email'], 'nickname' => $arr['nickname'], 'username' => $arr['username']];
+			DI::baseUrl()->redirect('register?' . http_build_query($regdata));
+			return;
+		}
+		
 		$arr['blocked'] = $blocked;
 		$arr['verified'] = $verified;
 		$arr['language'] = L10n::detectLanguage($_SERVER, $_GET, DI::config()->get('system', 'language'));

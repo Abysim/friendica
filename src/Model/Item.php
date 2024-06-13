@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,9 +21,14 @@
 
 namespace Friendica\Model;
 
+use Friendica\Contact\LocalRelationship\Entity\LocalRelationship;
+use Friendica\Content\Image;
+use Friendica\Content\Post\Collection\PostMedias;
+use Friendica\Content\Post\Entity\PostMedia;
 use Friendica\Content\Text\BBCode;
 use Friendica\Content\Text\HTML;
 use Friendica\Core\Hook;
+use Friendica\Core\L10n;
 use Friendica\Core\Logger;
 use Friendica\Core\Protocol;
 use Friendica\Core\Renderer;
@@ -31,12 +36,17 @@ use Friendica\Core\System;
 use Friendica\Core\Worker;
 use Friendica\Database\DBA;
 use Friendica\DI;
+use Friendica\Model\Post\Category;
+use Friendica\Network\HTTPClient\Client\HttpClientAccept;
+use Friendica\Network\HTTPClient\Client\HttpClientOptions;
 use Friendica\Network\HTTPException\InternalServerErrorException;
+use Friendica\Network\HTTPException\ServiceUnavailableException;
 use Friendica\Protocol\Activity;
 use Friendica\Protocol\ActivityPub;
 use Friendica\Protocol\Delivery;
 use Friendica\Protocol\Diaspora;
 use Friendica\Util\DateTimeFormat;
+use Friendica\Util\HTTPSignature;
 use Friendica\Util\Map;
 use Friendica\Util\Network;
 use Friendica\Util\Proxy;
@@ -91,12 +101,12 @@ class Item
 		'uid', 'id', 'parent', 'guid', 'network', 'gravity',
 		'uri-id', 'uri', 'thr-parent-id', 'thr-parent', 'parent-uri-id', 'parent-uri', 'conversation',
 		'commented', 'created', 'edited', 'received', 'verb', 'object-type', 'postopts', 'plink',
-		'wall', 'private', 'starred', 'origin', 'parent-origin', 'title', 'body', 'language',
+		'wall', 'private', 'starred', 'origin', 'parent-origin', 'title', 'body', 'language', 'sensitive',
 		'content-warning', 'location', 'coord', 'app', 'rendered-hash', 'rendered-html', 'object',
 		'quote-uri', 'quote-uri-id', 'allow_cid', 'allow_gid', 'deny_cid', 'deny_gid', 'mention', 'global',
-		'author-id', 'author-link', 'author-name', 'author-avatar', 'author-network', 'author-updated', 'author-gsid', 'author-addr', 'author-uri-id',
-		'owner-id', 'owner-link', 'owner-name', 'owner-avatar', 'owner-network', 'owner-contact-type', 'owner-updated',
-		'causer-id', 'causer-link', 'causer-name', 'causer-avatar', 'causer-contact-type', 'causer-network',
+		'author-id', 'author-link', 'author-alias', 'author-name', 'author-avatar', 'author-network', 'author-updated', 'author-gsid', 'author-baseurl', 'author-addr', 'author-uri-id',
+		'owner-id', 'owner-link', 'owner-alias', 'owner-name', 'owner-avatar', 'owner-network', 'owner-contact-type', 'owner-updated', 'owner-gsid',
+		'causer-id', 'causer-link', 'causer-alias', 'causer-name', 'causer-avatar', 'causer-contact-type', 'causer-network', 'causer-gsid',
 		'contact-id', 'contact-uid', 'contact-link', 'contact-name', 'contact-avatar',
 		'writable', 'self', 'cid', 'alias',
 		'event-created', 'event-edited', 'event-start', 'event-finish',
@@ -108,31 +118,35 @@ class Item
 	];
 
 	// Field list that is used to deliver items via the protocols
-	const DELIVER_FIELDLIST = ['uid', 'id', 'parent', 'uri-id', 'uri', 'thr-parent', 'parent-uri', 'guid',
-			'parent-guid', 'conversation', 'received', 'created', 'edited', 'verb', 'object-type', 'object', 'target',
-			'private', 'title', 'body', 'raw-body', 'location', 'coord', 'app',
-			'inform', 'deleted', 'extid', 'post-type', 'post-reason', 'gravity',
-			'allow_cid', 'allow_gid', 'deny_cid', 'deny_gid',
-			'author-id', 'author-addr', 'author-link', 'author-name', 'author-avatar', 'owner-id', 'owner-link', 'contact-uid',
-			'signed_text', 'network', 'wall', 'contact-id', 'plink', 'origin',
-			'thr-parent-id', 'parent-uri-id', 'quote-uri', 'quote-uri-id', 'postopts', 'pubmail',
-			'event-created', 'event-edited', 'event-start', 'event-finish',
-			'event-summary', 'event-desc', 'event-location', 'event-type',
-			'event-nofinish', 'event-ignore', 'event-id'];
+	const DELIVER_FIELDLIST = [
+		'uid', 'id', 'parent', 'uri-id', 'uri', 'thr-parent', 'parent-uri', 'guid',
+		'parent-guid', 'conversation', 'received', 'created', 'edited', 'verb', 'object-type', 'object', 'target',
+		'private', 'title', 'body', 'raw-body', 'language', 'location', 'coord', 'app', 'sensitive',
+		'inform', 'deleted', 'extid', 'post-type', 'post-reason', 'gravity',
+		'allow_cid', 'allow_gid', 'deny_cid', 'deny_gid',
+		'author-id', 'author-addr', 'author-link', 'author-name', 'author-avatar', 'owner-id', 'owner-link', 'contact-uid',
+		'signed_text', 'network', 'wall', 'contact-id', 'plink', 'origin',
+		'thr-parent-id', 'parent-uri-id', 'quote-uri', 'quote-uri-id', 'postopts', 'pubmail',
+		'event-created', 'event-edited', 'event-start', 'event-finish',
+		'event-summary', 'event-desc', 'event-location', 'event-type',
+		'event-nofinish', 'event-ignore', 'event-id'
+	];
 
 	// All fields in the item table
-	const ITEM_FIELDLIST = ['id', 'uid', 'parent', 'uri', 'parent-uri', 'thr-parent',
-			'guid', 'uri-id', 'parent-uri-id', 'thr-parent-id', 'conversation', 'vid',
-			'quote-uri', 'quote-uri-id', 'contact-id', 'wall', 'gravity', 'extid', 'psid',
-			'created', 'edited', 'commented', 'received', 'changed', 'verb',
-			'postopts', 'plink', 'resource-id', 'event-id', 'inform',
-			'allow_cid', 'allow_gid', 'deny_cid', 'deny_gid', 'post-type', 'post-reason',
-			'private', 'pubmail', 'visible', 'starred',
-			'unseen', 'deleted', 'origin', 'mention', 'global', 'network',
-			'title', 'content-warning', 'body', 'location', 'coord', 'app',
-			'rendered-hash', 'rendered-html', 'object-type', 'object', 'target-type', 'target',
-			'author-id', 'author-link', 'author-name', 'author-avatar', 'author-network',
-			'owner-id', 'owner-link', 'owner-name', 'owner-avatar', 'causer-id'];
+	const ITEM_FIELDLIST = [
+		'id', 'uid', 'parent', 'uri', 'parent-uri', 'thr-parent',
+		'guid', 'uri-id', 'parent-uri-id', 'thr-parent-id', 'conversation', 'vid',
+		'quote-uri', 'quote-uri-id', 'contact-id', 'wall', 'gravity', 'extid', 'psid',
+		'created', 'edited', 'commented', 'received', 'changed', 'verb',
+		'postopts', 'plink', 'resource-id', 'event-id', 'inform',
+		'allow_cid', 'allow_gid', 'deny_cid', 'deny_gid', 'post-type', 'post-reason',
+		'private', 'pubmail', 'visible', 'starred',
+		'unseen', 'deleted', 'origin', 'mention', 'global', 'network',
+		'title', 'content-warning', 'body', 'language', 'location', 'coord', 'app',
+		'rendered-hash', 'rendered-html', 'object-type', 'object', 'target-type', 'target',
+		'author-id', 'author-link', 'author-name', 'author-avatar', 'author-network',
+		'owner-id', 'owner-link', 'owner-name', 'owner-avatar', 'causer-id'
+	];
 
 	// List of all verbs that don't need additional content data.
 	// Never reorder or remove entries from this list. Just add new ones at the end, if needed.
@@ -140,7 +154,8 @@ class Item
 		Activity::LIKE, Activity::DISLIKE,
 		Activity::ATTEND, Activity::ATTENDNO, Activity::ATTENDMAYBE,
 		Activity::FOLLOW,
-		Activity::ANNOUNCE];
+		Activity::ANNOUNCE
+	];
 
 	// Privacy levels
 	const PUBLIC = 0;
@@ -185,14 +200,20 @@ class Item
 			$previous = Post::selectFirst(['edited'], $condition);
 		}
 
+		if (!empty($fields['body'])) {
+			$fields['body'] = self::setHashtags($fields['body']);
+		}
+
 		$rows = Post::update($fields, $condition);
 		if (is_bool($rows)) {
 			return $rows;
 		}
 
 		// We only need to call the line by line update for specific fields
-		if (empty($fields['body']) && empty($fields['file']) &&
-			empty($fields['attach']) && empty($fields['edited'])) {
+		if (
+			empty($fields['body']) && empty($fields['file']) &&
+			empty($fields['attach']) && empty($fields['edited'])
+		) {
 			return $rows;
 		}
 
@@ -225,6 +246,10 @@ class Item
 				$content_fields['raw-body'] = BBCode::removeAttachment($content_fields['raw-body']);
 
 				Post\Content::update($item['uri-id'], $content_fields);
+
+				$searchtext = Post\Engagement::getSearchTextForUriId($item['uri-id'], true);
+				DBA::update('post-engagement', ['searchtext' => $searchtext], ['uri-id' => $item['uri-id']]);
+				Post\SearchIndex::update($item['uri-id']);
 			}
 
 			if (!empty($fields['file'])) {
@@ -317,11 +342,13 @@ class Item
 	 */
 	public static function markForDeletionById(int $item_id, int $priority = Worker::PRIORITY_HIGH): bool
 	{
-		Logger::info('Mark item for deletion by id', ['id' => $item_id, 'callstack' => System::callstack()]);
+		Logger::info('Mark item for deletion by id', ['id' => $item_id]);
 		// locate item to be deleted
-		$fields = ['id', 'uri', 'uri-id', 'uid', 'parent', 'parent-uri-id', 'origin',
-			'deleted', 'resource-id', 'event-id',
-			'verb', 'object-type', 'object', 'target', 'contact-id', 'psid', 'gravity'];
+		$fields = [
+			'id', 'uri', 'uri-id', 'uid', 'parent', 'parent-uri-id', 'origin',
+			'thr-parent-id', 'deleted', 'resource-id', 'event-id', 'vid', 'body',
+			'verb', 'object-type', 'object', 'target', 'contact-id', 'psid', 'gravity'
+		];
 		$item = Post::selectFirst($fields, ['id' => $item_id]);
 		if (!DBA::isResult($item)) {
 			Logger::info('Item not found.', ['id' => $item_id]);
@@ -359,7 +386,7 @@ class Item
 
 		// If item has attachments, drop them
 		$attachments = Post\Media::getByURIId($item['uri-id'], [Post\Media::DOCUMENT]);
-		foreach($attachments as $attachment) {
+		foreach ($attachments as $attachment) {
 			if (preg_match('|attach/(\d+)|', $attachment['url'], $matches)) {
 				Attach::delete(['id' => $matches[1], 'uid' => $item['uid']]);
 			}
@@ -398,6 +425,10 @@ class Item
 
 		DI::notify()->deleteForItem($item['uri-id']);
 		DI::notification()->deleteForItem($item['uri-id']);
+
+		if (in_array($item['gravity'], [self::GRAVITY_ACTIVITY, self::GRAVITY_COMMENT])) {
+			Post\Counts::update($item['thr-parent-id'], $item['parent-uri-id'], $item['vid'], $item['verb'], $item['body']);
+		}
 
 		Logger::info('Item has been marked for deletion.', ['id' => $item_id]);
 
@@ -473,12 +504,29 @@ class Item
 	private static function contactId(array $item): int
 	{
 		if ($item['uid'] == 0) {
-			return $item['author-id'];
+			return $item['owner-id'];
 		}
 
 		if ($item['origin']) {
 			$owner = User::getOwnerDataById($item['uid']);
 			return $owner['id'];
+		}
+
+		$contact_id      = 0;
+		$user_contact_id = 0;
+		foreach (['group-link', 'causer-link', 'owner-link', 'author-link'] as $field) {
+			if (empty($item[$field])) {
+				continue;
+			}
+			if (!$user_contact_id && Contact::isSharingByURL($item[$field], $item['uid'], true)) {
+				$user_contact_id = Contact::getIdForURL($item[$field], $item['uid']);
+			} elseif (!$contact_id) {
+				$contact_id = Contact::getIdForURL($item[$field]);
+			}
+		}
+
+		if ($user_contact_id) {
+			return $user_contact_id;
 		}
 
 		if (!empty($item['causer-id']) && Contact::isSharing($item['causer-id'], $item['uid'], true)) {
@@ -488,24 +536,7 @@ class Item
 			}
 		}
 
-		if ($item['gravity'] == self::GRAVITY_PARENT) {
-			if (Contact::isSharingByURL($item['owner-link'], $item['uid'], true)) {
-				$contact_id = Contact::getIdForURL($item['owner-link'], $item['uid']);
-			} else {
-				$contact_id = Contact::getIdForURL($item['owner-link']);
-			}
-			if (!empty($contact_id)) {
-				return $contact_id;
-			}
-		}
-
-		if (Contact::isSharingByURL($item['author-link'], $item['uid'], true)) {
-			$contact_id = Contact::getIdForURL($item['author-link'], $item['uid']);
-		} else {
-			$contact_id = Contact::getIdForURL($item['author-link']);
-		}
-
-		if (!empty($contact_id)) {
+		if ($contact_id) {
 			return $contact_id;
 		}
 
@@ -551,8 +582,10 @@ class Item
 			return true;
 		}
 
-		$condition = ['uri-id' => $item['uri-id'], 'uid' => $item['uid'],
-			'network' => [$item['network'], Protocol::DFRN]];
+		$condition = [
+			'uri-id' => $item['uri-id'], 'uid' => $item['uid'],
+			'network' => [$item['network'], Protocol::DFRN]
+		];
 		if (Post::exists($condition)) {
 			Logger::notice('duplicated item with the same uri found.', $condition);
 			return true;
@@ -567,8 +600,10 @@ class Item
 			}
 		} elseif ($item['network'] == Protocol::OSTATUS) {
 			// Check for an existing post with the same content. There seems to be a problem with OStatus.
-			$condition = ["`body` = ? AND `network` = ? AND `created` = ? AND `contact-id` = ? AND `uid` = ?",
-					$item['body'], $item['network'], $item['created'], $item['contact-id'], $item['uid']];
+			$condition = [
+				"`body` = ? AND `network` = ? AND `created` = ? AND `contact-id` = ? AND `uid` = ?",
+				$item['body'], $item['network'], $item['created'], $item['contact-id'], $item['uid']
+			];
 			if (Post::exists($condition)) {
 				Logger::notice('duplicated item with the same body found.', $item);
 				return true;
@@ -642,8 +677,10 @@ class Item
 				return false;
 			}
 
-			$condition = ['verb' => Activity::FOLLOW, 'uid' => $item['uid'],
-				'parent-uri' => $item['parent-uri'], 'author-id' => $item['author-id']];
+			$condition = [
+				'verb' => Activity::FOLLOW, 'uid' => $item['uid'],
+				'parent-uri' => $item['parent-uri'], 'author-id' => $item['author-id']
+			];
 			if (Post::exists($condition)) {
 				// It happens that we receive multiple follow requests by the same author - we only store one.
 				Logger::info('Follow: Found existing follow request from author', ['author-id' => $item['author-id'], 'parent-uri' => $item['parent-uri']]);
@@ -655,38 +692,6 @@ class Item
 	}
 
 	/**
-	 * Check if the item array is too old
-	 *
-	 * @param array $item Item record
-	 * @return boolean item is too old
-	 */
-	public static function isTooOld(array $item): bool
-	{
-		// check for create date and expire time
-		$expire_interval = DI::config()->get('system', 'dbclean-expire-days', 0);
-
-		$user = DBA::selectFirst('user', ['expire'], ['uid' => $item['uid']]);
-		if (DBA::isResult($user) && ($user['expire'] > 0) && (($user['expire'] < $expire_interval) || ($expire_interval == 0))) {
-			$expire_interval = $user['expire'];
-		}
-
-		if (($expire_interval > 0) && !empty($item['created'])) {
-			$expire_date = time() - ($expire_interval * 86400);
-			$created_date = strtotime($item['created']);
-			if ($created_date < $expire_date) {
-				Logger::notice('Item created before expiration interval.', [
-					'created' => date('c', $created_date),
-					'expired' => date('c', $expire_date),
-					'$item' => $item
-				]);
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	/**
 	 * Return the id of the given item array if it has been stored before
 	 *
 	 * @param array $item Item record
@@ -695,7 +700,8 @@ class Item
 	private static function getDuplicateID(array $item): int
 	{
 		if (empty($item['network']) || in_array($item['network'], Protocol::FEDERATED)) {
-			$condition = ['`uri-id` = ? AND `uid` = ? AND `network` IN (?, ?, ?, ?)',
+			$condition = [
+				'`uri-id` = ? AND `uid` = ? AND `network` IN (?, ?, ?, ?)',
 				$item['uri-id'],
 				$item['uid'],
 				Protocol::ACTIVITYPUB,
@@ -751,10 +757,12 @@ class Item
 	 */
 	private static function getTopLevelParent(array $item): array
 	{
-		$fields = ['uid', 'uri', 'parent-uri', 'id', 'deleted',
+		$fields = [
+			'uid', 'uri', 'parent-uri', 'id', 'deleted',
 			'uri-id', 'parent-uri-id',
 			'allow_cid', 'allow_gid', 'deny_cid', 'deny_gid',
-			'wall', 'private', 'origin', 'author-id'];
+			'wall', 'private', 'origin', 'author-id'
+		];
 		$condition = ['uri-id' => [$item['thr-parent-id'], $item['parent-uri-id']], 'uid' => $item['uid']];
 		$params = ['order' => ['id' => false]];
 		$parent = Post::selectFirst($fields, $condition, $params);
@@ -771,7 +779,7 @@ class Item
 		}
 
 		if (!DBA::isResult($parent)) {
-			Logger::notice('item parent was not found - ignoring item', ['uri-id' => $item['uri-id'], 'thr-parent-id' => $item['thr-parent-id'], 'uid' => $item['uid'], 'callstack' => System::callstack(20)]);
+			Logger::notice('item parent was not found - ignoring item', ['uri-id' => $item['uri-id'], 'thr-parent-id' => $item['thr-parent-id'], 'uid' => $item['uid']]);
 			return [];
 		}
 
@@ -779,9 +787,11 @@ class Item
 			return $parent;
 		}
 
-		$condition = ['uri-id' => $parent['parent-uri-id'],
+		$condition = [
+			'uri-id' => $parent['parent-uri-id'],
 			'parent-uri-id' => $parent['parent-uri-id'],
-			'uid' => $parent['uid']];
+			'uid' => $parent['uid']
+		];
 		$params = ['order' => ['id' => false]];
 		$toplevel_parent = Post::selectFirst($fields, $condition, $params);
 
@@ -854,6 +864,10 @@ class Item
 			if (is_int($notify) && in_array($notify, Worker::PRIORITIES)) {
 				$priority = $notify;
 			}
+
+			// Mastodon style API visibility
+			$copy_permissions = ($item['visibility'] ?? 'private') == 'private';
+			unset($item['visibility']);
 		} else {
 			$item['network'] = trim(($item['network'] ?? '') ?: Protocol::PHANTOM);
 		}
@@ -946,7 +960,7 @@ class Item
 		// Communities aren't working with the Diaspora protocol
 		if (($uid != 0) && ($item['network'] == Protocol::DIASPORA)) {
 			$user = User::getById($uid, ['account-type']);
-		 	if ($user['account-type'] == Contact::TYPE_COMMUNITY) {
+			if ($user['account-type'] == Contact::TYPE_COMMUNITY) {
 				Logger::info('Community posts are not supported via Diaspora');
 				return 0;
 			}
@@ -966,12 +980,16 @@ class Item
 
 		$item['gravity'] = self::getGravity($item);
 
-		$default = ['url' => $item['author-link'], 'name' => $item['author-name'],
-			'photo' => $item['author-avatar'], 'network' => $item['network']];
+		$default = [
+			'url' => $item['author-link'], 'name' => $item['author-name'],
+			'photo' => $item['author-avatar'], 'network' => $item['network']
+		];
 		$item['author-id'] = ($item['author-id'] ?? 0) ?: Contact::getIdForURL($item['author-link'], 0, null, $default);
 
-		$default = ['url' => $item['owner-link'], 'name' => $item['owner-name'],
-			'photo' => $item['owner-avatar'], 'network' => $item['network']];
+		$default = [
+			'url' => $item['owner-link'], 'name' => $item['owner-name'],
+			'photo' => $item['owner-avatar'], 'network' => $item['network']
+		];
 		$item['owner-id'] = ($item['owner-id'] ?? 0) ?: Contact::getIdForURL($item['owner-link'], 0, null, $default);
 
 		$item['post-reason'] = self::getPostReason($item);
@@ -982,8 +1000,10 @@ class Item
 
 		$item['contact-id'] = self::contactId($item);
 
-		if (!empty($item['direction']) && in_array($item['direction'], [Conversation::PUSH, Conversation::RELAY]) &&
-			empty($item['origin']) && self::isTooOld($item)) {
+		if (
+			!empty($item['direction']) && in_array($item['direction'], [Conversation::PUSH, Conversation::RELAY]) &&
+			empty($item['origin']) && DI::contentItem()->isTooOld($item['created'], $item['uid'])
+		) {
 			Logger::info('Item is too old', ['item' => $item]);
 			return 0;
 		}
@@ -1004,12 +1024,14 @@ class Item
 			$item['deleted']       = $toplevel_parent['deleted'];
 			$item['wall']          = $toplevel_parent['wall'];
 
-			// Reshares have to keep their permissions to allow forums to work
+			// Reshares have to keep their permissions to allow groups to work
 			if (!$defined_permissions && (!$item['origin'] || ($item['verb'] != Activity::ANNOUNCE))) {
-				$item['allow_cid']     = $toplevel_parent['allow_cid'];
-				$item['allow_gid']     = $toplevel_parent['allow_gid'];
-				$item['deny_cid']      = $toplevel_parent['deny_cid'];
-				$item['deny_gid']      = $toplevel_parent['deny_gid'];
+				// Don't store the permissions on pure AP posts
+				$store_permissions = ($item['network'] != Protocol::ACTIVITYPUB) || $item['origin'] || !empty($item['diaspora_signed_text']);
+				$item['allow_cid'] = $store_permissions ? $toplevel_parent['allow_cid'] : '';
+				$item['allow_gid'] = $store_permissions ? $toplevel_parent['allow_gid'] : '';
+				$item['deny_cid']  = $store_permissions ? $toplevel_parent['deny_cid'] : '';
+				$item['deny_gid']  = $store_permissions ? $toplevel_parent['deny_gid'] : '';
 			}
 
 			$parent_origin         = $toplevel_parent['origin'];
@@ -1050,7 +1072,10 @@ class Item
 		}
 
 		if ($item['origin']) {
-			if (Photo::setPermissionFromBody($item['body'], $item['uid'], $item['contact-id'], $item['allow_cid'], $item['allow_gid'], $item['deny_cid'], $item['deny_gid'])) {
+			if (
+				Photo::setPermissionFromBody($item['body'], $item['uid'], $item['contact-id'], $item['allow_cid'], $item['allow_gid'], $item['deny_cid'], $item['deny_gid'])
+				&& ($item['object-type'] != Activity\ObjectType::EVENT)
+			) {
 				$item['object-type'] = Activity\ObjectType::IMAGE;
 			}
 
@@ -1124,7 +1149,8 @@ class Item
 				$item['allow_gid'],
 				$item['deny_cid'],
 				$item['deny_gid']
-		))->id;
+			)
+		)->id;
 
 		if (!empty($item['extid'])) {
 			$item['external-id'] = ItemURI::getIdByURI($item['extid']);
@@ -1147,9 +1173,14 @@ class Item
 			if (!empty($quote_id)) {
 				// This is one of these "should not happen" situations.
 				// The protocol implementations should already have done this job.
-				Logger::notice('Quote-uri-id detected in post', ['id' => $quote_id, 'guid' => $item['guid'], 'uri-id' => $item['uri-id'], 'callstack' => System::callstack(20)]);
+				Logger::notice('Quote-uri-id detected in post', ['id' => $quote_id, 'guid' => $item['guid'], 'uri-id' => $item['uri-id']]);
 				$item['quote-uri-id'] = $quote_id;
 			}
+		}
+
+		if (!empty($item['quote-uri-id']) && ($item['quote-uri-id'] == $item['uri-id'])) {
+			Logger::info('Quote-Uri-Id is identical to Uri-Id', ['uri-id' => $item['uri-id'], 'guid' => $item['guid']]);
+			unset($item['quote-uri-id']);
 		}
 
 		if (!empty($item['quote-uri-id'])) {
@@ -1170,8 +1201,6 @@ class Item
 
 		// Check for hashtags in the body and repair or add hashtag links
 		$item['body'] = self::setHashtags($item['body']);
-
-		$item['language'] = self::getLanguage($item);
 
 		$notify_type = Delivery::POST;
 
@@ -1221,7 +1250,18 @@ class Item
 			}
 		}
 
-		Post::insert($item['uri-id'], $item);
+		// Store tags from the body if this hadn't been handled previously in the protocol classes
+		if (!Tag::existsForPost($item['uri-id'])) {
+			Tag::storeFromBody($item['uri-id'], $item['body']);
+		}
+
+		if (in_array($item['gravity'], [self::GRAVITY_PARENT, self::GRAVITY_COMMENT]) && (!isset($item['sensitive']) || is_null($item['sensitive']))) {
+			$item['sensitive'] = Tag::existsTagForPost($item['uri-id'], 'nsfw');
+		}
+
+		$item['language'] = self::getLanguage($item);
+
+		$inserted = Post::insert($item['uri-id'], $item);
 
 		if ($item['gravity'] == self::GRAVITY_PARENT) {
 			Post\Thread::insert($item['uri-id'], $item);
@@ -1256,11 +1296,6 @@ class Item
 
 		if (!empty($item['origin']) || !empty($item['wall']) || !empty($delivery_data['postopts']) || !empty($delivery_data['inform'])) {
 			Post\DeliveryData::insert($item['uri-id'], $delivery_data);
-		}
-
-		// Store tags from the body if this hadn't been handled previously in the protocol classes
-		if (!Tag::existsForPost($item['uri-id'])) {
-			Tag::storeFromBody($item['uri-id'], $item['body']);
 		}
 
 		$condition = ['uri-id' => $item['uri-id'], 'uid' => $item['uid']];
@@ -1307,7 +1342,7 @@ class Item
 
 		Post::update($fields, ['uri-id' => $posted_item['parent-uri-id'], 'uid' => $posted_item['uid']]);
 
-		// In that function we check if this is a forum post. Additionally we delete the item under certain circumstances
+		// In that function we check if this is a group post. Additionally we delete the item under certain circumstances
 		if (self::tagDeliver($posted_item['uid'], $post_user_id)) {
 			// Get the user information for the logging
 			$user = User::getById($uid);
@@ -1318,6 +1353,9 @@ class Item
 
 		if ($notify) {
 			DI::contentItem()->postProcessPost($posted_item);
+			if ($copy_permissions && ($posted_item['thr-parent-id'] != $posted_item['uri-id']) && ($posted_item['private'] == self::PRIVATE)) {
+				DI::contentItem()->copyPermissions($posted_item['thr-parent-id'], $posted_item['uri-id'], $posted_item['parent-uri-id']);
+			}
 		} else {
 			Hook::callAll('post_remote_end', $posted_item);
 		}
@@ -1356,26 +1394,99 @@ class Item
 
 			// Don't relay participation messages
 			if (($posted_item['verb'] == Activity::FOLLOW) &&
-				(!$posted_item['origin'] || ($posted_item['author-id'] != Contact::getPublicIdByUserId($uid)))) {
+				(!$posted_item['origin'] || ($posted_item['author-id'] != Contact::getPublicIdByUserId($uid)))
+			) {
 				Logger::info('Participation messages will not be relayed', ['item' => $posted_item['id'], 'uri' => $posted_item['uri'], 'verb' => $posted_item['verb']]);
 				$transmit = false;
 			}
 		}
 
 		if (!empty($source) && ($transmit || DI::config()->get('debug', 'store_source'))) {
-			Post\Activity::insert($item['uri-id'], $source);
+			Post\Activity::insert($posted_item['uri-id'], $source);
 		}
 
 		if ($transmit) {
+			ActivityPub\Transmitter::storeReceiversForItem($posted_item);
+
 			Worker::add(['priority' => $priority, 'dont_fork' => true], 'Notifier', $notify_type, (int)$posted_item['uri-id'], (int)$posted_item['uid']);
 		}
 
-		// Fill the cache with the rendered content.
-		if (in_array($posted_item['gravity'], [self::GRAVITY_PARENT, self::GRAVITY_COMMENT]) && ($posted_item['uid'] == 0)) {
-			self::updateDisplayCache($posted_item['uri-id']);
+		if ($inserted) {
+			// Fill the cache with the rendered content.
+			if (in_array($posted_item['gravity'], [self::GRAVITY_PARENT, self::GRAVITY_COMMENT])) {
+				self::updateDisplayCache($posted_item['uri-id']);
+			}
+
+			if (in_array($posted_item['gravity'], [self::GRAVITY_ACTIVITY, self::GRAVITY_COMMENT])) {
+				Post\Counts::update($posted_item['thr-parent-id'], $posted_item['parent-uri-id'], $posted_item['vid'], $posted_item['verb'], $posted_item['body']);
+			}
+
+			$engagement_uri_id = Post\Engagement::storeFromItem($posted_item);
+
+			if (in_array($posted_item['gravity'], [self::GRAVITY_PARENT, self::GRAVITY_COMMENT])) {
+				Post\SearchIndex::insert($posted_item['uri-id'], $posted_item['created']);
+			} elseif ($posted_item['verb'] == Activity::ANNOUNCE) {
+				Post\SearchIndex::update($posted_item['thr-parent-id']);
+			}
+
+			if (($posted_item['gravity'] == self::GRAVITY_ACTIVITY) && ($posted_item['verb'] == Activity::ANNOUNCE) && ($posted_item['parent-uri-id'] == $posted_item['thr-parent-id'])) {
+				self::reshareChannelPost($posted_item['thr-parent-id'], $posted_item['author-id']);
+			} elseif ($engagement_uri_id) {
+				self::reshareChannelPost($engagement_uri_id);
+			}
 		}
 
 		return $post_user_id;
+	}
+
+	private static function reshareChannelPost(int $uri_id, int $reshare_id = 0)
+	{
+		if (!DI::config()->get('system', 'allow_relay_channels')) {
+			return;
+		}
+
+		$item = Post::selectFirst(['id', 'private', 'network', 'language', 'owner-id'], ['uri-id' => $uri_id, 'uid' => 0]);
+		if (empty($item['id'])) {
+			Logger::debug('Post not found', ['uri-id' => $uri_id]);
+			return;
+		}
+
+		if (($item['private'] != self::PUBLIC) || !in_array($item['network'], [Protocol::ACTIVITYPUB, Protocol::DFRN])) {
+			Logger::debug('Not a public post or no AP or DFRN post', ['uri-id' => $uri_id]);
+			return;
+		}
+
+		$engagement = DBA::selectFirst('post-engagement', ['searchtext', 'media-type'], ['uri-id' => $uri_id]);
+		if (empty($engagement['searchtext'])) {
+			Logger::debug('No engagement found', ['uri-id' => $uri_id]);
+			return;
+		}
+
+		$language = !empty($item['language']) ? array_key_first(json_decode($item['language'], true)) : '';
+		$tags     = array_column(Tag::getByURIId($uri_id, [Tag::HASHTAG]), 'name');
+
+		Logger::debug('Prepare check', ['uri-id' => $uri_id, 'language' => $language, 'tags' => $tags, 'searchtext' => $engagement['searchtext'], 'media_type' => $engagement['media-type'], 'owner' => $item['owner-id'], 'reshare' => $reshare_id]);
+
+		$count = 0;
+		foreach (DI::userDefinedChannel()->getMatchingChannelUsers($engagement['searchtext'], $language, $tags, $engagement['media-type'], $item['owner-id'], $reshare_id) as $uid) {
+			$condition = [
+				'verb' => Activity::ANNOUNCE, 'deleted' => false, 'gravity' => self::GRAVITY_ACTIVITY,
+				'author-id' => Contact::getPublicIdByUserId($uid), 'uid' => $uid, 'thr-parent-id' => $uri_id
+			];
+			if (!Post::exists($condition)) {
+				Logger::debug('Reshare post', ['uid' => $uid, 'uri-id' => $uri_id]);
+				$allow_cid = '';
+				$allow_gid = '<' . Circle::FOLLOWERS . '>';
+				$deny_cid  = '';
+				$deny_gid  = '';
+				self::performActivity($item['id'], 'announce', $uid, $allow_cid, $allow_gid, $deny_cid, $deny_gid);
+			} else {
+				Logger::debug('Reshare already exists', ['uid' => $uid, 'uri-id' => $uri_id]);
+			}
+			$count++;
+		}
+
+		Logger::debug('Check done', ['uri-id' => $uri_id, 'count' => $count]);
 	}
 
 	/**
@@ -1418,19 +1529,25 @@ class Item
 	}
 
 	/**
-	 * Change the owner of a parent item if it had been shared by a forum
+	 * Change the owner of a parent item if it had been shared by a group
 	 *
-	 * (public) forum posts in the new format consist of the regular post by the author
-	 * followed by an announce message sent from the forum account.
-	 * Changing the owner helps in grouping forum posts.
+	 * (public) group posts in the new format consist of the regular post by the author
+	 * followed by an announce message sent from the group account.
+	 * Changing the owner helps in grouping group posts.
 	 *
 	 * @param array $item
 	 * @return void
 	 */
 	private static function setOwnerforResharedItem(array $item)
 	{
-		$parent = Post::selectFirst(['id', 'causer-id', 'owner-id', 'author-id', 'author-link', 'origin', 'post-reason'],
-			['uri-id' => $item['thr-parent-id'], 'uid' => $item['uid']]);
+		if ($item['uid'] == 0) {
+			return;
+		}
+
+		$parent = Post::selectFirst(
+			['id', 'causer-id', 'owner-id', 'author-id', 'author-link', 'origin', 'post-reason'],
+			['uri-id' => $item['thr-parent-id'], 'uid' => $item['uid']]
+		);
 		if (!DBA::isResult($parent)) {
 			Logger::error('Parent not found', ['uri-id' => $item['thr-parent-id'], 'uid' => $item['uid']]);
 			return;
@@ -1458,7 +1575,7 @@ class Item
 			}
 
 			if (Contact::isSharing($parent['owner-id'], $item['uid'])) {
-				Logger::info('The resharer is no forum: quit', ['resharer' => $item['author-id'], 'owner' => $parent['owner-id'], 'author' => $parent['author-id'], 'uid' => $item['uid']]);
+				Logger::info('The resharer is no group: quit', ['resharer' => $item['author-id'], 'owner' => $parent['owner-id'], 'author' => $parent['author-id'], 'uid' => $item['uid']]);
 				return;
 			}
 		}
@@ -1478,10 +1595,31 @@ class Item
 			return;
 		}
 
-		$uids = Tag::getUIDListByURIId($item['uri-id']);
-		foreach ($uids as $uid) {
+		$languages = $item['language'] ? array_keys(json_decode($item['language'], true)) : [];
+
+		foreach (Tag::getUIDListByURIId($item['uri-id']) as $uid => $tags) {
+			if (!empty($languages)) {
+				$keep = false;
+				$user_languages = User::getWantedLanguages($uid);
+				foreach ($user_languages as $language) {
+					if (in_array($language, $languages)) {
+						$keep = true;
+					}
+				}
+				if ($keep) {
+					Logger::debug('Wanted languages found', ['uid' => $uid, 'user-languages' => $user_languages, 'item-languages' => $languages]);
+				} else {
+					Logger::debug('No wanted languages found', ['uid' => $uid, 'user-languages' => $user_languages, 'item-languages' => $languages]);
+					continue;
+				}
+			}
+
 			$stored = self::storeForUserByUriId($item['uri-id'], $uid, ['post-reason' => self::PR_TAG]);
 			Logger::info('Stored item for users', ['uri-id' => $item['uri-id'], 'uid' => $uid, 'stored' => $stored]);
+			foreach ($tags as $tag) {
+				$stored = Category::storeFileByURIId($item['uri-id'], $uid, Category::SUBCRIPTION, $tag);
+				Logger::debug('Stored tag subscription for user', ['uri-id' => $item['uri-id'], 'uid' => $uid, $tag, 'stored' => $stored]);
+			}
 		}
 	}
 
@@ -1502,9 +1640,11 @@ class Item
 		}
 
 		// Only distribute public items from native networks
-		$condition = ['id' => $itemid, 'uid' => 0,
-			'network' => array_merge(Protocol::FEDERATED ,['']),
-			'visible' => true, 'deleted' => false, 'private' => [self::PUBLIC, self::UNLISTED]];
+		$condition = [
+			'id' => $itemid, 'uid' => 0,
+			'network' => array_merge(Protocol::FEDERATED, ['']),
+			'visible' => true, 'deleted' => false, 'private' => [self::PUBLIC, self::UNLISTED]
+		];
 		$item = Post::selectFirst(array_merge(self::ITEM_FIELDLIST, ['protocol']), $condition);
 		if (!DBA::isResult($item)) {
 			Logger::warning('Item not found', ['condition' => $condition]);
@@ -1603,7 +1743,7 @@ class Item
 		if (($uid != 0) && ($item['gravity'] == self::GRAVITY_PARENT)) {
 			$owner = User::getOwnerDataById($uid);
 			if (($owner['contact-type'] == User::ACCOUNT_TYPE_COMMUNITY) && !Tag::isMentioned($uri_id, $owner['url'])) {
-				Logger::info('Target user is a forum but is not mentioned here, thread will not be stored', ['uid' => $uid, 'uri-id' => $uri_id]);
+				Logger::info('Target user is a group but is not mentioned here, thread will not be stored', ['uid' => $uid, 'uri-id' => $uri_id]);
 				return 0;
 			}
 		}
@@ -1625,7 +1765,8 @@ class Item
 
 		if (($uid != 0) && (($item['gravity'] == self::GRAVITY_PARENT) || $is_reshare) &&
 			DI::pConfig()->get($uid, 'system', 'accept_only_sharer') == self::COMPLETION_NONE &&
-			!in_array($item['post-reason'], [self::PR_FOLLOWER, self::PR_TAG, self::PR_TO, self::PR_CC, self::PR_ACTIVITY, self::PR_AUDIENCE])) {
+			!in_array($item['post-reason'], [self::PR_FOLLOWER, self::PR_TAG, self::PR_TO, self::PR_CC, self::PR_ACTIVITY, self::PR_AUDIENCE])
+		) {
 			Logger::info('Contact is not a follower, thread will not be stored', ['author' => $item['author-link'], 'uid' => $uid, 'uri-id' => $uri_id, 'post-reason' => $item['post-reason']]);
 			return 0;
 		}
@@ -1709,7 +1850,7 @@ class Item
 			return 0;
 		}
 
-		// When the post belongs to a a forum then all forum users are allowed to access it
+		// When the post belongs to a a group then all group users are allowed to access it
 		foreach (Tag::getByURIId($uriid, [Tag::MENTION, Tag::EXCLUSIVE_MENTION]) as $tag) {
 			if (DBA::exists('contact', ['uid' => $uid, 'nurl' => Strings::normaliseLink($tag['url']), 'contact-type' => Contact::TYPE_COMMUNITY])) {
 				$target_uid = User::getIdForURL($tag['url']);
@@ -1821,7 +1962,7 @@ class Item
 		}
 
 		// is it an entry from a connector? Only add an entry for natively connected networks
-		if (!in_array($item["network"], array_merge(Protocol::FEDERATED ,['']))) {
+		if (!in_array($item["network"], array_merge(Protocol::FEDERATED, ['']))) {
 			return;
 		}
 
@@ -1927,19 +2068,35 @@ class Item
 	 * @return string detected language
 	 * @throws \Text_LanguageDetect_Exception
 	 */
-	private static function getLanguage(array $item): string
+	private static function getLanguage(array $item): ?string
 	{
 		if (!empty($item['language'])) {
 			return $item['language'];
 		}
 
-		if (!in_array($item['gravity'], [self::GRAVITY_PARENT, self::GRAVITY_COMMENT]) || empty($item['body'])) {
-			return '';
+		$transmitted = [];
+		foreach ($item['transmitted-languages'] ??  [] as $language) {
+			$transmitted[$language] = 0;
 		}
 
-		$languages = self::getLanguageArray(trim($item['title'] . "\n" . $item['body']), 3);
-		if (empty($languages)) {
-			return '';
+		if (!in_array($item['gravity'], [self::GRAVITY_PARENT, self::GRAVITY_COMMENT])) {
+			return !empty($transmitted) ? json_encode($transmitted) : null;
+		}
+
+		$content = trim(($item['title'] ?? '') . ' ' . ($item['content-warning'] ?? '') . ' ' . ($item['body'] ?? ''));
+
+		if (empty($content) && !empty($item['quote-uri-id'])) {
+			$quoted = Post::selectFirstPost(['language'], ['uri-id' => $item['quote-uri-id']]);
+			if (!empty($quoted['language'])) {
+				return $quoted['language'];
+			}
+		}
+
+		$languages = self::getLanguageArray($content, 3, $item['uri-id'], $item['author-id'], $transmitted);
+
+		if (!empty($transmitted)) {
+			$languages = array_merge($transmitted, $languages);
+			arsort($languages);
 		}
 
 		return json_encode($languages);
@@ -1950,66 +2107,153 @@ class Item
 	 *
 	 * @param string  $body
 	 * @param integer $count
+	 * @param integer $uri_id
+	 * @param integer $author_id
+	 * @param array   $default
 	 * @return array
 	 */
-	public static function getLanguageArray(string $body, int $count): array
+	public static function getLanguageArray(string $body, int $count, int $uri_id = 0, int $author_id = 0, array $default = []): array
 	{
-		// Convert attachments to links
-		$naked_body = BBCode::removeAttachment($body);
-		if (empty($naked_body)) {
-			return [];
+		$default = $default ?: [L10n::UNDETERMINED_LANGUAGE => 1];
+
+		$searchtext = BBCode::toSearchText($body, $uri_id);
+
+		if ((count(explode(' ', $searchtext)) < 10) && (mb_strlen($searchtext) < 30) && $author_id) {
+			$author = Contact::selectFirst(['about'], ['id' => $author_id]);
+			if (!empty($author['about'])) {
+				$about = BBCode::toSearchText($author['about'], 0);
+				Logger::debug('About field added', ['author' => $author_id, 'body' => $searchtext, 'about' => $about]);
+				$searchtext .= ' ' . $about;
+			}
 		}
 
-		// Remove links and pictures
-		$naked_body = BBCode::removeLinks($naked_body);
-
-		// Convert the title and the body to plain text
-		$naked_body = BBCode::toPlaintext($naked_body);
-
-		// Remove possibly remaining links
-		$naked_body = preg_replace(Strings::autoLinkRegEx(), '', $naked_body);
-
-		if (empty($naked_body)) {
-			return [];
+		if (empty($searchtext)) {
+			return $default;
 		}
 
-		$naked_body = self::getDominantLanguage($naked_body);
+		$ld = new Language(DI::l10n()->getDetectableLanguages());
 
-		$availableLanguages = DI::l10n()->getAvailableLanguages();
-		// See https://github.com/friendica/friendica/issues/10511
-		// Persian is manually added to language detection until a persian translation is provided for the interface, at
-		// which point it will be automatically available through `getAvailableLanguages()` and this should be removed.
-		$availableLanguages['fa'] = 'fa';
+		$result = [];
 
-		$ld = new Language(array_keys($availableLanguages));
-		return $ld->detect($naked_body)->limit(0, $count)->close() ?: [];
+		foreach (self::splitByBlocks($searchtext) as $block) {
+			$languages = $ld->detect($block)->close() ?: [];
+
+			$data = [
+				'text'      => $block,
+				'detected'  => $languages,
+				'uri-id'    => $uri_id,
+				'author-id' => $author_id,
+			];
+			Hook::callAll('detect_languages', $data);
+
+			foreach ($data['detected'] as $language => $quality) {
+				$result[$language] = max($result[$language] ?? 0, $quality * (strlen($block) / strlen($searchtext)));
+			}
+		}
+
+		$result = self::compactLanguages($result);
+		if (empty($result)) {
+			return $default;
+		}
+
+		arsort($result);
+		return array_slice($result, 0, $count);
 	}
 
 	/**
-	 * Check if latin or non latin are dominant in the body and only return the dominant one
+	 * Concert the language code in the detection result to ISO 639-1.
+	 * On duplicates the system uses the higher quality value.
 	 *
-	 * @param string $body
-	 * @return string
+	 * @param array $result
+	 * @return array
 	 */
-	private static function getDominantLanguage(string $body): string
+	private static function compactLanguages(array $result): array
 	{
-		$latin = '';
-		$non_latin = '';
-		for ($i = 0; $i < mb_strlen($body); $i++) {
-			$character = mb_substr($body, $i, 1);
-			$ord = mb_ord($character);
-
-			// We add the most common characters to both strings.
-			if (($ord <= 64) || ($ord >= 91 && $ord <= 96) || ($ord >= 123 && $ord <= 191) || in_array($ord, [215, 247]) || ($ord >= 697 && $ord <= 735) || ($ord > 65535)) {
-				$latin .= $character;
-				$non_latin .= $character;
-			} elseif ($ord < 768) {
-				$latin .= $character;
-			} else {
-				$non_latin .= $character;
+		$languages = [];
+		foreach ($result as $language => $quality) {
+			if ($quality == 0) {
+				continue;
+			}
+			$code = DI::l10n()->toISO6391($language);
+			if (empty($languages[$code]) || ($languages[$code] < $quality)) {
+				$languages[$code] = $quality;
 			}
 		}
-		return (mb_strlen($latin) > mb_strlen($non_latin)) ? $latin : $non_latin;
+		return $languages;
+	}
+
+	/**
+	 * Split a string into different unicode blocks
+	 * Currently the text is split into the latin and the non latin part.
+	 *
+	 * @param string $body
+	 * @return array
+	 */
+	private static function splitByBlocks(string $body): array
+	{
+		if (!class_exists('IntlChar')) {
+			return [$body];
+		}
+
+		$blocks         = [];
+		$previous_block = 0;
+
+		for ($i = 0; $i < mb_strlen($body); $i++) {
+			$character = mb_substr($body, $i, 1);
+			$previous  = ($i > 0) ? mb_substr($body, $i - 1, 1) : '';
+			$next      = ($i < mb_strlen($body)) ? mb_substr($body, $i + 1, 1) : '';
+
+			if (!\IntlChar::isalpha($character)) {
+				if (($previous != '') && (\IntlChar::isalpha($previous))) {
+					$previous_block = self::getBlockCode($previous);
+				}
+
+				$block = (($next != '') && \IntlChar::isalpha($next)) ? self::getBlockCode($next) : $previous_block;
+				$blocks[$block] = ($blocks[$block] ?? '') . $character;
+			} else {
+				$block = self::getBlockCode($character);
+				$blocks[$block] = ($blocks[$block] ?? '') . $character;
+			}
+		}
+
+		foreach (array_keys($blocks) as $key) {
+			$blocks[$key] = trim($blocks[$key]);
+			if (empty($blocks[$key])) {
+				unset($blocks[$key]);
+			}
+		}
+
+		return array_values($blocks);
+	}
+
+	/**
+	 * returns the block code for the given character
+	 *
+	 * @param string $character
+	 * @return integer 0 = no alpha character (blank, signs, emojis, ...), 1 = latin character, 2 = character in every other language
+	 */
+	private static function getBlockCode(string $character): int
+	{
+		if (!\IntlChar::isalpha($character)) {
+			return 0;
+		}
+		return self::isLatin($character) ? 1 : 2;
+	}
+
+	/**
+	 * Checks if the given character is in one of the latin code blocks
+	 *
+	 * @param string $character
+	 * @return boolean
+	 */
+	private static function isLatin(string $character): bool
+	{
+		return in_array(\IntlChar::getBlockCode($character), [
+			\IntlChar::BLOCK_CODE_BASIC_LATIN, \IntlChar::BLOCK_CODE_LATIN_1_SUPPLEMENT,
+			\IntlChar::BLOCK_CODE_LATIN_EXTENDED_A, \IntlChar::BLOCK_CODE_LATIN_EXTENDED_B,
+			\IntlChar::BLOCK_CODE_LATIN_EXTENDED_C, \IntlChar::BLOCK_CODE_LATIN_EXTENDED_D,
+			\IntlChar::BLOCK_CODE_LATIN_EXTENDED_E, \IntlChar::BLOCK_CODE_LATIN_EXTENDED_ADDITIONAL
+		]);
 	}
 
 	public static function getLanguageMessage(array $item): string
@@ -2018,7 +2262,20 @@ class Item
 
 		$used_languages = '';
 		foreach (json_decode($item['language'], true) as $language => $reliability) {
-			$used_languages .= $iso639->languageByCode1($language) . ' (' . $language . "): " . number_format($reliability, 5) . '\n';
+			$code = DI::l10n()->toISO6391($language);
+
+			if ($code == L10n::UNDETERMINED_LANGUAGE) {
+				$native = $language = DI::l10n()->t('Undetermined');
+			} else {
+				$native   = $iso639->nativeByCode1($code);
+				$language = $iso639->languageByCode1($code);
+			}
+
+			if ($native != $language) {
+				$used_languages .= DI::l10n()->t('%s (%s - %s): %s', $native, $language, $code, number_format($reliability, 5)) . '\n';
+			} else {
+				$used_languages .= DI::l10n()->t('%s (%s): %s', $native, $code, number_format($reliability, 5)) . '\n';
+			}
 		}
 		$used_languages = DI::l10n()->t('Detected languages in this post:\n%s', $used_languages);
 		return $used_languages;
@@ -2044,13 +2301,17 @@ class Item
 		// Remove the scheme to make sure that "https" and "http" doesn't make a difference
 		unset($parsed['scheme']);
 
-		$hostPart = $host ?? $parsed['host'] ?? '';
+		$hostPart = $host ?: $parsed['host'] ?? '';
 		if (!$hostPart) {
-			Logger::warning('Empty host GUID part', ['uri' => $uri, 'host' => $host, 'parsed' => $parsed, 'callstack' => System::callstack(10)]);
+			Logger::warning('Empty host GUID part', ['uri' => $uri, 'host' => $host, 'parsed' => $parsed]);
 		}
 
 		// Glue it together to be able to make a hash from it
-		$host_id = implode('/', $parsed);
+		if (!empty($parsed)) {
+			$host_id = implode('/', (array)$parsed);
+		} else {
+			$host_id = $uri;
+		}
 
 		// Use a mixture of several hashes to provide some GUID like experience
 		return hash('crc32', $hostPart) . '-' . hash('joaat', $host_id) . '-' . hash('fnv164', $host_id);
@@ -2100,7 +2361,7 @@ class Item
 		/// @todo On private posts we could obfuscate the date
 		$update = ($arr['private'] != self::PRIVATE) || in_array($arr['network'], Protocol::FEDERATED);
 
-		// Is it a forum? Then we don't care about the rules from above
+		// Is it a group? Then we don't care about the rules from above
 		if (!$update && in_array($arr["network"], [Protocol::ACTIVITYPUB, Protocol::DFRN]) && ($arr["parent-uri-id"] === $arr["uri-id"])) {
 			if (DBA::exists('contact', ['id' => $arr['contact-id'], 'forum' => true])) {
 				$update = true;
@@ -2120,12 +2381,16 @@ class Item
 		}
 		// Now do the same for the system wide contacts with uid=0
 		if ($arr['private'] != self::PRIVATE) {
-			Contact::update(['failed' => false, 'local-data' => true, 'success_update' => $arr['received'], 'last-item' => $arr['received']],
-				['id' => $arr['owner-id']]);
+			Contact::update(
+				['failed' => false, 'local-data' => true, 'success_update' => $arr['received'], 'last-item' => $arr['received']],
+				['id' => $arr['owner-id']]
+			);
 
 			if ($arr['owner-id'] != $arr['author-id']) {
-				Contact::update(['failed' => false, 'local-data' => true, 'success_update' => $arr['received'], 'last-item' => $arr['received']],
-					['id' => $arr['author-id']]);
+				Contact::update(
+					['failed' => false, 'local-data' => true, 'success_update' => $arr['received'], 'last-item' => $arr['received']],
+					['id' => $arr['author-id']]
+				);
 			}
 		}
 	}
@@ -2151,29 +2416,44 @@ class Item
 
 			// All hashtags should point to the home server if "local_tags" is activated
 			if (DI::config()->get('system', 'local_tags')) {
-				$body = preg_replace("/#\[url\=([$URLSearchString]*)\](.*?)\[\/url\]/ism",
-					"#[url=" . DI::baseUrl() . "/search?tag=$2]$2[/url]", $body);
+				$body = preg_replace(
+					"/#\[url\=([$URLSearchString]*)\](.*?)\[\/url\]/ism",
+					"#[url=" . DI::baseUrl() . "/search?tag=$2]$2[/url]",
+					$body
+				);
 			}
 
 			// mask hashtags inside of url, bookmarks and attachments to avoid urls in urls
-			$body = preg_replace_callback("/\[url\=([$URLSearchString]*)\](.*?)\[\/url\]/ism",
+			$body = preg_replace_callback(
+				"/\[url\=([$URLSearchString]*)\](.*?)\[\/url\]/ism",
 				function ($match) {
 					return ("[url=" . str_replace("#", "&num;", $match[1]) . "]" . str_replace("#", "&num;", $match[2]) . "[/url]");
-				}, $body);
+				},
+				$body
+			);
 
-			$body = preg_replace_callback("/\[bookmark\=([$URLSearchString]*)\](.*?)\[\/bookmark\]/ism",
+			$body = preg_replace_callback(
+				"/\[bookmark\=([$URLSearchString]*)\](.*?)\[\/bookmark\]/ism",
 				function ($match) {
 					return ("[bookmark=" . str_replace("#", "&num;", $match[1]) . "]" . str_replace("#", "&num;", $match[2]) . "[/bookmark]");
-				}, $body);
+				},
+				$body
+			);
 
-			$body = preg_replace_callback("/\[attachment (.*?)\](.*?)\[\/attachment\]/ism",
+			$body = preg_replace_callback(
+				"/\[attachment (.*?)\](.*?)\[\/attachment\]/ism",
 				function ($match) {
 					return ("[attachment " . str_replace("#", "&num;", $match[1]) . "]" . $match[2] . "[/attachment]");
-				}, $body);
+				},
+				$body
+			);
 
 			// Repair recursive urls
-			$body = preg_replace("/&num;\[url\=([$URLSearchString]*)\](.*?)\[\/url\]/ism",
-				"&num;$2", $body);
+			$body = preg_replace(
+				"/&num;\[url\=([$URLSearchString]*)\](.*?)\[\/url\]/ism",
+				"&num;$2",
+				$body
+			);
 
 			foreach ($tags as $tag) {
 				if ((strpos($tag, '#') !== 0) || strpos($tag, '[url=') || strlen($tag) < 2 || $tag[1] == '#') {
@@ -2181,7 +2461,7 @@ class Item
 				}
 
 				$basetag = str_replace('_', ' ', substr($tag, 1));
-				$newtag = '#[url=' . DI::baseUrl() . '/search?tag=' . $basetag . ']' . $basetag . '[/url]';
+				$newtag = '#[url=' . DI::baseUrl() . '/search?tag=' . urlencode($basetag) . ']' . $basetag . '[/url]';
 
 				$body = str_replace($tag, $newtag, $body);
 			}
@@ -2196,7 +2476,7 @@ class Item
 	}
 
 	/**
-	 * look for mention tags and setup a second delivery chain for forum/community posts if appropriate
+	 * look for mention tags and setup a second delivery chain for group/community posts if appropriate
 	 *
 	 * @param int $uid
 	 * @param int $item_id
@@ -2206,8 +2486,6 @@ class Item
 	 */
 	private static function tagDeliver(int $uid, int $item_id): bool
 	{
-		$mention = false;
-
 		$owner = User::getOwnerDataById($uid);
 		if (!DBA::isResult($owner)) {
 			Logger::warning('User not found, quitting here.', ['uid' => $uid]);
@@ -2250,7 +2528,7 @@ class Item
 
 		if ($owner['page-flags'] == User::PAGE_FLAGS_PRVGROUP) {
 			$allow_cid = '';
-			$allow_gid = '<' . Group::FOLLOWERS . '>';
+			$allow_gid = '<' . Circle::FOLLOWERS . '>';
 			$deny_cid  = '';
 			$deny_gid  = '';
 			self::performActivity($item['id'], 'announce', $uid, $allow_cid, $allow_gid, $deny_cid, $deny_gid);
@@ -2279,16 +2557,15 @@ class Item
 			return;
 		}
 
-		$cdata = Contact::getPublicAndUserContactID($item['author-id'], $item['uid']);
-		if (empty($cdata['user']) || ($cdata['user'] != $item['contact-id'])) {
-			return;
-		}
-
-		if (!DBA::exists('contact', ['id' => $cdata['user'], 'remote_self' => Contact::MIRROR_NATIVE_RESHARE])) {
+		if (!DBA::exists('contact', ['id' => $cdata['user'], 'remote_self' => LocalRelationship::MIRROR_NATIVE_RESHARE])) {
 			return;
 		}
 
 		if (!in_array($item['network'], [Protocol::ACTIVITYPUB, Protocol::DFRN])) {
+			return;
+		}
+
+		if (User::getById($item['uid'], ['blocked'])['blocked'] ?? false) {
 			return;
 		}
 
@@ -2299,7 +2576,7 @@ class Item
 
 	public static function isRemoteSelf(array $contact, array &$datarray): bool
 	{
-		if ($contact['remote_self'] != Contact::MIRROR_OWN_POST) {
+		if ($contact['remote_self'] != LocalRelationship::MIRROR_OWN_POST) {
 			return false;
 		}
 
@@ -2326,11 +2603,19 @@ class Item
 			return false;
 		}
 
-		$datarray2 = $datarray;
-		Logger::info('remote-self start', ['contact' => $contact['url'], 'remote_self'=> $contact['remote_self'], 'item' => $datarray]);
+		if (User::getById($contact['uid'], ['blocked'])['blocked'] ?? false) {
+			Logger::info('User is blocked', ['contact' => $contact]);
+			return false;
+		}
 
-		$self = DBA::selectFirst('contact', ['id', 'name', 'url', 'thumb'],
-					['uid' => $contact['uid'], 'self' => true]);
+		$datarray2 = $datarray;
+		Logger::info('remote-self start', ['contact' => $contact['url'], 'remote_self' => $contact['remote_self'], 'item' => $datarray]);
+
+		$self = DBA::selectFirst(
+			'contact',
+			['id', 'name', 'url', 'thumb'],
+			['uid' => $contact['uid'], 'self' => true]
+		);
 		if (!DBA::isResult($self)) {
 			Logger::error('Self contact not found', ['uid' => $contact['uid']]);
 			return false;
@@ -2366,11 +2651,14 @@ class Item
 
 			// Store the original post
 			$result = self::insert($datarray2);
-			Logger::info('remote-self post original item', ['contact' => $contact['url'], 'result'=> $result, 'item' => $datarray2]);
+			Logger::info('remote-self post original item', ['contact' => $contact['url'], 'result' => $result, 'item' => $datarray2]);
 		} else {
-			$datarray['private'] = self::PUBLIC;
 			$datarray['app'] = 'Feed';
 			$result = true;
+		}
+
+		if ($result) {
+			unset($datarray['private']);
 		}
 
 		return (bool)$result;
@@ -2493,7 +2781,8 @@ class Item
 		if (($obj1['allow_cid'] == $obj2['allow_cid'])
 			&& ($obj1['allow_gid'] == $obj2['allow_gid'])
 			&& ($obj1['deny_cid'] == $obj2['deny_cid'])
-			&& ($obj1['deny_gid'] == $obj2['deny_gid'])) {
+			&& ($obj1['deny_gid'] == $obj2['deny_gid'])
+		) {
 			return true;
 		}
 
@@ -2524,13 +2813,13 @@ class Item
 			$expand_followers = true;
 		}
 
-		$allow_people = $aclFormatter->expand($obj['allow_cid']);
-		$allow_groups = Group::expand($obj['uid'], $aclFormatter->expand($obj['allow_gid']), $check_dead, $expand_followers);
-		$deny_people  = $aclFormatter->expand($obj['deny_cid']);
-		$deny_groups  = Group::expand($obj['uid'], $aclFormatter->expand($obj['deny_gid']), $check_dead);
-		$recipients   = array_unique(array_merge($allow_people, $allow_groups));
-		$deny         = array_unique(array_merge($deny_people, $deny_groups));
-		$recipients   = array_diff($recipients, $deny);
+		$allow_people  = $aclFormatter->expand($obj['allow_cid']);
+		$allow_circles = Circle::expand($obj['uid'], $aclFormatter->expand($obj['allow_gid']), $check_dead, $expand_followers);
+		$deny_people   = $aclFormatter->expand($obj['deny_cid']);
+		$deny_circles  = Circle::expand($obj['uid'], $aclFormatter->expand($obj['deny_gid']), $check_dead);
+		$recipients    = array_unique(array_merge($allow_people, $allow_circles));
+		$deny          = array_unique(array_merge($deny_people, $deny_circles));
+		$recipients    = array_diff($recipients, $deny);
 		return $recipients;
 	}
 
@@ -2540,8 +2829,10 @@ class Item
 			return;
 		}
 
-		$condition = ["`uid` = ? AND NOT `deleted` AND `gravity` = ?",
-			$uid, self::GRAVITY_PARENT];
+		$condition = [
+			"`uid` = ? AND NOT `deleted` AND `gravity` = ?",
+			$uid, self::GRAVITY_PARENT
+		];
 
 		/*
 		 * $expire_network_only = save your own wall posts
@@ -2615,8 +2906,10 @@ class Item
 			return false;
 		}
 
-		$condition = ["`uid` = ? AND `wall` = ? AND NOT `deleted` AND `visible` AND `received` >= ?",
-			$uid, $wall, $user['register_date']];
+		$condition = [
+			"`uid` = ? AND `wall` = ? AND NOT `deleted` AND `visible` AND `received` >= ?",
+			$uid, $wall, $user['register_date']
+		];
 		$params = ['order' => ['received' => false]];
 		$thread = Post::selectFirstThread(['received'], $condition, $params);
 		if (DBA::isResult($thread)) {
@@ -2748,8 +3041,10 @@ class Item
 			$vids = Verb::getID($activity);
 		}
 
-		$condition = ['vid' => $vids, 'deleted' => false, 'gravity' => self::GRAVITY_ACTIVITY,
-			'author-id' => $author_id, 'uid' => $uid, 'thr-parent-id' => $uri_id];
+		$condition = [
+			'vid' => $vids, 'deleted' => false, 'gravity' => self::GRAVITY_ACTIVITY,
+			'author-id' => $author_id, 'uid' => $uid, 'thr-parent-id' => $uri_id
+		];
 		$like_item = Post::selectFirst(['id', 'guid', 'verb'], $condition);
 
 		if (DBA::isResult($like_item)) {
@@ -2853,12 +3148,14 @@ class Item
 			// Profile owner - everything is visible
 			$condition = [];
 		} elseif ($remote_user) {
-			 // Authenticated visitor - fetch the matching permissionsets
+			// Authenticated visitor - fetch the matching permissionsets
 			$permissionSets = DI::permissionSet()->selectByContactId($remote_user, $owner_id);
 			if (!empty($set)) {
-				$condition = ["(`private` != ? OR (`private` = ? AND `wall`
+				$condition = [
+					"(`private` != ? OR (`private` = ? AND `wall`
 					AND `psid` IN (" . implode(', ', array_fill(0, count($set), '?')) . ")))",
-					self::PRIVATE, self::PRIVATE];
+					self::PRIVATE, self::PRIVATE
+				];
 				$condition = array_merge($condition, $permissionSets->column('id'));
 			}
 		}
@@ -2896,9 +3193,9 @@ class Item
 			/*
 			 * Authenticated visitor. Unless pre-verified,
 			 * check that the contact belongs to this $owner_id
-			 * and load the groups the visitor belongs to.
+			 * and load the circles the visitor belongs to.
 			 * If pre-verified, the caller is expected to have already
-			 * done this and passed the groups into this function.
+			 * done this and passed the circles into this function.
 			 */
 			$permissionSets = DI::permissionSet()->selectByContactId($remote_user, $owner_id);
 
@@ -2954,7 +3251,8 @@ class Item
 		$rendered_hash = $item['rendered-hash'] ?? '';
 		$rendered_html = $item['rendered-html'] ?? '';
 
-		if ($rendered_hash == ''
+		if (
+			$rendered_hash == ''
 			|| $rendered_html == ''
 			|| $rendered_hash != hash('md5', BBCode::VERSION . '::' . $body)
 			|| DI::config()->get('system', 'ignore_cache')
@@ -3002,8 +3300,8 @@ class Item
 	public static function prepareBody(array &$item, bool $attach = false, bool $is_preview = false, bool $only_cache = false): string
 	{
 		$a = DI::app();
+		$uid = DI::userSession()->getLocalUserId();
 		Hook::callAll('prepare_body_init', $item);
-
 
 		// In order to provide theme developers more possibilities, event items
 		// are treated differently.
@@ -3017,6 +3315,7 @@ class Item
 		$item['tags'] = $tags['tags'];
 		$item['hashtags'] = $tags['hashtags'];
 		$item['mentions'] = $tags['mentions'];
+		$sensitive = $item['sensitive'] && !DI::pConfig()->get($uid, 'system', 'display_sensitive', false);
 
 		if (!$is_preview) {
 			$item['body'] = preg_replace("#\s*\[attachment .*?].*?\[/attachment]\s*#ism", "\n", $item['body']);
@@ -3045,7 +3344,7 @@ class Item
 			$item['body'] = BBCode::removeSharedData($item['body']);
 		} elseif (empty($shared_item['uri-id']) && empty($item['quote-uri-id']) && ($item['network'] != Protocol::DIASPORA)) {
 			$media = Post\Media::getByURIId($item['uri-id'], [Post\Media::ACTIVITY]);
-			if (!empty($media)) {
+			if (!empty($media) && ($media[0]['media-uri-id'] != $item['uri-id'])) {
 				$shared_item = Post::selectFirst($fields, ['uri-id' => $media[0]['media-uri-id'], 'uid' => [$item['uid'], 0]]);
 				if (empty($shared_item['uri-id'])) {
 					$shared_item = Post::selectFirst($fields, ['plink' => $media[0]['url'], 'uid' => [$item['uid'], 0]]);
@@ -3071,7 +3370,7 @@ class Item
 
 		if (!empty($quote_uri_id)) {
 			if (isset($shared_item['plink'])) {
-				$item['body'] .= "\n" . DI::contentItem()->createSharedBlockByArray($shared_item);
+				$item['body'] .= "\n" . DI::contentItem()->createSharedBlockByArray($shared_item, false, true);
 			} else {
 				DI::logger()->warning('Missing plink in shared item', ['item' => $item, 'shared' => $shared, 'quote_uri_id' => $quote_uri_id, 'shared_item' => $shared_item]);
 			}
@@ -3080,15 +3379,15 @@ class Item
 		if (!empty($shared_item['uri-id'])) {
 			$shared_uri_id = $shared_item['uri-id'];
 			$shared_links[] = strtolower($shared_item['plink']);
-			$shared_attachments = Post\Media::splitAttachments($shared_uri_id, [], $shared_item['has-media']);
-			$shared_links = array_merge($shared_links, array_column($shared_attachments['visual'], 'url'));
-			$shared_links = array_merge($shared_links, array_column($shared_attachments['link'], 'url'));
-			$shared_links = array_merge($shared_links, array_column($shared_attachments['additional'], 'url'));
-			$item['body'] = self::replaceVisualAttachments($shared_attachments, $item['body']);
+			$sharedSplitAttachments = DI::postMediaRepository()->splitAttachments($shared_uri_id, [], $shared_item['has-media']);
+			$shared_links = array_merge($shared_links, $sharedSplitAttachments['visual']->column('url'));
+			$shared_links = array_merge($shared_links, $sharedSplitAttachments['link']->column('url'));
+			$shared_links = array_merge($shared_links, $sharedSplitAttachments['additional']->column('url'));
+			$item['body'] = self::replaceVisualAttachments($sharedSplitAttachments['visual'], $item['body'], $sensitive);
 		}
 
-		$attachments = Post\Media::splitAttachments($item['uri-id'], $shared_links, $item['has-media'] ?? false);
-		$item['body'] = self::replaceVisualAttachments($attachments, $item['body'] ?? '');
+		$itemSplitAttachments = DI::postMediaRepository()->splitAttachments($item['uri-id'], $shared_links, $item['has-media'] ?? false);
+		$item['body'] = self::replaceVisualAttachments($itemSplitAttachments['visual'], $item['body'] ?? '', $sensitive);
 
 		self::putInCache($item);
 		$item['body'] = $body;
@@ -3109,11 +3408,11 @@ class Item
 				$filter_reasons[] = DI::l10n()->t('Content from %s is collapsed', $item['author-name']);
 			}
 
-			if (!empty($item['content-warning']) && (!DI::userSession()->getLocalUserId() || !DI::pConfig()->get(DI::userSession()->getLocalUserId(), 'system', 'disable_cw', false))) {
+			if (!empty($item['content-warning']) && (!$uid || !DI::pConfig()->get($uid, 'system', 'disable_cw', false))) {
 				$filter_reasons[] = DI::l10n()->t('Content warning: %s', $item['content-warning']);
 			}
 
-			$item['attachments'] = $attachments;
+			$item['attachments'] = $itemSplitAttachments;
 
 			$hook_data = [
 				'item' => $item,
@@ -3142,18 +3441,24 @@ class Item
 			return $s;
 		}
 
-		if (!empty($shared_attachments)) {
-			$s = self::addGallery($s, $shared_attachments, $item['uri-id']);
-			$s = self::addVisualAttachments($shared_attachments, $shared_item, $s, true);
-			$s = self::addLinkAttachment($shared_uri_id ?: $item['uri-id'], $shared_attachments, $body, $s, true, $quote_shared_links);
-			$s = self::addNonVisualAttachments($shared_attachments, $item, $s, true);
+		if (!empty($sharedSplitAttachments)) {
+			$s = self::addGallery($s, $sharedSplitAttachments['visual'], $sensitive);
+			$s = self::addVisualAttachments($sharedSplitAttachments['visual'], $shared_item, $s, true, $sensitive);
+			$s = self::addLinkAttachment($shared_uri_id ?: $item['uri-id'], $sharedSplitAttachments, $body, $s, true, $quote_shared_links, $sensitive);
+			$s = self::addNonVisualAttachments($sharedSplitAttachments['additional'], $item, $s, true);
 			$body = BBCode::removeSharedData($body);
 		}
 
-		$s = self::addGallery($s, $attachments, $item['uri-id']);
-		$s = self::addVisualAttachments($attachments, $item, $s, false);
-		$s = self::addLinkAttachment($item['uri-id'], $attachments, $body, $s, false, $shared_links);
-		$s = self::addNonVisualAttachments($attachments, $item, $s, false);
+		$pos = strpos($s, BBCode::SHARED_ANCHOR);
+		if ($pos) {
+			$shared_html = substr($s, $pos + strlen(BBCode::SHARED_ANCHOR));
+			$s = substr($s, 0, $pos);
+		}
+
+		$s = self::addGallery($s, $itemSplitAttachments['visual'], $sensitive);
+		$s = self::addVisualAttachments($itemSplitAttachments['visual'], $item, $s, false, $sensitive);
+		$s = self::addLinkAttachment($item['uri-id'], $itemSplitAttachments, $body, $s, false, $shared_links, $sensitive);
+		$s = self::addNonVisualAttachments($itemSplitAttachments['additional'], $item, $s, false);
 		$s = self::addQuestions($item, $s);
 
 		// Map.
@@ -3170,6 +3475,10 @@ class Item
 			$s = preg_replace('|(<img[^>]+src="[^"]+/photo/[0-9a-f]+)-[0-9]|', "$1-" . $ps, $s);
 		}
 
+		if (!empty($shared_html)) {
+			$s .= $shared_html;
+		}
+
 		$s = HTML::applyContentFilter($s, $filter_reasons);
 
 		$hook_data = ['item' => $item, 'html' => $s];
@@ -3178,44 +3487,36 @@ class Item
 	}
 
 	/**
-	 * @param array $images
-	 * @return string
-	 * @throws \Friendica\Network\HTTPException\ServiceUnavailableException
-	 */
-	private static function makeImageGrid(array $images): string
-	{
-		// Image for first column (fc) and second column (sc)
-		$images_fc = [];
-		$images_sc = [];
-
-		for ($i = 0; $i < count($images); $i++) {
-			($i % 2 == 0) ? ($images_fc[] = $images[$i]) : ($images_sc[] = $images[$i]);
-		}
-
-		return Renderer::replaceMacros(Renderer::getMarkupTemplate('content/image_grid.tpl'), [
-			'columns' => [
-				'fc' => $images_fc,
-				'sc' => $images_sc,
-			],
-		]);
-	}
-
-	/**
 	 * Modify links to pictures to links for the "Fancybox" gallery
 	 *
-	 * @param string $s
-	 * @param array $attachments
-	 * @param integer $uri_id
+	 * @param string     $s
+	 * @param PostMedias $PostMedias
+	 * @param bool       $sensitive
 	 * @return string
 	 */
-	private static function addGallery(string $s, array $attachments, int $uri_id): string
+	private static function addGallery(string $s, PostMedias $PostMedias, bool $sensitive): string
 	{
-		foreach ($attachments['visual'] as $attachment) {
-			if (empty($attachment['preview']) || ($attachment['type'] != Post\Media::IMAGE)) {
+		foreach ($PostMedias as $PostMedia) {
+			if (!$PostMedia->preview || ($PostMedia->type !== Post\Media::IMAGE)) {
 				continue;
 			}
-			$s = str_replace('<a href="' . $attachment['url'] . '"', '<a data-fancybox="' . $uri_id . '" href="' . $attachment['url'] . '"', $s);
+
+			if ($PostMedia->hasDimensions()) {
+				$pattern = '#<a href="' . preg_quote($PostMedia->url) . '">(.*?)"></a>#';
+
+				$s = preg_replace_callback($pattern, function () use ($PostMedia, $sensitive) {
+					return Renderer::replaceMacros(Renderer::getMarkupTemplate('content/image/single_with_height_allocation.tpl'), [
+						'$image' => $PostMedia,
+						'$sensitive' => $sensitive,
+						'$allocated_height' => $PostMedia->getAllocatedHeight(),
+						'$allocated_max_width' => ($PostMedia->previewWidth ?? $PostMedia->width) . 'px',
+					]);
+				}, $s);
+			} else {
+				$s = str_replace('<a href="' . $PostMedia->url . '"', '<a data-fancybox="uri-id-' . $PostMedia->uriId . '" href="' . $PostMedia->url . '"', $s);
+			}
 		}
+
 		return $s;
 	}
 
@@ -3239,7 +3540,7 @@ class Item
 		unset($urlparts['fragment']);
 
 		try {
-			$url = (string)Uri::fromParts($urlparts);
+			$url = (string)Uri::fromParts((array)$urlparts);
 		} catch (\InvalidArgumentException $e) {
 			DI::logger()->notice('Invalid URL', ['$url' => $url, '$urlparts' => $urlparts]);
 			/* See https://github.com/friendica/friendica/issues/12113
@@ -3259,8 +3560,10 @@ class Item
 		}
 
 		foreach ([0, 1, 2] as $size) {
-			if (preg_match('#/photo/.*-' . $size . '\.#ism', $url) &&
-				strpos(preg_replace('#(/photo/.*)-[012]\.#ism', '$1-' . $size . '.', $body), $url)) {
+			if (
+				preg_match('#/photo/.*-' . $size . '\.#ism', $url) &&
+				strpos(preg_replace('#(/photo/.*)-[012]\.#ism', '$1-' . $size . '.', $body), $url)
+			) {
 				return true;
 			}
 		}
@@ -3271,30 +3574,31 @@ class Item
 	/**
 	 * Replace visual attachments in the body
 	 *
-	 * @param array $attachments
-	 * @param string $body
+	 * @param PostMedias $PostMedias
+	 * @param string     $body
+	 * @param bool       $sensitive
 	 * @return string modified body
 	 */
-	private static function replaceVisualAttachments(array $attachments, string $body): string
+	private static function replaceVisualAttachments(PostMedias $PostMedias, string $body, bool $sensitive): string
 	{
 		DI::profiler()->startRecording('rendering');
 
-		foreach ($attachments['visual'] as $attachment) {
-			if (!empty($attachment['preview'])) {
-				if (Network::isLocalLink($attachment['preview'])) {
+		foreach ($PostMedias as $PostMedia) {
+			if ($PostMedia->preview) {
+				if (DI::baseUrl()->isLocalUri($PostMedia->preview)) {
 					continue;
 				}
-				$proxy   = Post\Media::getPreviewUrlForId($attachment['id'], Proxy::SIZE_LARGE);
-				$search  = ['[img=' . $attachment['preview'] . ']', ']' . $attachment['preview'] . '[/img]'];
+				$proxy   = DI::baseUrl() . $PostMedia->getPreviewPath(Proxy::SIZE_LARGE, $sensitive);
+				$search  = ['[img=' . $PostMedia->preview . ']', ']' . $PostMedia->preview . '[/img]'];
 				$replace = ['[img=' . $proxy . ']', ']' . $proxy . '[/img]'];
 
 				$body = str_replace($search, $replace, $body);
-			} elseif ($attachment['filetype'] == 'image') {
-				if (Network::isLocalLink($attachment['url'])) {
+			} elseif ($PostMedia->mimetype->type == 'image') {
+				if (DI::baseUrl()->isLocalUri($PostMedia->url)) {
 					continue;
 				}
-				$proxy   = Post\Media::getUrlForId($attachment['id']);
-				$search  = ['[img=' . $attachment['url'] . ']', ']' . $attachment['url'] . '[/img]'];
+				$proxy   = DI::baseUrl() . $PostMedia->getPreviewPath(Proxy::SIZE_LARGE, $sensitive);
+				$search  = ['[img=' . $PostMedia->url . ']', ']' . $PostMedia->url . '[/img]'];
 				$replace = ['[img=' . $proxy . ']', ']' . $proxy . '[/img]'];
 
 				$body = str_replace($search, $replace, $body);
@@ -3307,29 +3611,32 @@ class Item
 	/**
 	 * Add visual attachments to the content
 	 *
-	 * @param array $attachments
-	 * @param array $item
-	 * @param string $content
+	 * @param PostMedias $PostMedias
+	 * @param array      $item
+	 * @param string     $content
+	 * @param bool       $shared
+	 * @param bool       $sensitive
 	 * @return string modified content
+	 * @throws ServiceUnavailableException
 	 */
-	private static function addVisualAttachments(array $attachments, array $item, string $content, bool $shared): string
+	private static function addVisualAttachments(PostMedias $PostMedias, array $item, string $content, bool $shared, bool $sensitive): string
 	{
 		DI::profiler()->startRecording('rendering');
 		$leading  = '';
 		$trailing = '';
-		$images   = [];
+		$images   = new PostMedias();
 
 		// @todo In the future we should make a single for the template engine with all media in it. This allows more flexibilty.
-		foreach ($attachments['visual'] as $attachment) {
-			if (self::containsLink($item['body'], $attachment['preview'] ?? $attachment['url'], $attachment['type'])) {
+		foreach ($PostMedias as $PostMedia) {
+			if (self::containsLink($item['body'], $PostMedia->preview ?? $PostMedia->url, $PostMedia->type)) {
 				continue;
 			}
 
-			if ($attachment['filetype'] == 'image') {
-				$preview_url = Post\Media::getPreviewUrlForId($attachment['id'], ($attachment['width'] > $attachment['height']) ? Proxy::SIZE_MEDIUM : Proxy::SIZE_LARGE);
-			} elseif (!empty($attachment['preview'])) {
-				$preview_url = Post\Media::getPreviewUrlForId($attachment['id'], Proxy::SIZE_LARGE);
+			if ($PostMedia->mimetype->type == 'image' || $PostMedia->preview) {
+				$preview_size = Proxy::SIZE_MEDIUM;
+				$preview_url = DI::baseUrl() . $PostMedia->getPreviewPath($preview_size, $sensitive);
 			} else {
+				$preview_size = 0;
 				$preview_url = '';
 			}
 
@@ -3337,15 +3644,24 @@ class Item
 				continue;
 			}
 
-			if (($attachment['filetype'] == 'video')) {
+			if ($PostMedia->mimetype->type == 'video') {
+				if (($PostMedia->height ?? 0) > ($PostMedia->width ?? 0)) {
+					$height = min(DI::config()->get('system', 'max_video_height') ?: '100%', $PostMedia->height);
+					$width  = 'auto';
+				} else {
+					$height = 'auto';
+					$width  = '100%';
+				}
 				/// @todo Move the template to /content as well
 				$media = Renderer::replaceMacros(Renderer::getMarkupTemplate('video_top.tpl'), [
 					'$video' => [
-						'id'      => $attachment['id'],
-						'src'     => $attachment['url'],
-						'name'    => $attachment['name'] ?: $attachment['url'],
+						'id'      => $PostMedia->id,
+						'src'     => (string)$PostMedia->url,
+						'name'    => $PostMedia->name ?: $PostMedia->url,
 						'preview' => $preview_url,
-						'mime'    => $attachment['mimetype'],
+						'mime'    => (string)$PostMedia->mimetype,
+						'height'  => $height,
+						'width'   => $width,
 					],
 				]);
 				if (($item['post-type'] ?? null) == Item::PT_VIDEO) {
@@ -3353,13 +3669,13 @@ class Item
 				} else {
 					$trailing .= $media;
 				}
-			} elseif ($attachment['filetype'] == 'audio') {
+			} elseif ($PostMedia->mimetype->type == 'audio') {
 				$media = Renderer::replaceMacros(Renderer::getMarkupTemplate('content/audio.tpl'), [
 					'$audio' => [
-						'id'     => $attachment['id'],
-						'src'    => $attachment['url'],
-						'name'   => $attachment['name'] ?: $attachment['url'],
-						'mime'   => $attachment['mimetype'],
+						'id'     => $PostMedia->id,
+						'src'    => (string)$PostMedia->url,
+						'name'   => $PostMedia->name ?: $PostMedia->url,
+						'mime'   => (string)$PostMedia->mimetype,
 					],
 				]);
 				if (($item['post-type'] ?? null) == Item::PT_AUDIO) {
@@ -3367,23 +3683,17 @@ class Item
 				} else {
 					$trailing .= $media;
 				}
-			} elseif ($attachment['filetype'] == 'image') {
-				$src_url = Post\Media::getUrlForId($attachment['id']);
+			} elseif ($PostMedia->mimetype->type == 'image') {
+				$src_url = DI::baseUrl() . $PostMedia->getPhotoPath();
 				if (self::containsLink($item['body'], $src_url)) {
 					continue;
 				}
-				$images[] = ['src' => $src_url, 'preview' => $preview_url, 'attachment' => $attachment, 'uri_id' => $item['uri-id']];
+
+				$images[] = $PostMedia->withUrl(new Uri($src_url))->withPreview(new Uri($preview_url), $preview_size);
 			}
 		}
 
-		$media = '';
-		if (count($images) > 1) {
-			$media = self::makeImageGrid($images);
-		} elseif (count($images) == 1) {
-			$media = Renderer::replaceMacros(Renderer::getMarkupTemplate('content/image.tpl'), [
-				'$image' => $images[0],
-			]);
-		}
+		$media = Image::getBodyAttachHtml($images);
 
 		// On Diaspora posts the attached pictures are leading
 		if ($item['network'] == Protocol::DIASPORA) {
@@ -3412,58 +3722,63 @@ class Item
 	/**
 	 * Add link attachment to the content
 	 *
-	 * @param array  $attachments
-	 * @param string $body
-	 * @param string $content
-	 * @param bool   $shared
-	 * @param array  $ignore_links A list of URLs to ignore
+	 * @param int          $uriid
+	 * @param PostMedias[] $attachments
+	 * @param string       $body
+	 * @param string       $content
+	 * @param bool         $shared
+	 * @param array        $ignore_links A list of URLs to ignore
+	 * @param bool         $sensitive
 	 * @return string modified content
+	 * @throws InternalServerErrorException
+	 * @throws ServiceUnavailableException
 	 */
-	private static function addLinkAttachment(int $uriid, array $attachments, string $body, string $content, bool $shared, array $ignore_links): string
+	private static function addLinkAttachment(int $uriid, array $attachments, string $body, string $content, bool $shared, array $ignore_links, bool $sensitive): string
 	{
 		DI::profiler()->startRecording('rendering');
 		// Don't show a preview when there is a visual attachment (audio or video)
-		$types = array_column($attachments['visual'], 'type');
-		$preview = !in_array(Post\Media::IMAGE, $types) && !in_array(Post\Media::VIDEO, $types);
+		$types = $attachments['visual']->column('type');
+		$preview = !in_array(PostMedia::TYPE_IMAGE, $types) && !in_array(PostMedia::TYPE_VIDEO, $types);
 
-		if (!empty($attachments['link'])) {
-			foreach ($attachments['link'] as $link) {
-				$found = false;
-				foreach ($ignore_links as $ignore_link) {
-					if (Strings::compareLink($link['url'], $ignore_link)) {
-						$found = true;
-					}
+		/** @var ?PostMedia $attachment */
+		$attachment = null;
+		foreach ($attachments['link'] as $PostMedia) {
+			$found = false;
+			foreach ($ignore_links as $ignore_link) {
+				if (Strings::compareLink($PostMedia->url, $ignore_link)) {
+					$found = true;
 				}
-				// @todo Judge between the links to use the one with most information
-				if (!$found && (empty($attachment) || !empty($link['author-name']) ||
-					(empty($attachment['name']) && !empty($link['name'])) ||
-					(empty($attachment['description']) && !empty($link['description'])) ||
-					(empty($attachment['preview']) && !empty($link['preview'])))) {
-					$attachment = $link;
-				}
+			}
+			// @todo Judge between the links to use the one with most information
+			if (!$found && (empty($attachment) || $PostMedia->authorName ||
+				(!$attachment->name && $PostMedia->name) ||
+				(!$attachment->description && $PostMedia->description) ||
+				(!$attachment->preview && $PostMedia->preview))) {
+				$attachment = $PostMedia;
 			}
 		}
 
 		if (!empty($attachment)) {
 			$data = [
 				'after' => '',
-				'author_name' => $attachment['author-name'] ?? '',
-				'author_url' =>  $attachment['author-url'] ?? '',
-				'description' => $attachment['description'] ?? '',
+				'author_name' => $attachment->authorName ?? '',
+				'author_url' => (string)($attachment->authorUrl ?? ''),
+				'description' => $attachment->description ?? '',
 				'image' => '',
 				'preview' => '',
-				'provider_name' => $attachment['publisher-name'] ?? '',
-				'provider_url' => $attachment['publisher-url'] ?? '',
+				'provider_name' => $attachment->publisherName ?? '',
+				'provider_url' => (string)($attachment->publisherUrl ?? ''),
 				'text' => '',
-				'title' => $attachment['name'] ?? '',
+				'title' => $attachment->name ?? '',
 				'type' => 'link',
-				'url' => $attachment['url']];
+				'url' => (string)$attachment->url,
+			];
 
-			if ($preview && !empty($attachment['preview'])) {
-				if ($attachment['preview-width'] >= 500) {
-					$data['image'] = Post\Media::getPreviewUrlForId($attachment['id'], Proxy::SIZE_MEDIUM);
+			if ($preview && $attachment->preview) {
+				if ($attachment->previewWidth >= 500) {
+					$data['image'] = DI::baseUrl() . $attachment->getPreviewPath(Proxy::SIZE_MEDIUM, $sensitive);
 				} else {
-					$data['preview'] = Post\Media::getPreviewUrlForId($attachment['id'], Proxy::SIZE_MEDIUM);
+					$data['preview'] = DI::baseUrl() . $attachment->getPreviewPath(Proxy::SIZE_MEDIUM, $sensitive);
 				}
 			}
 
@@ -3487,6 +3802,12 @@ class Item
 		} elseif (preg_match("/.*(\[attachment.*?\].*?\[\/attachment\]).*/ism", $body, $match)) {
 			$data = BBCode::getAttachmentData($match[1]);
 		}
+
+		if ($sensitive) {
+			$data['image']   = '';
+			$data['preview'] = '';
+		}
+
 		DI::profiler()->stopRecording();
 
 		if (isset($data['url']) && !in_array(strtolower($data['url']), $ignore_links)) {
@@ -3531,34 +3852,41 @@ class Item
 	}
 
 	/**
-	 * Add non visual attachments to the content
+	 * Add non-visual attachments to the content
 	 *
-	 * @param array $attachments
-	 * @param array $item
-	 * @param string $content
+	 * @param PostMedias $PostMedias
+	 * @param array      $item
+	 * @param string     $content
 	 * @return string modified content
+	 * @throws InternalServerErrorException
+	 * @throws \ImagickException
 	 */
-	private static function addNonVisualAttachments(array $attachments, array $item, string $content): string
+	private static function addNonVisualAttachments(PostMedias $PostMedias, array $item, string $content): string
 	{
 		DI::profiler()->startRecording('rendering');
 		$trailing = '';
-		foreach ($attachments['additional'] as $attachment) {
-			if (strpos($item['body'], $attachment['url'])) {
+		foreach ($PostMedias as $PostMedia) {
+			if (strpos($item['body'], (string)$PostMedia->url)) {
 				continue;
 			}
 
-			$author = ['uid' => 0, 'id' => $item['author-id'],
-				'network' => $item['author-network'], 'url' => $item['author-link']];
-			$the_url = Contact::magicLinkByContact($author, $attachment['url']);
+			$author = [
+				'uid'     => 0,
+				'id'      => $item['author-id'],
+				'network' => $item['author-network'],
+				'url'     => $item['author-link'],
+				'alias'   => $item['author-alias']
+			];
+			$the_url = Contact::magicLinkByContact($author, $PostMedia->url);
 
-			$title = Strings::escapeHtml(trim(($attachment['description'] ?? '') ?: $attachment['url']));
+			$title = Strings::escapeHtml(trim($PostMedia->description ?? '' ?: $PostMedia->url));
 
-			if (!empty($attachment['size'])) {
-				$title .= ' ' . $attachment['size'] . ' ' . DI::l10n()->t('bytes');
+			if ($PostMedia->size) {
+				$title .= ' ' . $PostMedia->size . ' ' . DI::l10n()->t('bytes');
 			}
 
 			/// @todo Use a template
-			$icon = '<div class="attachtype icon s22 type-' . $attachment['filetype'] . ' subtype-' . $attachment['subtype'] . '"></div>';
+			$icon = '<div class="attachtype icon s22 type-' . $PostMedia->mimetype->type . ' subtype-' . $PostMedia->mimetype->subtype . '"></div>';
 			$trailing .= '<a href="' . strip_tags($the_url) . '" title="' . $title . '" class="attachlink" target="_blank" rel="noopener noreferrer" >' . $icon . '</a>';
 		}
 
@@ -3585,19 +3913,19 @@ class Item
 			foreach ($options as $key => $option) {
 				if ($question['voters'] > 0) {
 					$percent = $option['replies'] / $question['voters'] * 100;
-					$options[$key]['vote'] = DI::l10n()->tt('%2$s (%3$d%%, %1$d vote)', '%2$s (%3$d%%, %1$d votes)', $option['replies'], $option['name'], round($percent, 1));
+					$options[$key]['vote'] = DI::l10n()->tt('%2$s (%3$d%%, %1$d vote)', '%2$s (%3$d%%, %1$d votes)', $option['replies'] ?? 0, $option['name'], round($percent, 1));
 				} else {
-					$options[$key]['vote'] = DI::l10n()->tt('%2$s (%1$d vote)', '%2$s (%1$d votes)', $option['replies'], $option['name']);
+					$options[$key]['vote'] = DI::l10n()->tt('%2$s (%1$d vote)', '%2$s (%1$d votes)', $option['replies'] ?? 0, $option['name']);
 				}
 			}
 
 			if (!empty($question['voters']) && !empty($question['endtime'])) {
-				$summary = DI::l10n()->tt('%d voter. Poll end: %s', '%d voters. Poll end: %s', $question['voters'], Temporal::getRelativeDate($question['endtime']));
+				$summary = DI::l10n()->tt('%d voter. Poll end: %s', '%d voters. Poll end: %s', $question['voters'] ?? 0, Temporal::getRelativeDate($question['endtime']));
 			} elseif (!empty($question['voters'])) {
-				$summary = DI::l10n()->tt('%d voter.', '%d voters.', $question['voters']);
+				$summary = DI::l10n()->tt('%d voter.', '%d voters.', $question['voters'] ?? 0);
 			} elseif (!empty($question['endtime'])) {
 				$summary = DI::l10n()->t('Poll end: %s', Temporal::getRelativeDate($question['endtime']));
-		 	} else {
+			} else {
 				$summary = '';
 			}
 
@@ -3606,7 +3934,7 @@ class Item
 				'$options'  => $options,
 				'$summary'  => $summary,
 			]);
-	}
+		}
 		DI::profiler()->stopRecording();
 		return $content;
 	}
@@ -3635,8 +3963,13 @@ class Item
 			];
 
 			if (!empty($plink) && ($item['private'] == self::PRIVATE)) {
-				$author = ['uid' => 0, 'id' => $item['author-id'],
-					'network' => $item['author-network'], 'url' => $item['author-link']];
+				$author = [
+					'uid'     => 0,
+					'id'      => $item['author-id'],
+					'network' => $item['author-network'],
+					'url'     => $item['author-link'],
+					'alias'   => $item['author-alias'],
+				];
 				$plink = Contact::magicLinkByContact($author, $plink);
 			}
 
@@ -3659,15 +3992,22 @@ class Item
 	}
 
 	/**
-	 * Does the given uri-id belongs to a post that is sent as starting post to a forum?
+	 * Does the given uri-id belongs to a post that is sent as starting post to a group?
+	 * This does apply to posts that are sent via ! and not in parallel to a group via @
 	 *
 	 * @param int $uri_id
 	 *
-	 * @return boolean "true" when it is a forum post
+	 * @return boolean "true" when it is a group post
 	 */
-	public static function isForumPost(int $uri_id): bool
+	public static function isGroupPost(int $uri_id): bool
 	{
-		foreach (Tag::getByURIId($uri_id, [Tag::EXCLUSIVE_MENTION]) as $tag) {
+		if (Post::exists(['private' => Item::PUBLIC, 'uri-id' => $uri_id])) {
+			return false;
+		}
+
+		foreach (Tag::getByURIId($uri_id, [Tag::EXCLUSIVE_MENTION, Tag::AUDIENCE]) as $tag) {
+			// @todo Possibly check for a public audience in the future, see https://socialhub.activitypub.rocks/t/fep-1b12-group-federation/2724
+			// and https://codeberg.org/fediverse/fep/src/branch/main/feps/fep-1b12.md
 			if (DBA::exists('contact', ['uid' => 0, 'nurl' => Strings::normaliseLink($tag['url']), 'contact-type' => Contact::TYPE_COMMUNITY])) {
 				return true;
 			}
@@ -3730,11 +4070,12 @@ class Item
 	 * Fetches item for given URI or plink
 	 *
 	 * @param string $uri
-	 * @param integer $uid
+	 * @param int    $uid
+	 * @param int    $completion
 	 *
 	 * @return integer item id
 	 */
-	public static function fetchByLink(string $uri, int $uid = 0): int
+	public static function fetchByLink(string $uri, int $uid = 0, int $completion = ActivityPub\Receiver::COMPLETION_MANUAL): int
 	{
 		Logger::info('Trying to fetch link', ['uid' => $uid, 'uri' => $uri]);
 		$item_id = self::searchByLink($uri, $uid);
@@ -3755,9 +4096,12 @@ class Item
 			return is_numeric($hookData['item_id']) ? $hookData['item_id'] : 0;
 		}
 
-		$fetched_uri = ActivityPub\Processor::fetchMissingActivity($uri, [], '', ActivityPub\Receiver::COMPLETION_MANUAL, $uid);
+		$curlResult = DI::httpClient()->head($uri, [HttpClientOptions::ACCEPT_CONTENT => HttpClientAccept::JSON_AS]);
+		if (HTTPSignature::isValidContentType($curlResult->getContentType(), $uri)) {
+			$fetched_uri = ActivityPub\Processor::fetchMissingActivity($uri, [], '', $completion, $uid);
+		}
 
-		if ($fetched_uri) {
+		if (!empty($fetched_uri)) {
 			$item_id = self::searchByLink($fetched_uri, $uid);
 		} else {
 			$item_id = Diaspora::fetchByURL($uri);
@@ -3815,7 +4159,7 @@ class Item
 		}
 
 		$url = $shared['message_id'] ?: $shared['link'];
-		$id = self::fetchByLink($url);
+		$id = self::fetchByLink($url, 0, ActivityPub\Receiver::COMPLETION_ASYNC);
 		if (!$id) {
 			Logger::notice('Post could not be fetched.', ['url' => $url, 'uid' => $uid]);
 			return 0;

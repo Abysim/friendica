@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -40,20 +40,21 @@ use Friendica\Network\HTTPException;
 class Nav
 {
 	private static $selected = [
-		'global'    => null,
-		'community' => null,
-		'network'   => null,
-		'home'      => null,
-		'profiles'  => null,
+		'global'        => null,
+		'community'     => null,
+		'channel'       => null,
+		'network'       => null,
+		'home'          => null,
+		'profiles'      => null,
 		'introductions' => null,
 		'notifications' => null,
-		'messages'  => null,
-		'directory' => null,
-		'settings'  => null,
-		'contacts'  => null,
-		'delegation'=> null,
-		'calendar'  => null,
-		'register'  => null
+		'messages'      => null,
+		'directory'     => null,
+		'settings'      => null,
+		'contacts'      => null,
+		'delegation'    => null,
+		'calendar'      => null,
+		'register'      => null
 	];
 
 	/**
@@ -123,7 +124,7 @@ class Nav
 			'$apps'         => $this->getAppMenu(),
 			'$home'         => $this->l10n->t('Go back'),
 			'$clear_notifs' => $this->l10n->t('Clear notifications'),
-			'$search_hint'  => $this->l10n->t('@name, !forum, #tags, content')
+			'$search_hint'  => $this->l10n->t('@name, !group, #tags, content')
 		]);
 
 		Hook::callAll('page_header', $nav);
@@ -199,6 +200,7 @@ class Nav
 			'moderation'    => null,
 			'apps'          => null,
 			'community'     => null,
+			'channel'       => null,
 			'home'          => null,
 			'calendar'      => null,
 			'login'         => null,
@@ -273,7 +275,7 @@ class Nav
 			];
 
 			if ($this->config->get('system', 'poco_local_search')) {
-				$nav['searchoption'][] = $this->l10n->t('Forums');
+				$nav['searchoption'][] = $this->l10n->t('Groups');
 			}
 		}
 

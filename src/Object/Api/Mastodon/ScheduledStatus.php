@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -67,7 +67,7 @@ class ScheduledStatus extends BaseDataTransferObject
 		$this->scheduled_at = DateTimeFormat::utc($delayed_post['delayed'], DateTimeFormat::JSON);
 
 		$this->params = [
-			'text'           => BBCode::convert(BBCode::setMentionsToNicknames($parameters['item']['body'] ?? ''), false, BBCode::MASTODON_API),
+			'text'           => BBCode::convertForUriId($parameters['item']['uri-id'] ?? 0, BBCode::setMentionsToNicknames($parameters['item']['body'] ?? ''), BBCode::MASTODON_API),
 			'media_ids'      => $media_ids,
 			'sensitive'      => null,
 			'spoiler_text'   => $parameters['item']['title'] ?? '',

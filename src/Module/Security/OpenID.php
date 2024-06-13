@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -60,7 +60,7 @@ class OpenID extends BaseModule
 				//       in commit 8367cadeeffec4b6792a502847304b17ceba5882, so it might
 				//       have left mixed records in the user table
 				//
-				$condition = ['blocked' => false, 'account_expired' => false, 'account_removed' => false, 'verified' => true,
+				$condition = ['verified' => true, 'blocked' => false, 'account_removed' => false, 'account_expired' => false,
 				              'openid' => [$authId, Strings::normaliseOpenID($authId)]];
 
 				$dba = DI::dba();

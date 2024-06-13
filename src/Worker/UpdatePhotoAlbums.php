@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -31,7 +31,7 @@ class UpdatePhotoAlbums
 {
 	public static function execute()
 	{
-		$users = DBA::select('user', ['uid'], ['account_expired' => false, 'account_removed' => false]);
+		$users = DBA::select('user', ['uid'], ['verified' => true, 'blocked' => false, 'account_removed' => false, 'account_expired' => false]);
 		while ($user = DBA::fetch($users)) {
 			Photo::clearAlbumCache($user['uid']);
 		}

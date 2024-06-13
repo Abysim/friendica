@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -29,7 +29,7 @@ use Friendica\Core\Search;
 use Friendica\Core\Worker;
 use Friendica\Database\DBA;
 use Friendica\DI;
-use Friendica\Model\Group;
+use Friendica\Model\Circle;
 use Friendica\Model\Notification;
 use Friendica\Model\Post\UserNotification;
 use Friendica\Model\Profile;
@@ -160,32 +160,29 @@ class Account extends BaseSettings
 			$hidewall     = !empty($request['hidewall']);
 			$blockwall    = empty($request['blockwall']); // this setting is inverted!
 			$blocktags    = empty($request['blocktags']); // this setting is inverted!
-			$unkmail      = !empty($request['unkmail']);
-			$cntunkmail   = intval($request['cntunkmail'] ?? 0);
-			$def_gid      = intval($request['group-selection'] ?? 0);
+			$def_gid      = intval($request['circle-selection'] ?? 0);
 
 			$aclFormatter = DI::aclFormatter();
 
-			$str_group_allow   = !empty($request['group_allow']) ? $aclFormatter->toString($request['group_allow']) : '';
 			$str_contact_allow = !empty($request['contact_allow']) ? $aclFormatter->toString($request['contact_allow']) : '';
-			$str_group_deny    = !empty($request['group_deny']) ? $aclFormatter->toString($request['group_deny']) : '';
-			$str_contact_deny  = !empty($request['contact_deny']) ? $aclFormatter->toString($request['contact_deny']) : '';
+			$str_circle_allow  = !empty($request['circle_allow'])  ? $aclFormatter->toString($request['circle_allow'])  : '';
+			$str_contact_deny  = !empty($request['contact_deny'])  ? $aclFormatter->toString($request['contact_deny'])  : '';
+			$str_circle_deny   = !empty($request['circle_deny'])   ? $aclFormatter->toString($request['circle_deny'])   : '';
 
 			DI::pConfig()->set(DI::userSession()->getLocalUserId(), 'system', 'unlisted', !empty($request['unlisted']));
 			DI::pConfig()->set(DI::userSession()->getLocalUserId(), 'system', 'accessible-photos', !empty($request['accessible-photos']));
+			DI::pConfig()->set(DI::userSession()->getLocalUserId(), 'system', 'default-group-gid', intval($request['circle-selection-group'] ?? $def_gid));
 
 			$fields = [
 				'allow_cid'  => $str_contact_allow,
-				'allow_gid'  => $str_group_allow,
+				'allow_gid'  => $str_circle_allow,
 				'deny_cid'   => $str_contact_deny,
-				'deny_gid'   => $str_group_deny,
+				'deny_gid'   => $str_circle_deny,
 				'maxreq'     => $maxreq,
 				'def_gid'    => $def_gid,
 				'blockwall'  => $blockwall,
 				'hidewall'   => $hidewall,
 				'blocktags'  => $blocktags,
-				'unkmail'    => $unkmail,
-				'cntunkmail' => $cntunkmail,
 			];
 
 			$profile_fields = [
@@ -198,6 +195,7 @@ class Account extends BaseSettings
 				DI::sysmsg()->addNotice(DI::l10n()->t('Settings were not updated.'));
 			}
 
+			User::setCommunityUserSettings(DI::userSession()->getLocalUserId());
 			DI::baseUrl()->redirect($redirectUrl);
 		}
 
@@ -318,39 +316,20 @@ class Account extends BaseSettings
 				$page_flags = User::PAGE_FLAGS_SOAPBOX;
 			} elseif ($account_type == User::ACCOUNT_TYPE_COMMUNITY && !in_array($page_flags, [User::PAGE_FLAGS_COMMUNITY, User::PAGE_FLAGS_PRVGROUP])) {
 				$page_flags = User::PAGE_FLAGS_COMMUNITY;
+			} elseif ($account_type == User::ACCOUNT_TYPE_RELAY && $page_flags != User::PAGE_FLAGS_SOAPBOX) {
+				$page_flags = User::PAGE_FLAGS_SOAPBOX;
 			}
 
-			$fields         = [];
-			$profile_fields = [];
-
-			if ($account_type == User::ACCOUNT_TYPE_COMMUNITY) {
-				DI::pConfig()->set(DI::userSession()->getLocalUserId(), 'system', 'unlisted', true);
-
-				$fields = [
-					'allow_cid' => '',
-					'allow_gid' => $page_flags == User::PAGE_FLAGS_PRVGROUP ?
-							'<' . Group::FOLLOWERS . '>'
-							: '',
-					'deny_cid'  => '',
-					'deny_gid'  => '',
-					'blockwall' => true,
-					'blocktags' => true,
-				];
-
-				$profile_fields = [
-					'hide-friends' => true,
-				];
-			}
-
-			$fields = array_merge($fields, [
+			$fields = [
 				'page-flags'   => $page_flags,
 				'account-type' => $account_type,
-			]);
+			];
 
-			if (!User::update($fields, DI::userSession()->getLocalUserId()) || !empty($profile_fields) && !Profile::update($profile_fields, DI::userSession()->getLocalUserId())) {
+			if (!User::update($fields, DI::userSession()->getLocalUserId())) {
 				DI::sysmsg()->addNotice(DI::l10n()->t('Settings were not updated.'));
 			}
 
+			User::setCommunityUserSettings(DI::userSession()->getLocalUserId());
 			DI::baseUrl()->redirect($redirectUrl);
 		}
 
@@ -427,8 +406,6 @@ class Account extends BaseSettings
 		$openid           = $user['openid'];
 		$maxreq           = $user['maxreq'];
 		$expire           = $user['expire'] ?: '';
-		$unkmail          = $user['unkmail'];
-		$cntunkmail       = $user['cntunkmail'];
 
 		$expire_items        = DI::pConfig()->get(DI::userSession()->getLocalUserId(), 'expire', 'items', true);
 		$expire_notes        = DI::pConfig()->get(DI::userSession()->getLocalUserId(), 'expire', 'notes', true);
@@ -448,16 +425,29 @@ class Account extends BaseSettings
 			$user['account-type'] = User::ACCOUNT_TYPE_COMMUNITY;
 		}
 
+		if (DI::config()->get('system', 'allow_relay_channels')) {
+			$account_relay = [
+				'account-type',
+				DI::l10n()->t('Channel Relay'),
+				User::ACCOUNT_TYPE_RELAY,
+				DI::l10n()->t('Account for a service that automatically shares content based on user defined channels.'),
+				$user['account-type'] == User::ACCOUNT_TYPE_RELAY
+			];
+		} else {
+			$account_relay = null;
+		}
+
 		$pageset_tpl = Renderer::getMarkupTemplate('settings/pagetypes.tpl');
 		$pagetype    = Renderer::replaceMacros($pageset_tpl, [
 			'$account_types'     => DI::l10n()->t("Account Types"),
 			'$user'              => DI::l10n()->t("Personal Page Subtypes"),
-			'$community'         => DI::l10n()->t("Community Forum Subtypes"),
+			'$community'         => DI::l10n()->t("Community Group Subtypes"),
 			'$account_type'      => $user['account-type'],
 			'$type_person'       => User::ACCOUNT_TYPE_PERSON,
 			'$type_organisation' => User::ACCOUNT_TYPE_ORGANISATION,
 			'$type_news'         => User::ACCOUNT_TYPE_NEWS,
 			'$type_community'    => User::ACCOUNT_TYPE_COMMUNITY,
+			'$type_relay'        => User::ACCOUNT_TYPE_RELAY,
 			'$account_person'    => [
 				'account-type',
 				DI::l10n()->t('Personal Page'),
@@ -481,11 +471,12 @@ class Account extends BaseSettings
 			],
 			'$account_community' => [
 				'account-type',
-				DI::l10n()->t('Community Forum'),
+				DI::l10n()->t('Community Group'),
 				User::ACCOUNT_TYPE_COMMUNITY,
 				DI::l10n()->t('Account for community discussions.'),
 				$user['account-type'] == User::ACCOUNT_TYPE_COMMUNITY
 			],
+			'$account_relay' => $account_relay,
 			'$page_normal' => [
 				'page-flags',
 				DI::l10n()->t('Normal Account Page'),
@@ -502,7 +493,7 @@ class Account extends BaseSettings
 			],
 			'$page_community' => [
 				'page-flags',
-				DI::l10n()->t('Public Forum'),
+				DI::l10n()->t('Public Group'),
 				User::PAGE_FLAGS_COMMUNITY,
 				DI::l10n()->t('Automatically approves all contact requests.'),
 				$user['page-flags'] == User::PAGE_FLAGS_COMMUNITY
@@ -516,7 +507,7 @@ class Account extends BaseSettings
 			],
 			'$page_prvgroup' => [
 				'page-flags',
-				DI::l10n()->t('Private Forum [Experimental]'),
+				DI::l10n()->t('Private Group [Experimental]'),
 				User::PAGE_FLAGS_PRVGROUP,
 				DI::l10n()->t('Requires manual approval of contact requests.'),
 				$user['page-flags'] == User::PAGE_FLAGS_PRVGROUP
@@ -572,7 +563,7 @@ class Account extends BaseSettings
 			'$delete_openid' => ['delete_openid', DI::l10n()->t('Delete OpenID URL'), false, ''],
 
 			'$h_basic'          => DI::l10n()->t('Basic Settings'),
-			'$username'         => ['username', DI::l10n()->t('Full Name:'), $username, '', false, 'autocomplete="off"'],
+			'$username'         => ['username', DI::l10n()->t('Display name:'), $username, '', false, 'autocomplete="off"'],
 			'$email'            => ['email', DI::l10n()->t('Email Address:'), $email, '', '', 'autocomplete="off"', 'email'],
 			'$timezone'         => ['timezone_select', DI::l10n()->t('Your Timezone:'), Temporal::getTimezoneSelect($timezone), ''],
 			'$language'         => ['language', DI::l10n()->t('Your Language:'), $language, DI::l10n()->t('Set the language we use to show you friendica interface and to send you emails'), $lang_choices],
@@ -590,9 +581,8 @@ class Account extends BaseSettings
 			'$accessiblephotos'   => ['accessible-photos', DI::l10n()->t('Make all posted pictures accessible'), DI::pConfig()->get(DI::userSession()->getLocalUserId(), 'system', 'accessible-photos'), DI::l10n()->t("This option makes every posted picture accessible via the direct link. This is a workaround for the problem that most other networks can't handle permissions on pictures. Non public pictures still won't be visible for the public on your photo albums though.")],
 			'$blockwall'          => ['blockwall', DI::l10n()->t('Allow friends to post to your profile page?'), (intval($user['blockwall']) ? '0' : '1'), DI::l10n()->t('Your contacts may write posts on your profile wall. These posts will be distributed to your contacts')],
 			'$blocktags'          => ['blocktags', DI::l10n()->t('Allow friends to tag your posts?'), (intval($user['blocktags']) ? '0' : '1'), DI::l10n()->t('Your contacts can add additional tags to your posts.')],
-			'$unkmail'            => ['unkmail', DI::l10n()->t('Permit unknown people to send you private mail?'), $unkmail, DI::l10n()->t('Friendica network users may send you private messages even if they are not in your contact list.')],
-			'$cntunkmail'         => ['cntunkmail', DI::l10n()->t('Maximum private messages per day from unknown people:'), $cntunkmail, DI::l10n()->t("(to prevent spam abuse)")],
-			'$group_select'       => Group::displayGroupSelection(DI::userSession()->getLocalUserId(), $user['def_gid']),
+			'$circle_select'      => Circle::getSelectorHTML(DI::userSession()->getLocalUserId(), $user['def_gid'], 'circle-selection', DI::l10n()->t('Default privacy circle for new contacts')),
+			'$circle_select_group' => Circle::getSelectorHTML(DI::userSession()->getLocalUserId(), DI::pConfig()->get(DI::userSession()->getLocalUserId(), 'system', 'default-group-gid', $user['def_gid']), 'circle-selection-group', DI::l10n()->t('Default privacy circle for new group contacts')),
 			'$permissions'        => DI::l10n()->t('Default Post Permissions'),
 			'$aclselect'          => ACL::getFullSelectorHTML(DI::page(), $a->getLoggedInUserId()),
 

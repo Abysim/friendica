@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -133,7 +133,9 @@ class Display extends BaseModule
 		}
 
 		if (empty($item)) {
-			throw new HTTPException\NotFoundException($this->t('The requested item doesn\'t exist or has been deleted.'));
+			$this->page['aside'] = '';
+			$displayNotFound = new DisplayNotFound($this->l10n, $this->baseUrl, $this->args, $this->logger, $this->profiler, $this->response, $this->server, $this->parameters);
+			return $displayNotFound->content();
 		}
 
 		if ($item['gravity'] != Item::GRAVITY_PARENT) {
@@ -273,7 +275,7 @@ class Display extends BaseModule
 			$output .= $this->conversation->statusEditor([], 0, true);
 		}
 
-		$output .= $this->conversation->create([$item], Conversation::MODE_DISPLAY, $updateUid, false, 'commented', $itemUid);
+		$output .= $this->conversation->render([$item], Conversation::MODE_DISPLAY, $updateUid, false, 'commented', $itemUid);
 
 		return $output;
 	}

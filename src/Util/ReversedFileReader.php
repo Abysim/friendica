@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -89,7 +89,7 @@ class ReversedFileReader implements \Iterator
 	 *
 	 * @return string|null Depending on data being buffered
 	 */
-	private function _readline()
+	private function _readline(): ?string
 	{
 		$buffer = & $this->buffer;
 		while (true) {
@@ -112,6 +112,7 @@ class ReversedFileReader implements \Iterator
 	 * @see Iterator::next()
 	 * @return void
 	 */
+	#[\ReturnTypeWillChange]
 	public function next()
 	{
 		++$this->key;
@@ -124,6 +125,7 @@ class ReversedFileReader implements \Iterator
 	 * @see Iterator::rewind()
 	 * @return void
 	 */
+	#[\ReturnTypeWillChange]
 	public function rewind()
 	{
 		if ($this->filesize > 0) {

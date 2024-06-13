@@ -289,18 +289,18 @@ $(function() {
 
 		$('#mail-update-li').html(mail);
 
-		$(".sidebar-group-li .notify").removeClass("show");
-		$(data.groups).each(function(key, group) {
-			var gid = group.id;
-			var gcount = group.count;
-			$(".group-"+gid+" .notify").addClass("show").text(gcount);
+		$(".sidebar-circle-li .notify").removeClass("show");
+		$(data.circles).each(function(key, circle) {
+			var gid = circle.id;
+			var gcount = circle.count;
+			$(".circle-"+gid+" .notify").addClass("show").text(gcount);
 		});
 
-		$(".forum-widget-entry .notify").removeClass("show");
-		$(data.forums).each(function(key, forum) {
-			var fid = forum.id;
-			var fcount = forum.count;
-			$(".forum-"+fid+" .notify").addClass("show").text(fcount);
+		$(".group-widget-entry .notify").removeClass("show");
+		$(data.groups).each(function(key, group) {
+			var fid = group.id;
+			var fcount = group.count;
+			$(".group-"+fid+" .notify").addClass("show").text(fcount);
 		});
 
 		if (data.notifications.length == 0) {
@@ -378,16 +378,10 @@ $(function() {
 
 	// Allow folks to stop the ajax page updates with the pause/break key
 	$(document).keydown(function(event) {
-		if (event.keyCode == '8') {
-			var target = event.target || event.srcElement;
-			if (!/input|textarea/i.test(target.nodeName)) {
-				return false;
-			}
-		}
-
-		if (event.keyCode == '19' || (event.ctrlKey && event.which == '32')) {
+		// Pause/Break or Ctrl + Space
+		if (event.which === 19 || (!event.metaKey && !event.shiftKey && !event.altKey && event.ctrlKey && event.which === 32)) {
 			event.preventDefault();
-			if (stopped == false) {
+			if (stopped === false) {
 				stopped = true;
 				if (event.ctrlKey) {
 					totStopped = true;
@@ -506,7 +500,7 @@ function NavUpdate() {
 				$('nav').trigger('nav-update', data.result);
 
 				// start live update
-				['network', 'profile', 'community', 'notes', 'display', 'contact'].forEach(function (src) {
+				['network', 'profile', 'channel', 'community', 'notes', 'display', 'contact'].forEach(function (src) {
 					if ($('#live-' + src).length) {
 						liveUpdate(src);
 					}
@@ -608,6 +602,26 @@ function liveUpdate(src) {
 		update_url += '&max_id=' + getUrlParameter('max_id');
 	}
 
+	match = $("span.received").first();
+	if (match.length > 0) {
+		update_url += '&first_received=' + match[0].innerHTML;
+	}
+
+	match = $("span.created").first();
+	if (match.length > 0) {
+		update_url += '&first_created=' + match[0].innerHTML;
+	}
+
+	match = $("span.commented").first();
+	if (match.length > 0) {
+		update_url += '&first_commented=' + match[0].innerHTML;
+	}
+
+	match = $("span.uriid").first();
+	if (match.length > 0) {
+		update_url += '&first_uriid=' + match[0].innerHTML;
+	}
+
 	$.get(update_url, function(data) {
 		in_progress = false;
 		update_item = 0;
@@ -625,6 +639,11 @@ function liveUpdate(src) {
 			$(window).scrollTop($(window).scrollTop() + $("section").height() - orgHeight);
 		});
 	});
+}
+
+function updateItem(itemNo) {
+	force_update = true;
+	update_item = itemNo;
 }
 
 function imgbright(node) {
@@ -946,21 +965,21 @@ function bin2hex(s) {
 	return a.join('');
 }
 
-function groupChangeMember(gid, cid, sec_token) {
+function circleChangeMember(gid, cid, sec_token) {
 	$('body .fakelink').css('cursor', 'wait');
-	$.get('group/' + gid + '/' + cid + "?t=" + sec_token, function(data) {
-			$('#group-update-wrapper').html(data);
+	$.get('circle/' + gid + '/' + cid + "?t=" + sec_token, function(data) {
+			$('#circle-update-wrapper').html(data);
 			$('body .fakelink').css('cursor', 'auto');
 	});
 }
 
-function contactgroupChangeMember(checkbox, gid, cid) {
+function contactCircleChangeMember(checkbox, gid, cid) {
 	let url;
 	// checkbox.checked is the checkbox state after the click
 	if (checkbox.checked) {
-		url = 'group/' + gid + '/add/' + cid;
+		url = 'circle/' + gid + '/add/' + cid;
 	} else {
-		url = 'group/' + gid + '/remove/' + cid;
+		url = 'circle/' + gid + '/remove/' + cid;
 	}
 	$('body').css('cursor', 'wait');
 	$.post(url)

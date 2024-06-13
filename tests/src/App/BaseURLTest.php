@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -178,7 +178,7 @@ class BaseURLTest extends MockedTest
 	public function testRedirectException()
 	{
 		self::expectException(InternalServerErrorException::class);
-		self::expectErrorMessage('https://friendica.other is not a relative path, please use System::externalRedirect');
+		self::expectExceptionMessage('https://friendica.other is not a relative path, please use System::externalRedirect');
 
 		$config = new ReadOnlyFileConfig(new Cache([
 			'system' => [

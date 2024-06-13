@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -111,7 +111,7 @@ class PubSubHubBub extends \Friendica\BaseModule
 		}
 
 		// fetch user from database given the nickname
-		$condition = ['nickname' => $nickname, 'account_expired' => false, 'account_removed' => false];
+		$condition = ['nickname' => $nickname, 'verified' => true, 'blocked' => false, 'account_removed' => false, 'account_expired' => false];
 		$owner     = $this->database->selectFirst('user', ['uid', 'nickname'], $condition);
 		if (!$owner) {
 			$this->logger->notice('Local account not found', ['nickname' => $nickname, 'topic' => $hub_topic, 'callback' => $hub_callback]);
@@ -154,7 +154,7 @@ class PubSubHubBub extends \Friendica\BaseModule
 		$separator    = parse_url($hub_callback, PHP_URL_QUERY) === null ? '?' : '&';
 
 		$fetchResult = $this->httpClient->fetchFull($hub_callback . $separator . $params);
-		$body        = $fetchResult->getBody();
+		$body        = $fetchResult->getBodyString();
 		$returnCode  = $fetchResult->getReturnCode();
 
 		// give up if the HTTP return code wasn't a success (2xx)

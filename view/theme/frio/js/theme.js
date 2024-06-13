@@ -36,14 +36,14 @@ $(document).ready(function () {
 		return false;
 	});
 
-	// add the class "selected" to group widgets li if li > a does have the class group-selected
-	if ($("#sidebar-group-ul li a").hasClass("group-selected")) {
-		$("#sidebar-group-ul li a.group-selected").parent("li").addClass("selected");
+	// add the class "selected" to circle widgets li if li > a does have the class circle-selected
+	if ($("#sidebar-circle-ul li a").hasClass("circle-selected")) {
+		$("#sidebar-circle-ul li a.circle-selected").parent("li").addClass("selected");
 	}
 
-	// add the class "selected" to forums widgets li if li > a does have the class forum-selected
-	if ($("#forumlist-sidebar-ul li a").hasClass("forum-selected")) {
-		$("#forumlist-sidebar-ul li a.forum-selected").parent("li").addClass("selected");
+	// add the class "selected" to groups widgets li if li > a does have the class group-selected
+	if ($("#group-list-sidebar-ul li a").hasClass("group-selected")) {
+		$("#group-list-sidebar-ul li a.group-selected").parent("li").addClass("selected");
 	}
 
 	// add the class "active" to tabmenuli if li > a does have the class active
@@ -79,6 +79,21 @@ $(document).ready(function () {
 		popupAbsolute: false,
 		target: ".flex-target",
 	});
+
+	// add mention-link button to the second navbar
+	let $mentionButton = $("#mention-link-button");
+	if ($mentionButton.length) {
+		$mentionButton.appendTo("#topbar-second > .container > #navbar-button").addClass("pull-right");
+		$("#mention-link").addClass("btn-sm ");
+		$("#mention-link > span i").addClass("fa-2x");
+		if ($mentionButton.hasClass("modal-open")) {
+			$mentionButton.on("click", function (e) {
+				e.preventDefault();
+				jotShow();
+			});
+		}
+	}
+
 
 	// add Jot button to the second navbar
 	let $jotButton = $("#jotOpen");
@@ -206,7 +221,7 @@ $(document).ready(function () {
 		});
 	}
 
-	// move the forum contact information of the network page into the second navbar
+	// move the group contact information of the network page into the second navbar
 	if ($(".network-content-wrapper > #viewcontact_wrapper-network").length) {
 		// get the contact-wrapper element and append it to the second nav bar
 		// Note: We need the first() element with this class since at the present time we
@@ -850,6 +865,7 @@ function doActivityItemAction(ident, verb, un) {
 					$('button[id^=shareMenuOptions-' + ident.toString() + ']').addClass('active');
 				}
 			}
+			updateItem(ident.toString());
 		} else {
 			/* server-response was not ok. Database-problems or some changes in
 			 * data?
@@ -940,5 +956,15 @@ function toggleDropdownText(elm) {
 // Check if element does have a specific class
 function hasClass(elem, cls) {
 	return (" " + elem.className + " ").indexOf(" " + cls + " ") > -1;
+}
+
+// Send on <CTRL>+<Enter> or <META>+<Enter> on macos
+// e: event
+// submit: the id of the submitbutton
+function sendOnCtrlEnter(e, submit) {
+	if ((e.ctrlKey || e.metaKey) && (e.keyCode == 13 || e.keyCode == 10)) {
+		console.log("Ctrl + Enter");
+		$("#" + submit).trigger('click');
+	}
 }
 // @license-end

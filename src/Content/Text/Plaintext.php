@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -137,6 +137,10 @@ class Plaintext
 				$abstract = BBCode::getAbstract($item['body'], Protocol::STATUSNET);
 				break;
 
+			case BBCode::BLUESKY:
+				$abstract = BBCode::getAbstract($item['body'], Protocol::BLUESKY);
+				break;
+	
 			default: // We don't know the exact target.
 				// We fetch an abstract since there is a posting limit.
 				if ($limit > 0) {
@@ -320,7 +324,7 @@ class Plaintext
 		$post['text'] = Post\Media::removeFromBody($post['text']);
 
 		$images = Post\Media::getByURIId($item['uri-id'], [Post\Media::IMAGE]);
-		if (!empty($item['quote-uri-id'])) {
+		if (!empty($item['quote-uri-id']) && ($item['quote-uri-id'] != $item['uri-id'])) {
 			$images = array_merge($images, Post\Media::getByURIId($item['quote-uri-id'], [Post\Media::IMAGE]));
 		}
 		foreach ($images as $image) {
@@ -351,7 +355,7 @@ class Plaintext
 
 		// Look for audio or video links
 		$media = Post\Media::getByURIId($item['uri-id'], [Post\Media::AUDIO, Post\Media::VIDEO]);
-		if (!empty($item['quote-uri-id'])) {
+		if (!empty($item['quote-uri-id']) && ($item['quote-uri-id'] != $item['uri-id'])) {
 			$media = array_merge($media, Post\Media::getByURIId($item['quote-uri-id'], [Post\Media::AUDIO, Post\Media::VIDEO]));
 		}
 

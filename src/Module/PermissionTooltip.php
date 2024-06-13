@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -27,7 +27,7 @@ use Friendica\Core\System;
 use Friendica\Database\DBA;
 use Friendica\DI;
 use Friendica\Model\APContact;
-use Friendica\Model\Group;
+use Friendica\Model\Circle;
 use Friendica\Model\Item;
 use Friendica\Model\Post;
 use Friendica\Model\Tag;
@@ -113,29 +113,43 @@ class PermissionTooltip extends \Friendica\BaseModule
 			exit;
 		}
 
-		$allowed_users  = $model['allow_cid'];
-		$allowed_groups = $model['allow_gid'];
-		$deny_users     = $model['deny_cid'];
-		$deny_groups    = $model['deny_gid'];
+		if (!empty($model['allow_cid']) || !empty($model['allow_gid']) || !empty($model['deny_cid']) || !empty($model['deny_gid'])) {
+			$receivers = $this->fetchReceiversFromACL($model);
+		}
 
-		$o = DI::l10n()->t('Visible to:') . '<br />';
+		$this->httpExit(DI::l10n()->t('Visible to:') . '<br />' . $receivers);
+	}
+
+	/**
+	 * Fetch a list of receivers based on the ACL data
+	 *
+	 * @param array $model
+	 * @return string
+	 */
+	private function fetchReceiversFromACL(array $model)
+	{
+		$allowed_users   = $model['allow_cid'];
+		$allowed_circles = $model['allow_gid'];
+		$deny_users      = $model['deny_cid'];
+		$deny_circles    = $model['deny_gid'];
+
 		$l = [];
 
-		if (count($allowed_groups)) {
-			$key = array_search(Group::FOLLOWERS, $allowed_groups);
+		if (count($allowed_circles)) {
+			$key = array_search(Circle::FOLLOWERS, $allowed_circles);
 			if ($key !== false) {
 				$l[] = '<b>' . DI::l10n()->t('Followers') . '</b>';
-				unset($allowed_groups[$key]);
+				unset($allowed_circles[$key]);
 			}
 
-			$key = array_search(Group::MUTUALS, $allowed_groups);
+			$key = array_search(Circle::MUTUALS, $allowed_circles);
 			if ($key !== false) {
 				$l[] = '<b>' . DI::l10n()->t('Mutuals') . '</b>';
-				unset($allowed_groups[$key]);
+				unset($allowed_circles[$key]);
 			}
 
-			foreach (DI::dba()->selectToArray('group', ['name'], ['id' => $allowed_groups]) as $group) {
-				$l[] = '<b>' . $group['name'] . '</b>';
+			foreach (DI::dba()->selectToArray('group', ['name'], ['id' => $allowed_circles]) as $circle) {
+				$l[] = '<b>' . $circle['name'] . '</b>';
 			}
 		}
 
@@ -143,21 +157,21 @@ class PermissionTooltip extends \Friendica\BaseModule
 			$l[] = $contact['name'];
 		}
 
-		if (count($deny_groups)) {
-			$key = array_search(Group::FOLLOWERS, $deny_groups);
+		if (count($deny_circles)) {
+			$key = array_search(Circle::FOLLOWERS, $deny_circles);
 			if ($key !== false) {
 				$l[] = '<b><strike>' . DI::l10n()->t('Followers') . '</strike></b>';
-				unset($deny_groups[$key]);
+				unset($deny_circles[$key]);
 			}
 
-			$key = array_search(Group::MUTUALS, $deny_groups);
+			$key = array_search(Circle::MUTUALS, $deny_circles);
 			if ($key !== false) {
 				$l[] = '<b><strike>' . DI::l10n()->t('Mutuals') . '</strike></b>';
-				unset($deny_groups[$key]);
+				unset($deny_circles[$key]);
 			}
 
-			foreach (DI::dba()->selectToArray('group', ['name'], ['id' => $allowed_groups]) as $group) {
-				$l[] = '<b><strike>' . $group['name'] . '</strike></b>';
+			foreach (DI::dba()->selectToArray('group', ['name'], ['id' => $allowed_circles]) as $circle) {
+				$l[] = '<b><strike>' . $circle['name'] . '</strike></b>';
 			}
 		}
 
@@ -165,11 +179,7 @@ class PermissionTooltip extends \Friendica\BaseModule
 			$l[] = '<strike>' . $contact['name'] . '</strike>';
 		}
 
-		if (!empty($l)) {
-			System::httpExit($o . implode(', ', $l));
-		} else {
-			System::httpExit($o . $receivers);;
-		}
+		return implode(', ', $l);
 	}
 
 	/**

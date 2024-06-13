@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -60,7 +60,6 @@ class StaticDatabase extends Database
 		$this->driver = 'pdo';
 		$this->connection = self::$staticConnection;
 		$this->connected = true;
-		$this->emulate_prepares = false;
 
 		return $this->connected;
 	}
@@ -212,7 +211,7 @@ class StaticDatabase extends Database
 	{
 		if (isset(self::$staticConnection)) {
 			while (self::$staticConnection->getTransactionDepth() > 0) {
-				self::$staticConnection->rollBack();
+				self::$staticConnection->rollback();
 			}
 		}
 	}

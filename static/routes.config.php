@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -41,7 +41,6 @@ $profileRoutes = [
 	'/restricted'                                     => [Module\Profile\Restricted::class,    [R::GET         ]],
 	'/schedule'                                       => [Module\Profile\Schedule::class,      [R::GET, R::POST]],
 	'/conversations[/{category}[/{date1}[/{date2}]]]' => [Module\Profile\Conversations::class, [R::GET]],
-	'/unkmail'                                        => [Module\Profile\UnkMail::class,       [R::GET, R::POST]],
 ];
 
 $apiRoutes = [
@@ -89,12 +88,20 @@ $apiRoutes = [
 		'/direct_messages_setseen[.{extension:json|xml|rss|atom}]' => [Module\Api\Friendica\DirectMessages\Setseen::class, [        R::POST]],
 		'/direct_messages_search[.{extension:json|xml|rss|atom}]'  => [Module\Api\Friendica\DirectMessages\Search ::class, [R::GET         ]],
 		'/events[.{extension:json|xml|rss|atom}]'                  => [Module\Api\Friendica\Events\Index::class,           [R::GET         ]],
-                '/event_create[.{extension:json|xml|rss|atom}]'            => [Module\Api\Friendica\Events\Create::class,          [        R::POST]],
-                '/event_delete[.{extension:json|xml|rss|atom}]'            => [Module\Api\Friendica\Events\Delete::class,          [        R::POST]],
-		'/group_show[.{extension:json|xml|rss|atom}]'              => [Module\Api\Friendica\Group\Show::class,             [R::GET         ]],
-		'/group_create[.{extension:json|xml|rss|atom}]'            => [Module\Api\Friendica\Group\Create::class,           [        R::POST]],
-		'/group_delete[.{extension:json|xml|rss|atom}]'            => [Module\Api\Friendica\Group\Delete::class,           [        R::POST]],
-		'/group_update[.{extension:json|xml|rss|atom}]'            => [Module\Api\Friendica\Group\Update::class,           [        R::POST]],
+		'/event_create[.{extension:json|xml|rss|atom}]'            => [Module\Api\Friendica\Events\Create::class,          [        R::POST]],
+		'/event_delete[.{extension:json|xml|rss|atom}]'            => [Module\Api\Friendica\Events\Delete::class,          [        R::POST]],
+		'/circle_show[.{extension:json|xml|rss|atom}]'             => [Module\Api\Friendica\Circle\Show::class,            [R::GET         ]],
+		'/circle_create[.{extension:json|xml|rss|atom}]'           => [Module\Api\Friendica\Circle\Create::class,          [        R::POST]],
+		'/circle_delete[.{extension:json|xml|rss|atom}]'           => [Module\Api\Friendica\Circle\Delete::class,          [        R::POST]],
+		'/circle_update[.{extension:json|xml|rss|atom}]'           => [Module\Api\Friendica\Circle\Update::class,          [        R::POST]],
+
+		// Backward compatibility
+		// @deprecated
+		'/group_show[.{extension:json|xml|rss|atom}]'              => [Module\Api\Friendica\Circle\Show::class,            [R::GET         ]],
+		'/group_create[.{extension:json|xml|rss|atom}]'            => [Module\Api\Friendica\Circle\Create::class,          [        R::POST]],
+		'/group_delete[.{extension:json|xml|rss|atom}]'            => [Module\Api\Friendica\Circle\Delete::class,          [        R::POST]],
+		'/group_update[.{extension:json|xml|rss|atom}]'            => [Module\Api\Friendica\Circle\Update::class,          [        R::POST]],
+
 		'/profile/show[.{extension:json|xml|rss|atom}]'            => [Module\Api\Friendica\Profile\Show::class,           [R::GET         ]],
 		'/photoalbums[.{extension:json|xml|rss|atom}]'             => [Module\Api\Friendica\Photoalbum\Index::class,       [R::GET         ]],
 		'/photoalbum[.{extension:json|xml|rss|atom}]'              => [Module\Api\Friendica\Photoalbum\Show::class,        [R::GET         ]],
@@ -117,7 +124,7 @@ $apiRoutes = [
 		'/list[.{extension:json|xml|rss|atom}]'                    => [Module\Api\Twitter\Lists\Lists::class,     [R::GET         ]],
 		'/ownerships[.{extension:json|xml|rss|atom}]'              => [Module\Api\Twitter\Lists\Ownership::class, [R::GET         ]],
 		'/statuses[.{extension:json|xml|rss|atom}]'                => [Module\Api\Twitter\Lists\Statuses::class,  [R::GET         ]],
-		'/subscriptions[.{extension:json|xml|rss|atom}]'           => [Module\Api\Friendica\Lists\Lists::class,   [R::GET         ]],
+		'/subscriptions[.{extension:json|xml|rss|atom}]'           => [Module\Api\Twitter\Lists\Lists::class,     [R::GET         ]],
 		'/update[.{extension:json|xml|rss|atom}]'                  => [Module\Api\Twitter\Lists\Update::class,    [        R::POST]],
 	],
 
@@ -204,7 +211,7 @@ return [
 			'/accounts/{id:\d+}/note'            => [Module\Api\Mastodon\Accounts\Note::class,            [        R::POST]],
 			'/accounts/{id:\d+}/remove_from_followers' => [Module\Api\Mastodon\Unimplemented::class,      [        R::POST]], // not supported
 			'/accounts/familiar_followers'       => [Module\Api\Mastodon\Unimplemented::class,            [R::GET         ]], // not supported
-			'/accounts/lookup'                   => [Module\Api\Mastodon\Unimplemented::class,            [R::GET         ]], // not supported
+			'/accounts/lookup'                   => [Module\Api\Mastodon\Accounts\Lookup::class,          [R::GET         ]],
 			'/accounts/relationships'            => [Module\Api\Mastodon\Accounts\Relationships::class,   [R::GET         ]],
 			'/accounts/search'                   => [Module\Api\Mastodon\Accounts\Search::class,          [R::GET         ]],
 			'/accounts/update_credentials'       => [Module\Api\Mastodon\Accounts\UpdateCredentials::class, [R::PATCH     ]],
@@ -247,7 +254,7 @@ return [
 			'/instance'                          => [Module\Api\Mastodon\Instance::class,                 [R::GET         ]],
 			'/instance/activity'                 => [Module\Api\Mastodon\Unimplemented::class,            [R::GET         ]], // @todo
 			'/instance/domain_blocks'            => [Module\Api\Mastodon\Unimplemented::class,            [R::GET         ]], // @todo
-			'/instance/extended_description'     => [Module\Api\Mastodon\Unimplemented::class,            [R::GET         ]], // @todo
+			'/instance/extended_description'     => [Module\Api\Mastodon\Instance\ExtendedDescription::class, [R::GET         ]],
 			'/instance/peers'                    => [Module\Api\Mastodon\Instance\Peers::class,           [R::GET         ]],
 			'/instance/rules'                    => [Module\Api\Mastodon\Instance\Rules::class,           [R::GET         ]],
 			'/lists'                             => [Module\Api\Mastodon\Lists::class,                    [R::GET, R::POST]],
@@ -383,6 +390,7 @@ return [
 		'/event/{mode:edit|copy}/{id:\d+}'              => [Module\Calendar\Event\Form::class, [R::GET         ]],
 	],
 
+	'/channel[/{content}]'   => [Module\Conversation\Channel::class,   [R::GET]],
 	'/community[/{content}]' => [Module\Conversation\Community::class, [R::GET]],
 
 	'/compose[/{type}]'    => [Module\Item\Compose::class, [R::GET, R::POST]],
@@ -414,8 +422,8 @@ return [
 	],
 
 	'/credits'                  => [Module\Credits::class,          [R::GET]],
-	'/delegation'               => [Module\Delegation::class,       [R::GET, R::POST]],
-	'/dfrn_notify[/{nickname}]' => [Module\DFRN\Notify::class,      [R::POST]],
+	'/delegation'               => [Module\User\Delegation::class,  [R::GET, R::POST]],
+	'/dfrn_notify[/{nickname}]' => [Module\DFRN\Notify::class,      [        R::POST]],
 	'/dfrn_poll/{nickname}'     => [Module\DFRN\Poll::class,        [R::GET]],
 	'/dirfind'                  => [Module\Search\Directory::class, [R::GET]],
 	'/directory'                => [Module\Directory::class,        [R::GET]],
@@ -441,19 +449,20 @@ return [
 	'/follow_confirm'       => [Module\FollowConfirm::class,         [R::GET, R::POST]],
 	'/followers/{nickname}' => [Module\ActivityPub\Followers::class, [R::GET]],
 	'/following/{nickname}' => [Module\ActivityPub\Following::class, [R::GET]],
-	'/friendica[/json]'     => [Module\Friendica::class,             [R::GET]],
+	'/friendica[/{format:json}]' => [Module\Friendica::class,        [R::GET]],
 	'/friendica/inbox'      => [Module\ActivityPub\Inbox::class,     [R::GET, R::POST]],
+	'/friendica/outbox'     => [Module\ActivityPub\Outbox::class,    [R::GET]],
 
 	'/fsuggest/{contact:\d+}' => [Module\FriendSuggest::class,  [R::GET, R::POST]],
 
-	'/group'              => [
-		'[/]'                        => [Module\Group::class, [R::GET, R::POST]],
-		'/{group:\d+}'               => [Module\Group::class, [R::GET, R::POST]],
-		'/none'                      => [Module\Group::class, [R::GET, R::POST]],
-		'/new'                       => [Module\Group::class, [R::GET, R::POST]],
-		'/drop/{group:\d+}'          => [Module\Group::class, [R::GET, R::POST]],
-		'/{group:\d+}/{contact:\d+}' => [Module\Group::class, [R::GET, R::POST]],
-		'/{group:\d+}/{command:add|remove}/{contact:\d+}'    => [Module\Group::class, [R::GET, R::POST]],
+	'/circle'              => [
+		'[/]'                         => [Module\Circle::class, [R::GET, R::POST]],
+		'/{circle:\d+}'               => [Module\Circle::class, [R::GET, R::POST]],
+		'/none'                       => [Module\Circle::class, [R::GET, R::POST]],
+		'/new'                        => [Module\Circle::class, [R::GET, R::POST]],
+		'/drop/{circle:\d+}'          => [Module\Circle::class, [R::GET, R::POST]],
+		'/{circle:\d+}/{contact:\d+}' => [Module\Circle::class, [R::GET, R::POST]],
+		'/{circle:\d+}/{command:add|remove}/{contact:\d+}' => [Module\Circle::class, [R::GET, R::POST]],
 	],
 	'/hashtag'                    => [Module\Hashtag::class,           [R::GET]],
 	'/help[/{doc:.+}]'            => [Module\Help::class,              [R::GET]],
@@ -500,6 +509,9 @@ return [
 		'/item/delete'          => [Module\Moderation\Item\Delete::class, [R::GET, R::POST]],
 		'/item/source[/{guid}]' => [Module\Moderation\Item\Source::class, [R::GET, R::POST]],
 
+		'/report/create' => [Module\Moderation\Report\Create::class, [R::GET, R::POST]],
+		'/reports'       => [Module\Moderation\Reports::class, [R::GET, R::POST]],
+
 		'/users[/{action}/{uid}]'         => [Module\Moderation\Users\Index::class,   [R::GET, R::POST]],
 		'/users/active[/{action}/{uid}]'  => [Module\Moderation\Users\Active::class,  [R::GET, R::POST]],
 		'/users/pending[/{action}/{uid}]' => [Module\Moderation\Users\Pending::class, [R::GET, R::POST]],
@@ -511,7 +523,7 @@ return [
 	'/newmember'          => [Module\Welcome::class,         [R::GET]],
 	'/nodeinfo/1.0'       => [Module\NodeInfo110::class,     [R::GET]],
 	'/nodeinfo/2.0'       => [Module\NodeInfo120::class,     [R::GET]],
-	'/nogroup'            => [Module\Group::class,           [R::GET]],
+	'/nocircle'           => [Module\Circle::class,          [R::GET]],
 
 	'/noscrape' => [
 		'/{nick}'         => [Module\NoScrape::class, [R::GET]],
@@ -545,11 +557,6 @@ return [
 
 	'/objects/{guid}[/{activity}]' => [Module\ActivityPub\Objects::class, [R::GET]],
 
-	'/oembed'         => [
-		'/b2h'    => [Module\Oembed::class, [R::GET]],
-		'/h2b'    => [Module\Oembed::class, [R::GET]],
-		'/{hash}' => [Module\Oembed::class, [R::GET]],
-	],
 	'/outbox/{nickname}' => [Module\ActivityPub\Outbox::class, [R::GET, R::POST]],
 	'/owa'               => [Module\Owa::class,                [R::GET]],
 	'/openid'            => [Module\Security\OpenID::class,    [R::GET]],
@@ -563,21 +570,12 @@ return [
 		'/{name}'                                                  => [Module\Photo::class, [R::GET]],
 		'/{type}/{id:\d+}'                                         => [Module\Photo::class, [R::GET]],
 		'/{type:contact|header}/{guid}'                            => [Module\Photo::class, [R::GET]],
-		// User Id Fallback, to remove after version 2021.12
-		'/{type}/{uid_ext:\d+\..*}'                                => [Module\Photo::class, [R::GET]],
 		'/{type}/{nickname_ext}'                                   => [Module\Photo::class, [R::GET]],
-		// Contact Id Fallback, to remove after version 2021.12
 		'/{type:contact|header}/{customsize:\d+}/{contact_id:\d+}' => [Module\Photo::class, [R::GET]],
 		'/{type:contact|header}/{customsize:\d+}/{guid}'           => [Module\Photo::class, [R::GET]],
 		'/{type}/{customsize:\d+}/{id:\d+}'                        => [Module\Photo::class, [R::GET]],
-		// User Id Fallback, to remove after version 2021.12
-		'/{type}/{customsize:\d+}/{uid_ext:\d+\..*}'               => [Module\Photo::class, [R::GET]],
 		'/{type}/{customsize:\d+}/{nickname_ext}'                  => [Module\Photo::class, [R::GET]],
 	],
-
-	// Kept for backwards-compatibility
-	// @TODO remove by version 2023.12
-	'/photos/{nickname}' => [Module\Profile\Photos::class, [R::GET]],
 
 	'/ping'              => [Module\Notifications\Ping::class, [R::GET]],
 
@@ -629,12 +627,17 @@ return [
 	],
 
 	'/settings' => [
+		'/server' => [
+			'[/]'                  => [Module\Settings\Server\Index::class,  [R::GET, R::POST]],
+			'/{gsid:\d+}/{action}' => [Module\Settings\Server\Action::class, [R::GET, R::POST]],
+		],
 		'[/]'         => [Module\Settings\Account::class,               [R::GET, R::POST]],
 		'/account' => [
 			'[/]'     => [Module\Settings\Account::class,               [R::GET, R::POST]],
 			'/{open}' => [Module\Settings\Account::class,               [R::GET, R::POST]],
 		],
 		'/addons[/{addon}]'                => [Module\Settings\Addons::class,           [R::GET, R::POST]],
+		'/channels'                        => [Module\Settings\Channels::class,         [R::GET, R::POST]],
 		'/connectors[/{connector}]'        => [Module\Settings\Connectors::class,       [R::GET, R::POST]],
 		'/delegation[/{action}/{user_id}]' => [Module\Settings\Delegation::class,       [R::GET, R::POST]],
 		'/display'                         => [Module\Settings\Display::class,          [R::GET, R::POST]],
@@ -657,10 +660,9 @@ return [
 	],
 
 	'/network' => [
-		'[/]'                         => [Module\Conversation\Network::class, [R::GET]],
+		'[/{content}]'                => [Module\Conversation\Network::class, [R::GET]],
 		'/archive/{from:\d\d\d\d-\d\d-\d\d}[/{to:\d\d\d\d-\d\d-\d\d}]' => [Module\Conversation\Network::class, [R::GET]],
-		'/forum/{contact_id:\d+}'     => [Module\Conversation\Network::class, [R::GET]],
-		'/group/{group_id:\d+}'       => [Module\Conversation\Network::class, [R::GET]],
+		'/circle/{circle_id:\d+}'     => [Module\Conversation\Network::class, [R::GET]],
 	],
 
 	'/randprof'                      => [Module\RandomProfile::class,         [R::GET]],
@@ -672,6 +674,7 @@ return [
 	'/toggle_mobile'                 => [Module\ToggleMobile::class,          [R::GET]],
 	'/tos'                           => [Module\Tos::class,                   [R::GET]],
 
+	'/update_channel[/{content}]'    => [Module\Update\Channel::class,        [R::GET]],
 	'/update_community[/{content}]'  => [Module\Update\Community::class,      [R::GET]],
 
 	'/update_display'                => [Module\Update\Display::class, [R::GET]],
@@ -679,8 +682,8 @@ return [
 	'/update_network' => [
 		'[/]'                        => [Module\Update\Network::class, [R::GET]],
 		'/archive/{from:\d\d\d\d-\d\d-\d\d}[/{to:\d\d\d\d-\d\d-\d\d}]' => [Module\Update\Network::class, [R::GET]],
-		'/forum/{contact_id:\d+}'    => [Module\Update\Network::class, [R::GET]],
-		'/group/{group_id:\d+}'      => [Module\Update\Network::class, [R::GET]],
+		'/group/{contact_id:\d+}'    => [Module\Update\Network::class, [R::GET]],
+		'/circle/{circle_id:\d+}'    => [Module\Update\Network::class, [R::GET]],
 	],
 
 	'/update_profile'                => [Module\Update\Profile::class,        [R::GET]],

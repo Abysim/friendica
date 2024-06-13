@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -46,7 +46,7 @@ class Update extends BaseApi
 {
 	public function post(array $request = [])
 	{
-		self::checkAllowedScope(self::SCOPE_WRITE);
+		$this->checkAllowedScope(self::SCOPE_WRITE);
 		$uid = self::getCurrentUserID();
 
 		$owner = User::getOwnerDataById($uid);
@@ -62,9 +62,9 @@ class Update extends BaseApi
 			'source'                => '',
 			'include_entities'      => false,
 			'contact_allow'         => $owner['allow_cid'],
-			'group_allow'           => $owner['allow_gid'],
+			'circle_allow'          => $owner['allow_gid'],
 			'contact_deny'          => $owner['deny_cid'],
-			'group_deny'            => $owner['deny_gid'],
+			'circle_deny'           => $owner['deny_gid'],
 		], $request);
 
 		if (!empty($request['htmlstatus'])) {
@@ -102,9 +102,9 @@ class Update extends BaseApi
 
 		$aclFormatter = DI::aclFormatter();
 		$item['allow_cid'] = $aclFormatter->toString($request['contact_allow']);
-		$item['allow_gid'] = $aclFormatter->toString($request['group_allow']);
+		$item['allow_gid'] = $aclFormatter->toString($request['circle_allow']);
 		$item['deny_cid']  = $aclFormatter->toString($request['contact_deny']);
-		$item['deny_gid']  = $aclFormatter->toString($request['group_deny']);
+		$item['deny_gid']  = $aclFormatter->toString($request['circle_deny']);
 
 		if (!empty($item['allow_cid'] . $item['allow_gid'] . $item['deny_cid'] . $item['deny_gid'])) {
 			$item['private'] = Item::PRIVATE;
@@ -121,7 +121,7 @@ class Update extends BaseApi
 			$item['gravity']     = Item::GRAVITY_COMMENT;
 			$item['object-type'] = Activity\ObjectType::COMMENT;
 		} else {
-			self::checkThrottleLimit();
+			$this->checkThrottleLimit();
 
 			$item['gravity']     = Item::GRAVITY_PARENT;
 			$item['object-type'] = Activity\ObjectType::NOTE;
@@ -155,13 +155,12 @@ class Update extends BaseApi
 
 				Photo::setPermissionForResource($media[0]['resource-id'], $uid, $item['allow_cid'], $item['allow_gid'], $item['deny_cid'], $item['deny_gid']);
 
-				$phototypes = Images::supportedTypes();
-				$ext        = $phototypes[$media[0]['type']];
+				$ext = Images::getExtensionByMimeType($media[0]['type']);
 
 				$attachment = [
 					'type'        => Post\Media::IMAGE,
 					'mimetype'    => $media[0]['type'],
-					'url'         => DI::baseUrl() . '/photo/' . $media[0]['resource-id'] . '-' . $media[0]['scale'] . '.' . $ext,
+					'url'         => DI::baseUrl() . '/photo/' . $media[0]['resource-id'] . '-' . $media[0]['scale'] . $ext,
 					'size'        => $media[0]['datasize'],
 					'name'        => $media[0]['filename'] ?: $media[0]['resource-id'],
 					'description' => $media[0]['desc'] ?? '',
@@ -170,7 +169,7 @@ class Update extends BaseApi
 				];
 
 				if (count($media) > 1) {
-					$attachment['preview']        = DI::baseUrl() . '/photo/' . $media[1]['resource-id'] . '-' . $media[1]['scale'] . '.' . $ext;
+					$attachment['preview']        = DI::baseUrl() . '/photo/' . $media[1]['resource-id'] . '-' . $media[1]['scale'] . $ext;
 					$attachment['preview-width']  = $media[1]['width'];
 					$attachment['preview-height'] = $media[1]['height'];
 				}
@@ -184,7 +183,7 @@ class Update extends BaseApi
 			if (!empty($item['uri-id'])) {
 				// output the post that we just posted.
 				$status_info = DI::twitterStatus()->createFromUriId($item['uri-id'], $uid, $request['include_entities'])->toArray();
-				DI::apiResponse()->exit('status', ['status' => $status_info], $this->parameters['extension'] ?? null, Contact::getPublicIdByUserId($uid));
+				DI::apiResponse()->addFormattedContent('status', ['status' => $status_info], $this->parameters['extension'] ?? null, Contact::getPublicIdByUserId($uid));
 				return;
 			}
 		}

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,6 +21,7 @@
 
 namespace Friendica\Test\src\Core\Cache;
 
+use Friendica\App\BaseURL;
 use Friendica\Core\Cache;
 use Friendica\Test\DatabaseTestTrait;
 use Friendica\Test\Util\CreateDatabaseTrait;

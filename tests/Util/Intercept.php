@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -37,7 +37,7 @@ class Intercept extends php_user_filter
 	public static $cache = '';
 
 	/** @noinspection PhpMissingParentCallCommonInspection */
-	public function filter($in, $out, &$consumed, $closing)
+	public function filter($in, $out, &$consumed, $closing): int
 	{
 		while ($bucket = stream_bucket_make_writeable($in)) {
 			self::$cache .= $bucket->data;

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -32,7 +32,7 @@ class UpdateAllSuggestions
 {
 	public static function execute()
 	{
-		$users = DBA::select('user', ['uid'], ["`last-activity` > ?", DateTimeFormat::utc('now - 3 days', 'Y-m-d')]);
+		$users = DBA::select('user', ['uid'], ["`last-activity` > ? AND `uid` > ?", DateTimeFormat::utc('now - 3 days', 'Y-m-d'), 0]);
 		while ($user = DBA::fetch($users)) {
 			Contact\Relation::updateCachedSuggestions($user['uid']);
 		}

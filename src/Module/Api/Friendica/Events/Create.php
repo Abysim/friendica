@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -40,7 +40,7 @@ class Create extends BaseApi
 {
 	protected function post(array $request = [])
 	{
-		BaseApi::checkAllowedScope(BaseApi::SCOPE_WRITE);
+		$this->checkAllowedScope(BaseApi::SCOPE_WRITE);
 		$uid = BaseApi::getCurrentUserID();
 
 		// params
@@ -53,9 +53,9 @@ class Create extends BaseApi
 			'place'      => '', //location of the event
 			'publish'    => 0,  //publish message
 			'allow_cid'  => '', //array of allowed person, if access restricted
-			'allow_gid'  => '', //array of allowed groups, if access restricted
+			'allow_gid'  => '', //array of allowed circles, if access restricted
 			'deny_cid'   => '', //array of denied person, if access restricted
-			'deny_gid'   => '', //array of denied groups, if access restricted
+			'deny_gid'   => '', //array of denied circles, if access restricted
 		], $request);
 
 		// error if no name specified
@@ -110,6 +110,6 @@ class Create extends BaseApi
 
 		$result = ['success' => true, 'event_id' => $event_id, 'event' => $event];
 
-		$this->response->exit('event_create', ['$result' => $result], $this->parameters['extension'] ?? null);
+		$this->response->addFormattedContent('event_create', ['$result' => $result], $this->parameters['extension'] ?? null);
 	}
 }

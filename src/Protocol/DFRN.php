@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -88,7 +88,7 @@ class DFRN
 		$contact['senderName'] = $contact['name'];
 
 		if ($uid != 0) {
-			$condition = ['uid' => $uid, 'account_expired' => false, 'account_removed' => false];
+			$condition = ['uid' => $uid, 'verified' => true, 'blocked' => false, 'account_removed' => false, 'account_expired' => false];
 			$user = DBA::selectFirst('user', [], $condition);
 			if (!DBA::isResult($user)) {
 				return [];
@@ -304,10 +304,8 @@ class DFRN
 		$profilephotos = Photo::selectToArray(['resource-id', 'scale', 'type'], ['profile' => true, 'uid' => $uid], ['order' => ['scale']]);
 
 		$photos = [];
-		$ext = Images::supportedTypes();
-
 		foreach ($profilephotos as $p) {
-			$photos[$p['scale']] = DI::baseUrl() . '/photo/' . $p['resource-id'] . '-' . $p['scale'] . '.' . $ext[$p['type']];
+			$photos[$p['scale']] = DI::baseUrl() . '/photo/' . $p['resource-id'] . '-' . $p['scale'] . Images::getExtensionByMimeType($p['type']);
 		}
 
 		$doc = new DOMDocument('1.0', 'utf-8');
@@ -1012,7 +1010,7 @@ class DFRN
 		$content_type = ($public_batch ? 'application/magic-envelope+xml' : 'application/json');
 
 		$postResult = DI::httpClient()->post($dest_url, $envelope, ['Content-Type' => $content_type]);
-		$xml = $postResult->getBody();
+		$xml = $postResult->getBodyString();
 
 		$curl_stat = $postResult->getReturnCode();
 		if (!empty($contact['gsid']) && ($postResult->isTimeout() || empty($curl_stat))) {
@@ -2220,8 +2218,8 @@ class DFRN
 			GServer::setProtocol($importer['gsid'], Post\DeliveryData::DFRN);
 		}
 
-		// is it a public forum? Private forums aren't exposed with this method
-		$forum = intval(XML::getFirstNodeValue($xpath, '/atom:feed/dfrn:community/text()'));
+		// is it a public group? Private groups aren't exposed with this method
+		$group = intval(XML::getFirstNodeValue($xpath, '/atom:feed/dfrn:community/text()'));
 
 		// The account type is new since 3.5.1
 		if ($xpath->query('/atom:feed/dfrn:account_type')->length > 0) {
@@ -2235,17 +2233,17 @@ class DFRN
 				// Updating the public contact as well
 				Contact::update(['contact-type' => $accounttype], ['uid' => 0, 'nurl' => $importer['nurl']]);
 			}
-			// A forum contact can either have set "forum" or "prv" - but not both
+			// A group contact can either have set "forum" or "prv" - but not both
 			if ($accounttype == User::ACCOUNT_TYPE_COMMUNITY) {
-				// It's a forum, so either set the public or private forum flag
-				$condition = ['(`forum` != ? OR `prv` != ?) AND `id` = ?', $forum, !$forum, $importer['id']];
-				Contact::update(['forum' => $forum, 'prv' => !$forum], $condition);
+				// It's a group, so either set the public or private forum flag
+				$condition = ['(`forum` != ? OR `prv` != ?) AND `id` = ?', $group, !$group, $importer['id']];
+				Contact::update(['forum' => $group, 'prv' => !$group], $condition);
 
 				// Updating the public contact as well
-				$condition = ['(`forum` != ? OR `prv` != ?) AND `uid` = 0 AND `nurl` = ?', $forum, !$forum, $importer['nurl']];
-				Contact::update(['forum' => $forum, 'prv' => !$forum], $condition);
+				$condition = ['(`forum` != ? OR `prv` != ?) AND `uid` = 0 AND `nurl` = ?', $group, !$group, $importer['nurl']];
+				Contact::update(['forum' => $group, 'prv' => !$group], $condition);
 			} else {
-				// It's not a forum, so remove the flags
+				// It's not a group, so remove the flags
 				$condition = ['(`forum` OR `prv`) AND `id` = ?', $importer['id']];
 				Contact::update(['forum' => false, 'prv' => false], $condition);
 
@@ -2253,13 +2251,13 @@ class DFRN
 				$condition = ['(`forum` OR `prv`) AND `uid` = 0 AND `nurl` = ?', $importer['nurl']];
 				Contact::update(['forum' => false, 'prv' => false], $condition);
 			}
-		} elseif ($forum != $importer['forum']) { // Deprecated since 3.5.1
-			$condition = ['`forum` != ? AND `id` = ?', $forum, $importer['id']];
-			Contact::update(['forum' => $forum], $condition);
+		} elseif ($group != $importer['forum']) { // Deprecated since 3.5.1
+			$condition = ['`forum` != ? AND `id` = ?', $group, $importer['id']];
+			Contact::update(['forum' => $group], $condition);
 
 			// Updating the public contact as well
-			$condition = ['`forum` != ? AND `uid` = 0 AND `nurl` = ?', $forum, $importer['nurl']];
-			Contact::update(['forum' => $forum], $condition);
+			$condition = ['`forum` != ? AND `uid` = 0 AND `nurl` = ?', $group, $importer['nurl']];
+			Contact::update(['forum' => $group], $condition);
 		}
 
 
