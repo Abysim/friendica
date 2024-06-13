@@ -56,10 +56,6 @@ class UpdateContact
 	 */
 	public static function add($run_parameters, int $contact_id): int
 	{
-		if (!$contact_id) {
-			throw new \InvalidArgumentException('Invalid value provided for contact_id');
-		}
-
 		// Dropping the task if the contact is blocked
 		if (Contact::isBlocked($contact_id)) {
 			return 0;
