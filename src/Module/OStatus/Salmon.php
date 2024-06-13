@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -74,7 +74,7 @@ class Salmon extends \Friendica\BaseModule
 
 		$this->logger->debug('New Salmon', ['nickname' => $nickname, 'xml' => $xml]);
 
-		$importer = $this->database->selectFirst('user', [], ['nickname' => $nickname, 'account_expired' => false, 'account_removed' => false]);
+		$importer = $this->database->selectFirst('user', [], ['nickname' => $nickname, 'verified' => true, 'blocked' => false, 'account_removed' => false, 'account_expired' => false]);
 		if (!$this->database->isResult($importer)) {
 			throw new HTTPException\InternalServerErrorException();
 		}

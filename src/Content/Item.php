@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -34,19 +34,21 @@ use Friendica\Core\Protocol;
 use Friendica\Core\Session\Capability\IHandleUserSessions;
 use Friendica\Core\System;
 use Friendica\Database\DBA;
+use Friendica\DI;
 use Friendica\Model\Attach;
+use Friendica\Model\Circle;
 use Friendica\Model\Contact;
 use Friendica\Model\Conversation;
 use Friendica\Model\FileTag;
-use Friendica\Model\Group;
 use Friendica\Model\Item as ItemModel;
 use Friendica\Model\Photo;
-use Friendica\Model\Tag;
 use Friendica\Model\Post;
+use Friendica\Model\Tag;
 use Friendica\Model\User;
 use Friendica\Network\HTTPException;
 use Friendica\Object\EMail\ItemCCEMail;
 use Friendica\Protocol\Activity;
+use Friendica\Protocol\ActivityPub;
 use Friendica\Util\ACLFormatter;
 use Friendica\Util\DateTimeFormat;
 use Friendica\Util\Emailer;
@@ -54,6 +56,7 @@ use Friendica\Util\ParseUrl;
 use Friendica\Util\Profiler;
 use Friendica\Util\Proxy;
 use Friendica\Util\XML;
+use GuzzleHttp\Psr7\Uri;
 
 /**
  * A content helper class for displaying items
@@ -295,7 +298,7 @@ class Item
 
 			if ($this->activity->match($item['verb'], Activity::TAG)) {
 				$fields = [
-					'author-id', 'author-link', 'author-name', 'author-network',
+					'author-id', 'author-link', 'author-name', 'author-network', 'author-link', 'author-alias',
 					'verb', 'object-type', 'resource-id', 'body', 'plink'
 				];
 				$obj = Post::selectFirst($fields, ['uri' => $item['parent-uri']]);
@@ -305,18 +308,20 @@ class Item
 				}
 
 				$author_arr = [
-					'uid' => 0,
-					'id' => $item['author-id'],
+					'uid'     => 0,
+					'id'      => $item['author-id'],
 					'network' => $item['author-network'],
-					'url' => $item['author-link'],
+					'url'     => $item['author-link'],
+					'alias'   => $item['author-alias'],
 				];
 				$author  = '[url=' . Contact::magicLinkByContact($author_arr) . ']' . $item['author-name'] . '[/url]';
 
 				$author_arr = [
-					'uid' => 0,
-					'id' => $obj['author-id'],
+					'uid'     => 0,
+					'id'      => $obj['author-id'],
 					'network' => $obj['author-network'],
-					'url' => $obj['author-link'],
+					'url'     => $obj['author-link'],
+					'alias'   => $obj['author-alias'],
 				];
 				$objauthor  = '[url=' . Contact::magicLinkByContact($author_arr) . ']' . $obj['author-name'] . '[/url]';
 
@@ -365,19 +370,20 @@ class Item
 	{
 		$this->profiler->startRecording('rendering');
 		$sub_link = $contact_url = $pm_url = $status_link = '';
-		$photos_link = $posts_link = $block_link = $ignore_link = '';
+		$photos_link = $posts_link = $block_link = $ignore_link = $collapse_link = $ignoreserver_link = '';
 
 		if ($this->userSession->getLocalUserId() && $this->userSession->getLocalUserId() == $item['uid'] && $item['gravity'] == ItemModel::GRAVITY_PARENT && !$item['self'] && !$item['mention']) {
 			$sub_link = 'javascript:doFollowThread(' . $item['id'] . '); return false;';
 		}
 
 		$author = [
-			'uid' => 0,
-			'id' => $item['author-id'],
+			'uid'     => 0,
+			'id'      => $item['author-id'],
 			'network' => $item['author-network'],
-			'url' => $item['author-link'],
+			'url'     => $item['author-link'],
+			'alias'   => $item['author-alias'],
 		];
-		$profile_link = Contact::magicLinkByContact($author, $item['author-link']);
+		$profile_link = Contact::magicLinkByContact($author, Contact::getProfileLink($author));
 		if (strpos($profile_link, 'contact/redir/') === 0) {
 			$status_link  = $profile_link . '?' . http_build_query(['url' => $item['author-link'] . '/status']);
 			$photos_link  = $profile_link . '?' . http_build_query(['url' => $item['author-link'] . '/photos']);
@@ -404,6 +410,11 @@ class Item
 			$collapse_link = $item['self'] ? '' : $contact_url . '/collapse?t=' . $formSecurityToken;
 		}
 
+		$authorBaseUri = new Uri($item['author-baseurl'] ?? '');
+		if (!empty($item['author-gsid']) && $authorBaseUri->getHost() && !DI::baseUrl()->isLocalUrl($authorBaseUri)) {
+			$ignoreserver_link = 'settings/server/' . $item['author-gsid'] . '/ignore';
+		}
+
 		if ($cid && !$item['self']) {
 			$contact_url = 'contact/' . $cid;
 			$posts_link  = $contact_url . '/posts';
@@ -424,7 +435,8 @@ class Item
 				$this->l10n->t('Send PM') => $pm_url,
 				$this->l10n->t('Block') => $block_link,
 				$this->l10n->t('Ignore') => $ignore_link,
-				$this->l10n->t('Collapse') => $collapse_link
+				$this->l10n->t('Collapse') => $collapse_link,
+				$this->l10n->t("Ignore %s server", $authorBaseUri->getHost()) => $ignoreserver_link,
 			];
 
 			if (!empty($item['language'])) {
@@ -484,16 +496,16 @@ class Item
 	{
 		// Look for any tags and linkify them
 		$item['inform'] = '';
-		$private_forum  = false;
+		$private_group  = false;
 		$private_id     = null;
-		$only_to_forum  = false;
-		$forum_contact  = [];
+		$only_to_group  = false;
+		$group_contact  = [];
 		$receivers      = [];
 
 		// Convert mentions in the body to a unified format
 		$item['body'] = BBCode::setMentions($item['body'], $item['uid'], $item['network']);
 
-		// Search for forum mentions
+		// Search for group mentions
 		foreach (Tag::getFromBody($item['body'], Tag::TAG_CHARACTER[Tag::MENTION] . Tag::TAG_CHARACTER[Tag::EXCLUSIVE_MENTION]) as $tag) {
 			$contact = Contact::getByURLForUser($tag[2], $item['uid']);
 			if (empty($contact)) {
@@ -512,37 +524,45 @@ class Item
 			}
 
 			if (!empty($contact['prv']) || ($tag[1] == Tag::TAG_CHARACTER[Tag::EXCLUSIVE_MENTION])) {
-				$private_forum = $contact['prv'];
-				$only_to_forum = ($tag[1] == Tag::TAG_CHARACTER[Tag::EXCLUSIVE_MENTION]);
+				$private_group = $contact['prv'];
+				$only_to_group = ($tag[1] == Tag::TAG_CHARACTER[Tag::EXCLUSIVE_MENTION]);
 				$private_id = $contact['id'];
-				$forum_contact = $contact;
-				Logger::info('Private forum or exclusive mention', ['url' => $tag[2], 'mention' => $tag[1]]);
+				$group_contact = $contact;
+				Logger::info('Private group or exclusive mention', ['url' => $tag[2], 'mention' => $tag[1]]);
 			} elseif ($item['allow_cid'] == '<' . $contact['id'] . '>') {
-				$private_forum = false;
-				$only_to_forum = true;
+				$private_group = false;
+				$only_to_group = true;
 				$private_id = $contact['id'];
-				$forum_contact = $contact;
-				Logger::info('Public forum', ['url' => $tag[2], 'mention' => $tag[1]]);
+				$group_contact = $contact;
+				Logger::info('Public group', ['url' => $tag[2], 'mention' => $tag[1]]);
 			} else {
-				Logger::info('Post with forum mention will not be converted to a forum post', ['url' => $tag[2], 'mention' => $tag[1]]);
+				Logger::info('Post with group mention will not be converted to a group post', ['url' => $tag[2], 'mention' => $tag[1]]);
 			}
 		}
 		Logger::info('Got inform', ['inform' => $item['inform']]);
 
-		if (($item['gravity'] == ItemModel::GRAVITY_PARENT) && !empty($forum_contact) && ($private_forum || $only_to_forum)) {
-			// we tagged a forum in a top level post. Now we change the post
-			$item['private'] = $private_forum ? ItemModel::PRIVATE : ItemModel::UNLISTED;
+		if (($item['gravity'] == ItemModel::GRAVITY_PARENT) && !empty($group_contact) && ($private_group || $only_to_group)) {
+			// we tagged a group in a top level post. Now we change the post
+			$item['private'] = $private_group ? ItemModel::PRIVATE : ItemModel::UNLISTED;
 
-			if ($only_to_forum) {
+			if ($only_to_group) {
+				$cdata = Contact::getPublicAndUserContactID($group_contact['id'], $item['uid']);
+				if (!empty($cdata['user'])) {
+					$item['owner-id'] = $cdata['user'];
+					unset($item['owner-link']);
+					unset($item['owner-name']);
+					unset($item['owner-avatar']);
+				}
+
 				$item['postopts'] = '';
 			}
 
 			$item['deny_cid'] = '';
 			$item['deny_gid'] = '';
 
-			if ($private_forum) {
+			if ($private_group) {
 				$item['allow_cid'] = '<' . $private_id . '>';
-				$item['allow_gid'] = '<' . Group::getIdForForum($forum_contact['id']) . '>';
+				$item['allow_gid'] = '<' . Circle::getIdForGroup($group_contact['id']) . '>';
 			} else {
 				$item['allow_cid'] = '';
 				$item['allow_gid'] = '';
@@ -616,10 +636,10 @@ class Item
 	public function addSharedPost(array $item, string $body = ''): string
 	{
 		if (empty($body)) {
-			$body = $item['body'];
+			$body = $item['body'] ?? '';
 		}
 
-		if (empty($item['quote-uri-id'])) {
+		if (empty($item['quote-uri-id']) || ($item['quote-uri-id'] == $item['uri-id'])) {
 			return $body;
 		}
 
@@ -658,14 +678,15 @@ class Item
 	 * Add a share block for the given item array
 	 *
 	 * @param array $item
-	 * @param bool $add_media
+	 * @param bool $add_media   true = Media is added to the body
+	 * @param bool $for_display true = The share block is used for display purposes, false = used for connectors, transport to other systems, ...
 	 * @return string
 	 */
-	public function createSharedBlockByArray(array $item, bool $add_media = false): string
+	public function createSharedBlockByArray(array $item, bool $add_media = false, bool $for_display = false): string
 	{
 		if ($item['network'] == Protocol::FEED) {
 			return PageInfo::getFooterFromUrl($item['plink']);
-		} elseif (!in_array($item['network'] ?? '', Protocol::FEDERATED)) {
+		} elseif (!in_array($item['network'] ?? '', Protocol::FEDERATED) && !$for_display) {
 			$item['guid'] = '';
 			$item['uri']  = '';
 		}
@@ -674,7 +695,7 @@ class Item
 			$item['body'] = Post\Media::addAttachmentsToBody($item['uri-id'], $item['body']);
 		}
 
-		$shared_content = BBCode::getShareOpeningTag($item['author-name'], $item['author-link'], $item['author-avatar'], $item['plink'], $item['created'], $item['guid'], $item['uri']);
+		$shared_content = BBCode::getShareOpeningTag($item['author-name'], $item['author-link'], $item['author-avatar'], $item['plink'] ?? $item['uri'], $item['created'], $item['guid'], $item['uri']);
 
 		if (!empty($item['title'])) {
 			$shared_content .= '[h3]' . $item['title'] . "[/h3]\n";
@@ -684,7 +705,7 @@ class Item
 
 		// If it is a reshared post then reformat it to avoid display problems with two share elements
 		if (!empty($shared)) {
-			if (!empty($shared['guid']) && ($encapsulated_share = $this->createSharedPostByGuid($shared['guid'], true))) {
+			if (($item['network'] != Protocol::BLUESKY) && !empty($shared['guid']) && ($encapsulated_share = $this->createSharedPostByGuid($shared['guid'], true))) {
 				if (!empty(BBCode::fetchShareAttributes($item['body']))) {
 					$item['body'] = preg_replace("/\[share.*?\](.*)\[\/share\]/ism", $encapsulated_share, $item['body']);
 				} else {
@@ -709,7 +730,7 @@ class Item
 	 */
 	public function getSharedPost(array $item, array $fields = []): array
 	{
-		if (!empty($item['quote-uri-id'])) {
+		if (!empty($item['quote-uri-id']) && ($item['quote-uri-id'] != $item['uri-id'])) {
 			$shared = Post::selectFirst($fields, ['uri-id' => $item['quote-uri-id'], 'uid' => [0, $item['uid'] ?? 0]]);
 			if (is_array($shared)) {
 				return [
@@ -750,7 +771,7 @@ class Item
 			return $attributes;
 		}
 
-		if (!empty($item['quote-uri-id'])) {
+		if (!empty($item['quote-uri-id']) && ($item['quote-uri-id'] != $item['uri-id'])) {
 			$shared = Post::selectFirst(['author-name', 'author-link', 'author-avatar', 'plink', 'created', 'guid', 'uri', 'body'], ['uri-id' => $item['quote-uri-id']]);
 			if (!empty($shared)) {
 				return [
@@ -863,9 +884,9 @@ class Item
 		}
 
 		$post['allow_cid'] = isset($request['contact_allow']) ? $this->aclFormatter->toString($request['contact_allow']) : $user['allow_cid'] ?? '';
-		$post['allow_gid'] = isset($request['group_allow'])   ? $this->aclFormatter->toString($request['group_allow'])   : $user['allow_gid'] ?? '';
+		$post['allow_gid'] = isset($request['circle_allow'])  ? $this->aclFormatter->toString($request['circle_allow'])  : $user['allow_gid'] ?? '';
 		$post['deny_cid']  = isset($request['contact_deny'])  ? $this->aclFormatter->toString($request['contact_deny'])  : $user['deny_cid']  ?? '';
-		$post['deny_gid']  = isset($request['group_deny'])    ? $this->aclFormatter->toString($request['group_deny'])    : $user['deny_gid']  ?? '';
+		$post['deny_gid']  = isset($request['circle_deny'])   ? $this->aclFormatter->toString($request['circle_deny'])   : $user['deny_gid']  ?? '';
 
 		$visibility = $request['visibility'] ?? '';
 		if ($visibility === 'public') {
@@ -971,12 +992,14 @@ class Item
 			$post['deny_gid']  = $owner['deny_gid'];
 		}
 
-		if ($post['allow_gid'] || $post['allow_cid'] || $post['deny_gid'] || $post['deny_cid']) {
-			$post['private'] = ItemModel::PRIVATE;
-		} elseif ($this->pConfig->get($post['uid'], 'system', 'unlisted')) {
-			$post['private'] = ItemModel::UNLISTED;
-		} else {
-			$post['private'] = ItemModel::PUBLIC;
+		if (!isset($post['private'])) {
+			if ($post['allow_gid'] || $post['allow_cid'] || $post['deny_gid'] || $post['deny_cid']) {
+				$post['private'] = ItemModel::PRIVATE;
+			} elseif ($this->pConfig->get($post['uid'], 'system', 'unlisted')) {
+				$post['private'] = ItemModel::UNLISTED;
+			} else {
+				$post['private'] = ItemModel::PUBLIC;
+			}
 		}
 
 		if (empty($post['contact-id'])) {
@@ -1011,7 +1034,7 @@ class Item
 		$post['body'] = $this->bbCodeVideo->transform($post['body']);
 		$post = $this->setObjectType($post);
 
-		// Personal notes must never be altered to a forum post.
+		// Personal notes must never be altered to a group post.
 		if ($post['post-type'] != ItemModel::PT_PERSONAL_NOTE) {
 			// Look for any tags and linkify them
 			$post = $this->expandTags($post);
@@ -1045,5 +1068,72 @@ class Item
 				$author['thumb'] ?? ''
 			));
 		}
+	}
+
+	public function copyPermissions(int $fromUriId, int $toUriId, int $parentUriId)
+	{
+		$from          = Post::selectFirstPost(['author-id'], ['uri-id' => $fromUriId]);
+		$from_author   = DBA::selectFirst('account-view', ['ap-followers'], ['id' => $from['author-id']]);
+		$to            = Post::selectFirstPost(['author-id'], ['uri-id' => $toUriId]);
+		$to_author     = DBA::selectFirst('account-view', ['ap-followers'], ['id' => $to['author-id']]);
+		$parent        = Post::selectFirstPost(['author-id'], ['uri-id' => $parentUriId]);
+		$parent_author = DBA::selectFirst('account-view', ['ap-followers'], ['id' => $parent['author-id']]);
+		
+		$followers = '';
+		foreach (array_column(Tag::getByURIId($parentUriId, [Tag::TO, Tag::CC, Tag::BCC]), 'url') as $url) {
+			if ($url == $parent_author['ap-followers']) {
+				$followers = $url;
+				break;
+			}
+		}
+
+		$existing = array_column(Tag::getByURIId($toUriId, [Tag::TO, Tag::CC, Tag::BCC]), 'url');
+
+		foreach (Tag::getByURIId($fromUriId, [Tag::TO, Tag::CC, Tag::BCC]) as $receiver) {
+			if ($receiver['url'] == $from_author['ap-followers']) {
+				if (!empty($followers)) {
+					$receiver['url']  = $followers;
+					$receiver['name'] = trim(parse_url($receiver['url'], PHP_URL_PATH), '/');
+					Tag::store($toUriId, $receiver['type'], $receiver['name'], $receiver['url']);
+				}
+				$receiver['url']  = $to_author['ap-followers'];
+				$receiver['name'] = trim(parse_url($receiver['url'], PHP_URL_PATH), '/');
+			}
+			if (in_array($receiver['url'], $existing)) {
+				continue;
+			}
+			Tag::store($toUriId, $receiver['type'], $receiver['name'], $receiver['url']);
+		}
+	}
+
+	/**
+	 * Check if the item is too old
+	 *
+	 * @param string $created
+	 * @param integer $uid
+	 * @return boolean item is too old
+	 */
+	public function isTooOld(string $created, int $uid = 0): bool
+	{
+		// check for create date and expire time
+		$expire_interval = DI::config()->get('system', 'dbclean-expire-days', 0);
+
+		if ($uid) {
+			$user = DBA::selectFirst('user', ['expire'], ['uid' => $uid]);
+			if (DBA::isResult($user) && ($user['expire'] > 0) && (($user['expire'] < $expire_interval) || ($expire_interval == 0))) {
+				$expire_interval = $user['expire'];
+			}
+		}
+
+		if (($expire_interval > 0) && !empty($created)) {
+			$expire_date = time() - ($expire_interval * 86400);
+			$created_date = strtotime($created);
+			if ($created_date < $expire_date) {
+				Logger::notice('Item created before expiration interval.', ['created' => date('c', $created_date), 'expired' => date('c', $expire_date)]);
+				return true;
+			}
+		}
+
+		return false;
 	}
 }

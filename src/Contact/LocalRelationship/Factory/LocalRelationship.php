@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -45,8 +45,8 @@ class LocalRelationship extends BaseFactory implements ICanCreateFromTableRow
 			$row['rel'] ?? Contact::NOTHING,
 			$row['info'] ?? '',
 			$row['notify_new_posts'] ?? false,
-			$row['remote_self'] ?? false,
-			$row['fetch_further_information'] ?? 0,
+			$row['remote_self'] ?? Entity\LocalRelationship::MIRROR_DEACTIVATED,
+			$row['fetch_further_information'] ?? Entity\LocalRelationship::FFI_NONE,
 			$row['ffi_keyword_denylist'] ?? '',
 			$row['subhub'] ?? false,
 			$row['hub-verify'] ?? '',

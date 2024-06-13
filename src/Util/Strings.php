@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -23,7 +23,6 @@ namespace Friendica\Util;
 
 use Friendica\Content\ContactSelector;
 use Friendica\Core\Logger;
-use Friendica\Core\System;
 use ParagonIE\ConstantTime\Base64;
 
 /**
@@ -511,7 +510,7 @@ class Strings
 		);
 
 		if (is_null($return)) {
-			Logger::notice('Received null value from preg_replace_callback', ['text' => $text, 'regex' => $regex, 'blocks' => $blocks, 'executionId' => $executionId, 'callstack' => System::callstack(10)]);
+			Logger::notice('Received null value from preg_replace_callback', ['text' => $text, 'regex' => $regex, 'blocks' => $blocks, 'executionId' => $executionId]);
 		}
 
 		$text = $callback($return ?? $text) ?? '';
@@ -561,4 +560,54 @@ class Strings
 		return $shorthand;
 	}
 
+	/**
+	 * Converts an URL in a nicer format (without the scheme and possibly shortened)
+	 *
+	 * @param string $url URL that is about to be reformatted
+	 * @return string reformatted link
+	 */
+	public static function getStyledURL(string $url): string
+	{
+		$parts = parse_url($url);
+		$scheme = [$parts['scheme'] . '://www.', $parts['scheme'] . '://'];
+		$styled_url = str_replace($scheme, '', $url);
+
+		if (strlen($styled_url) > 30) {
+			$styled_url = substr($styled_url, 0, 30) . "…";
+		}
+
+		return $styled_url;
+	}
+
+	/**
+	 * Sort a comma separated list of hashtags, convert them to lowercase and remove duplicates
+	 *
+	 * @param string $tag_list
+	 * @return string
+	 */
+	public static function cleanTags(string $tag_list): string
+	{
+		$tags = [];
+
+		$tagitems = explode(',', str_replace([' ', ';', '#'], ',', mb_strtolower($tag_list)));
+		foreach ($tagitems as $tag) {
+			if (!empty($tag)) {
+				$tags[] = preg_replace('#\s#u', '', $tag);
+			}
+		}
+		$tags = array_unique($tags);
+		asort($tags);
+		return implode(',', $tags);
+	}
+
+	/**
+	 * Get a tag array out of a comma separated list of tags
+	 *
+	 * @param string $tag_list
+	 * @return array
+	 */
+	public static function getTagArrayByString(string $tag_list): array
+	{
+		return explode(',', self::cleanTags($tag_list));
+	}
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -338,16 +338,13 @@ class Delivery
 			if ($public_dfrn) {
 				Logger::info('Relay delivery to ' . $contact['url'] . ' with guid ' . $target_item['guid'] . ' returns ' . $deliver_status);
 
-				if ($cmd == Delivery::POST) {
-					if (($deliver_status >= 200) && ($deliver_status <= 299)) {
-						Post\DeliveryData::incrementQueueDone($target_item['uri-id'], $protocol);
+				$success = ($deliver_status >= 200) && ($deliver_status <= 299);
 
-						GServer::setProtocol($contact['gsid'] ?? 0, $protocol);
-						$success = true;
-					} else {
-						Post\DeliveryData::incrementQueueFailed($target_item['uri-id']);
-						$success = false;
-					}
+				if ($cmd == Delivery::POST) {
+					Post\DeliveryData::incrementQueueDone($target_item['uri-id'], $protocol);
+					GServer::setProtocol($contact['gsid'] ?? 0, $protocol);
+				} else {
+					Post\DeliveryData::incrementQueueFailed($target_item['uri-id']);
 				}
 				return $success;
 			}
@@ -404,7 +401,7 @@ class Delivery
 	 */
 	private static function deliverDiaspora(string $cmd, array $contact, array $owner, array $items, array $target_item, bool $public_message, bool $top_level, bool $followup): bool
 	{
-		// We don't treat Forum posts as "wall-to-wall" to be able to post them via Diaspora
+		// We don't treat group posts as "wall-to-wall" to be able to post them via Diaspora
 		$walltowall = $top_level && ($owner['id'] != $items[0]['contact-id']) & ($owner['account-type'] != User::ACCOUNT_TYPE_COMMUNITY);
 
 		if ($public_message) {

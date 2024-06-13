@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -40,7 +40,9 @@ use Friendica\Model\Post;
 use Friendica\Model\Tag;
 use Friendica\Network\HTTPClient\Client\HttpClientAccept;
 use Friendica\Network\HTTPClient\Client\HttpClientOptions;
+use Friendica\Util\Images;
 use Friendica\Util\Map;
+use Friendica\Util\Network;
 use Friendica\Util\ParseUrl;
 use Friendica\Util\Proxy;
 use Friendica\Util\Strings;
@@ -62,8 +64,10 @@ class BBCode
 	const TWITTER      = 8;
 	const BACKLINK     = 8;
 	const ACTIVITYPUB  = 9;
+	const BLUESKY      = 10;
 
-	const TOP_ANCHOR = '<br class="top-anchor">';
+	const SHARED_ANCHOR = '<hr class="shared-anchor">';
+	const TOP_ANCHOR    = '<br class="top-anchor">';
 	const BOTTOM_ANCHOR = '<br class="button-anchor">';
 
 	const PREVIEW_NONE     = 0;
@@ -122,7 +126,7 @@ class BBCode
 						break;
 
 					case 'publisher_url':
-						$data['provider_url'] = html_entity_decode($value, ENT_QUOTES, 'UTF-8');
+						$data['provider_url'] = Network::sanitizeUrl(html_entity_decode($value, ENT_QUOTES, 'UTF-8'));
 						break;
 
 					case 'author_name':
@@ -133,14 +137,14 @@ class BBCode
 						break;
 
 					case 'author_url':
-						$data['author_url'] = html_entity_decode($value, ENT_QUOTES, 'UTF-8');
+						$data['author_url'] = Network::sanitizeUrl(html_entity_decode($value, ENT_QUOTES, 'UTF-8'));
 						if ($data['provider_url'] == $data['author_url']) {
 							$data['author_url'] = '';
 						}
 						break;
 
 					case 'title':
-						$value = self::convert(html_entity_decode($value, ENT_QUOTES, 'UTF-8'), false, true);
+						$value = self::toPlaintext(html_entity_decode($value, ENT_QUOTES, 'UTF-8'));
 						$value = html_entity_decode($value, ENT_QUOTES, 'UTF-8');
 						$value = str_replace(['[', ']'], ['&#91;', '&#93;'], $value);
 						$data['title'] = $value;
@@ -228,19 +232,85 @@ class BBCode
 	{
 		DI::profiler()->startRecording('rendering');
 		// Remove pictures in advance to avoid unneeded proxy calls
+		$text = preg_replace("/\[img\=([0-9]*)x([0-9]*)\](.*?)\[\/img\]/ism", ' ', $text);
 		$text = preg_replace("/\[img\=(.*?)\](.*?)\[\/img\]/ism", ' $2 ', $text);
 		$text = preg_replace("/\[img.*?\[\/img\]/ism", ' ', $text);
 
 		// Remove attachment
 		$text = self::replaceAttachment($text);
 
-		$naked_text = HTML::toPlaintext(self::convert($text, false, 0, true), 0, !$keep_urls);
+		$naked_text = HTML::toPlaintext(self::convert($text, false, self::EXTERNAL, true), 0, !$keep_urls);
 
 		DI::profiler()->stopRecording();
 		return $naked_text;
 	}
 
-	private static function proxyUrl(string $image, int $simplehtml = self::INTERNAL, int $uriid = 0, string $size = ''): string
+	/**
+	 * Converts text into a format that can be used for the channel search and the language detection.
+	 *
+	 * @param string $text
+	 * @param integer $uri_id
+	 * @return string
+	 */
+	public static function toSearchText(string $text, int $uri_id): string
+	{
+		// Removes attachments
+		$text = self::removeAttachment($text);
+
+		// Add text from attached media
+		if (!empty($uri_id)) {
+			foreach (Post\Media::getByURIId($uri_id) as $media) {
+				if (!empty($media['description']) && (stripos($text, $media['description']) === false)) {
+					$text .= ' ' . $media['description'];
+				}
+				if (in_array($media['type'], [Post\Media::HTML, Post\Media::ACTIVITY])) {
+					foreach (['name', 'author-name', 'publisher-name'] as $key) {
+						if (!empty($media[$key] && stripos($text, $media[$key]) === false)) {
+							$text .= ' ' . $media[$key];
+						}
+					}
+				}
+			}
+		}
+
+		if (empty($text)) {
+			return '';
+		}
+
+		// Remove links without a link description
+		$text = preg_replace("~\[url\=.*\]https?:.*\[\/url\]~", ' ', $text);
+
+		// Remove pictures
+		$text = preg_replace("/\[img\=([0-9]*)x([0-9]*)\](.*?)\[\/img\]/ism", ' ', $text);
+
+		// Replace picture with the alt description
+		$text = preg_replace("/\[img\=.*?\](.*?)\[\/img\]/ism", ' $1 ', $text);
+
+		// Remove the other pictures
+		$text = preg_replace("/\[img.*?\[\/img\]/ism", ' ', $text);
+
+		// Removes mentions, remove links from hashtags
+		$text = preg_replace('/[@!]\[url\=.*?\].*?\[\/url\]/ism', ' ', $text);
+		$text = preg_replace('/[#]\[url\=.*?\](.*?)\[\/url\]/ism', ' #$1 ', $text);
+		$text = preg_replace('/[@!#]+?\[url.*?\[\/url\]/ism', ' ', $text);
+		$text = preg_replace("/\[url=[^\[\]]*\](.*)\[\/url\]/Usi", ' $1 ', $text);
+
+		// Convert it to plain text
+		$text = self::toPlaintext($text, false);
+
+		// Remove possibly remaining links
+		$text = preg_replace(Strings::autoLinkRegEx(), '', $text);
+
+		// Remove all unneeded white space
+		do {
+			$oldtext = $text;
+			$text = str_replace(['  ', "\n", "\r", '"'], ' ', $text);
+		} while ($oldtext != $text);
+
+		return trim($text);
+	}
+
+	public static function proxyUrl(string $image, int $simplehtml = self::INTERNAL, int $uriid = 0, string $size = ''): string
 	{
 		// Only send proxied pictures to API and for internal display
 		if (!in_array($simplehtml, [self::INTERNAL, self::MASTODON_API, self::TWITTER_API])) {
@@ -366,6 +436,8 @@ class BBCode
 			return $text;
 		}
 
+		$data['url'] = Network::sanitizeUrl($data['url']);
+
 		if (isset($data['title'])) {
 			$data['title'] = strip_tags($data['title']);
 			$data['title'] = str_replace(['http://', 'https://'], '', $data['title']);
@@ -381,7 +453,7 @@ class BBCode
 		$return = '';
 		try {
 			if ($tryoembed && OEmbed::isAllowedURL($data['url'])) {
-				$return = OEmbed::getHTML($data['url'], $data['title']);
+				$return = OEmbed::getHTML($data['url'], $data['title'], $uriid);
 			} else {
 				throw new Exception('OEmbed is disabled for this attachment.');
 			}
@@ -417,6 +489,7 @@ class BBCode
 			}
 
 			if (!empty($data['provider_url']) && !empty($data['provider_name'])) {
+				$data['provider_url'] = Network::sanitizeUrl($data['provider_url']);
 				if (!empty($data['author_name'])) {
 					$return .= sprintf('<sup><a href="%s" target="_blank" rel="noopener noreferrer">%s (%s)</a></sup>', $data['provider_url'], $data['author_name'], $data['provider_name']);
 				} else {
@@ -508,26 +581,7 @@ class BBCode
 	 */
 	private static function convertUrlForActivityPub(string $url): string
 	{
-		return sprintf('<a href="%s" target="_blank" rel="noopener noreferrer">%s</a>', $url, self::getStyledURL($url));
-	}
-
-	/**
-	 * Converts an URL in a nicer format (without the scheme and possibly shortened)
-	 *
-	 * @param string $url URL that is about to be reformatted
-	 * @return string reformatted link
-	 */
-	private static function getStyledURL(string $url): string
-	{
-		$parts = parse_url($url);
-		$scheme = $parts['scheme'] . '://';
-		$styled_url = str_replace($scheme, '', $url);
-
-		if (strlen($styled_url) > 30) {
-			$styled_url = substr($styled_url, 0, 30) . "…";
-		}
-
-		return $styled_url;
+		return sprintf('<a href="%s" target="_blank" rel="noopener noreferrer">%s</a>', $url, Strings::getStyledURL($url));
 	}
 
 	/*
@@ -948,7 +1002,7 @@ class BBCode
 				$network = $contact['network'] ?? Protocol::PHANTOM;
 
 				$tpl = Renderer::getMarkupTemplate('shared_content.tpl');
-				$text .= Renderer::replaceMacros($tpl, [
+				$text .= self::SHARED_ANCHOR . Renderer::replaceMacros($tpl, [
 					'$profile'      => $attributes['profile'],
 					'$avatar'       => $attributes['avatar'],
 					'$author'       => $attributes['author'],
@@ -974,12 +1028,12 @@ class BBCode
 		if (is_null($text)) {
 			$curlResult = DI::httpClient()->head($match[1], [HttpClientOptions::TIMEOUT => DI::config()->get('system', 'xrd_timeout')]);
 			if ($curlResult->isSuccess()) {
-				$mimetype = $curlResult->getHeader('Content-Type')[0] ?? '';
+				$mimetype = $curlResult->getContentType() ?? '';
 			} else {
 				$mimetype = '';
 			}
 
-			if (substr($mimetype, 0, 6) == 'image/') {
+			if (Images::isSupportedMimeType($mimetype)) {
 				$text = '[url=' . $match[1] . ']' . $match[1] . '[/url]';
 			} else {
 				$text = '[url=' . $match[2] . ']' . $match[2] . '[/url]';
@@ -1013,6 +1067,21 @@ class BBCode
 		}
 
 		return $text;
+	}
+
+	/**
+	 * Callback: Sanitize links from given $match array
+	 *
+	 * @param array $match Array with link match
+	 * @return string BBCode
+	 */
+	private static function sanitizeLinksCallback(array $match): string
+	{
+		if (count($match) == 3) {
+			return '[' . $match[1] . ']' . Network::sanitizeUrl($match[2]) . '[/' . $match[1] . ']';
+		} else {
+			return '[' . $match[1] . '=' . Network::sanitizeUrl($match[2]) . ']' . $match[3] . '[/' . $match[1] . ']';
+		}
 	}
 
 	/**
@@ -1057,13 +1126,13 @@ class BBCode
 
 		$curlResult = DI::httpClient()->head($match[1], [HttpClientOptions::TIMEOUT => DI::config()->get('system', 'xrd_timeout')]);
 		if ($curlResult->isSuccess()) {
-			$mimetype = $curlResult->getHeader('Content-Type')[0] ?? '';
+			$mimetype = $curlResult->getContentType() ?? '';
 		} else {
 			$mimetype = '';
 		}
 
 		// if its a link to a picture then embed this picture
-		if (substr($mimetype, 0, 6) == 'image/') {
+		if (Images::isSupportedMimeType($mimetype)) {
 			$text = '[img]' . $match[1] . '[/img]';
 		} else {
 			if (!empty($match[3])) {
@@ -1129,6 +1198,7 @@ class BBCode
 	public static function removeLinks(string $bbcode): string
 	{
 		DI::profiler()->startRecording('rendering');
+		$bbcode = preg_replace("/\[img\=([0-9]*)x([0-9]*)\](.*?)\[\/img\]/ism", ' ', $bbcode);
 		$bbcode = preg_replace("/\[img\=(.*?)\](.*?)\[\/img\]/ism", ' $1 ', $bbcode);
 		$bbcode = preg_replace("/\[img.*?\[\/img\]/ism", ' ', $bbcode);
 
@@ -1173,6 +1243,76 @@ class BBCode
 		}
 
 		return $match[1] . '[url=' . $data['url'] . ']' . $data['nick'] . '[/url]';
+	}
+
+	/**
+	 * Replace mention links
+	 *
+	 * @param string $body HTML/BBCode
+	 * @return string Body with replaced mentions
+	 */
+	public static function setMentionsToAddr(string $body): string
+	{
+		DI::profiler()->startRecording('rendering');
+		$regexp = "/([@!])\[url\=([^\[\]]*)\].*?\[\/url\]/ism";
+		$body = preg_replace_callback($regexp, [self::class, 'mentionToAddrCallback'], $body);
+		DI::profiler()->stopRecording();
+		return $body;
+	}
+
+	/**
+	 * Callback function to replace a Friendica style mention in a mention with the addr
+	 *
+	 * @param array $match Matching values for the callback
+	 * @return string Replaced mention or empty string
+	 * @throws \Friendica\Network\HTTPException\InternalServerErrorException
+	 */
+	private static function mentionToAddrCallback(array $match): string
+	{
+		if (empty($match[2])) {
+			return '';
+		}
+
+		$data = Contact::getByURL($match[2], false, ['url', 'nick', 'addr']);
+		if (empty($data['nick'])) {
+			return $match[0];
+		}
+
+		return $match[1] . ($data['addr'] ?: $data['nick']);
+	}
+
+	/**
+	 * Normalize links to Youtube and Vimeo to a unified format.
+	 *
+	 * @param string $text
+	 * @return string
+	 */
+	private static function normalizeVideoLinks(string $text): string
+	{
+		$text = preg_replace("/\[youtube\]https?:\/\/www.youtube.com\/watch\?v\=(.*?)\[\/youtube\]/ism", '[youtube]$1[/youtube]', $text);
+		$text = preg_replace("/\[youtube\]https?:\/\/www.youtube.com\/embed\/(.*?)\[\/youtube\]/ism", '[youtube]$1[/youtube]', $text);
+		$text = preg_replace("/\[youtube\]https?:\/\/www.youtube.com\/shorts\/(.*?)\[\/youtube\]/ism", '[youtube]$1[/youtube]', $text);
+		$text = preg_replace("/\[youtube\]https?:\/\/youtu.be\/(.*?)\[\/youtube\]/ism", '[youtube]$1[/youtube]', $text);
+
+		$text = preg_replace("/\[vimeo\]https?:\/\/player.vimeo.com\/video\/([0-9]+)(.*?)\[\/vimeo\]/ism", '[vimeo]$1[/vimeo]', $text);
+		$text = preg_replace("/\[vimeo\]https?:\/\/vimeo.com\/([0-9]+)(.*?)\[\/vimeo\]/ism", '[vimeo]$1[/vimeo]', $text);
+
+		return $text;
+	}
+
+	/**
+	 * Expand Youtube and Vimeo links to
+	 *
+	 * @param string $text
+	 * @return string
+	 */
+	public static function expandVideoLinks(string $text): string
+	{
+		$text = self::normalizeVideoLinks($text);
+		$text = preg_replace("/\[youtube\]([A-Za-z0-9\-_=]+)(.*?)\[\/youtube\]/ism", '[url=https://www.youtube.com/watch?v=$1]https://www.youtube.com/watch?v=$1[/url]', $text);
+		$text = preg_replace("/\[vimeo\]([0-9]+)(.*?)\[\/vimeo\]/ism", '[url=https://vimeo.com/$1]https://vimeo.com/$1[/url]', $text);
+
+		return $text;
 	}
 
 	/**
@@ -1254,12 +1394,12 @@ class BBCode
 				 * $match[1] = $url
 				 * $match[2] = $title or absent
 				 */
-				$try_oembed_callback = function (array $match) {
+				$try_oembed_callback = function (array $match) use ($uriid) {
 					$url = $match[1];
 					$title = $match[2] ?? '';
 
 					try {
-						$return = OEmbed::getHTML($url, $title);
+						$return = OEmbed::getHTML($url, $title, $uriid);
 					} catch (Exception $ex) {
 						$return = $match[0];
 					}
@@ -1371,7 +1511,7 @@ class BBCode
 
 				// Replace non graphical smilies for external posts
 				if (!$nosmile) {
-					$text = self::performWithEscapedTags($text, ['img'], function ($text) use ($simple_html, $for_plaintext) {
+					$text = self::performWithEscapedTags($text, ['url', 'img', 'audio', 'video', 'youtube', 'vimeo', 'share', 'attachment', 'iframe', 'bookmark'], function ($text) use ($simple_html, $for_plaintext) {
 						return Smilies::replace($text, ($simple_html != self::INTERNAL) || $for_plaintext);
 					});
 				}
@@ -1465,9 +1605,6 @@ class BBCode
 				// Check for centered text
 				$text = preg_replace("(\[center\](.*?)\[\/center\])ism", '<div style="text-align:center;">$1</div>', $text);
 
-				// Check for list text
-				$text = str_replace("[*]", "<li>", $text);
-
 				// Check for block-level custom CSS
 				$text = preg_replace('#(?<=^|\n)\[style=(.*?)](.*?)\[/style](?:\n|$)#ism', '<div style="$1">$2</div>', $text);
 
@@ -1475,7 +1612,11 @@ class BBCode
 				$text = preg_replace("(\[style=(.*?)\](.*?)\[\/style\])ism", '<span style="$1">$2</span>', $text);
 
 				// Mastodon Emoji (internal tag, do not document for users)
-				$text = preg_replace("(\[emoji=(.*?)](.*?)\[/emoji])ism", '<span class="mastodon emoji"><img src="$1" alt="$2" title="$2"/></span>', $text);
+				if ($simple_html == self::MASTODON_API) {
+					$text = preg_replace("(\[emoji=(.*?)](.*?)\[/emoji])ism", '$2', $text);
+				} else {
+					$text = preg_replace("(\[emoji=(.*?)](.*?)\[/emoji])ism", '<span class="mastodon emoji"><img src="$1" alt="$2" title="$2"/></span>', $text);
+				}
 
 				// Check for CSS classes
 				// @deprecated since 2021.12, left for backward-compatibility reasons
@@ -1502,6 +1643,10 @@ class BBCode
 					$text = preg_replace("/\[ol\](.*?)\[\/ol\]/ism", '</p><ol>$1</ol><p>', $text);
 					$text = preg_replace("/\[li\](.*?)\[\/li\]/ism", '<li>$1</li>', $text);
 				}
+
+				// Check for list text
+				$text = str_replace("[*]", "<li>", $text);
+				$text = str_replace("[li]", "<li>", $text);
 
 				$text = preg_replace("/\[th\](.*?)\[\/th\]/sm", '<th>$1</th>', $text);
 				$text = preg_replace("/\[td\](.*?)\[\/td\]/sm", '<td>$1</td>', $text);
@@ -1628,6 +1773,9 @@ class BBCode
 				// Simplify "video" element
 				$text = preg_replace('(\[video[^\]]*?\ssrc\s?=\s?([^\s\]]+)[^\]]*?\].*?\[/video\])ism', '[video]$1[/video]', $text);
 
+				$text = preg_replace_callback("/\[(video)\](.*?)\[\/video\]/ism", [self::class, 'sanitizeLinksCallback'], $text);
+				$text = preg_replace_callback("/\[(audio)\](.*?)\[\/audio\]/ism", [self::class, 'sanitizeLinksCallback'], $text);
+
 				if ($simple_html == self::NPF) {
 					$text = preg_replace(
 						"/\[video\](.*?)\[\/video\]/ism",
@@ -1670,15 +1818,13 @@ class BBCode
 				}
 
 				// Backward compatibility, [iframe] support has been removed in version 2020.12
+				$text = preg_replace_callback("/\[(iframe)\](.*?)\[\/iframe\]/ism", [self::class, 'sanitizeLinksCallback'], $text);
 				$text = preg_replace("/\[iframe\](.*?)\[\/iframe\]/ism", '<a href="$1">$1</a>', $text);
 
-				// Youtube extensions
-				$text = preg_replace("/\[youtube\]https?:\/\/www.youtube.com\/watch\?v\=(.*?)\[\/youtube\]/ism", '[youtube]$1[/youtube]', $text);
-				$text = preg_replace("/\[youtube\]https?:\/\/www.youtube.com\/embed\/(.*?)\[\/youtube\]/ism", '[youtube]$1[/youtube]', $text);
-				$text = preg_replace("/\[youtube\]https?:\/\/www.youtube.com\/shorts\/(.*?)\[\/youtube\]/ism", '[youtube]$1[/youtube]', $text);
-				$text = preg_replace("/\[youtube\]https?:\/\/youtu.be\/(.*?)\[\/youtube\]/ism", '[youtube]$1[/youtube]', $text);
+				$text = self::normalizeVideoLinks($text);
 
-				if ($try_oembed) {
+				// Youtube extensions
+				if ($try_oembed && OEmbed::isAllowedURL('https://www.youtube.com/embed/')) {
 					$text = preg_replace("/\[youtube\]([A-Za-z0-9\-_=]+)(.*?)\[\/youtube\]/ism", '<iframe width="' . $a->getThemeInfoValue('videowidth') . '" height="' . $a->getThemeInfoValue('videoheight') . '" src="https://www.youtube.com/embed/$1" frameborder="0" ></iframe>', $text);
 				} else {
 					$text = preg_replace(
@@ -1688,10 +1834,8 @@ class BBCode
 					);
 				}
 
-				$text = preg_replace("/\[vimeo\]https?:\/\/player.vimeo.com\/video\/([0-9]+)(.*?)\[\/vimeo\]/ism", '[vimeo]$1[/vimeo]', $text);
-				$text = preg_replace("/\[vimeo\]https?:\/\/vimeo.com\/([0-9]+)(.*?)\[\/vimeo\]/ism", '[vimeo]$1[/vimeo]', $text);
-
-				if ($try_oembed) {
+				// Vimeo extensions
+				if ($try_oembed && OEmbed::isAllowedURL('https://player.vimeo.com/video')) {
 					$text = preg_replace("/\[vimeo\]([0-9]+)(.*?)\[\/vimeo\]/ism", '<iframe width="' . $a->getThemeInfoValue('videowidth') . '" height="' . $a->getThemeInfoValue('videoheight') . '" src="https://player.vimeo.com/video/$1" frameborder="0" ></iframe>', $text);
 				} else {
 					$text = preg_replace(
@@ -1702,7 +1846,7 @@ class BBCode
 				}
 
 				// oembed tag
-				$text = OEmbed::BBCode2HTML($text);
+				$text = OEmbed::BBCode2HTML($text, $uriid);
 
 				// Avoid triple linefeeds through oembed
 				$text = str_replace("<br style='clear:left'></span><br><br>", "<br style='clear:left'></span><br>", $text);
@@ -1723,13 +1867,12 @@ class BBCode
 					$text = preg_replace("/\[event\-id\](.*?)\[\/event\-id\]/ism", '', $text);
 				}
 
-				if (!$for_plaintext && DI::config()->get('system', 'big_emojis') && ($simple_html != self::DIASPORA)) {
-					$conv = html_entity_decode(str_replace([' ', "\n", "\r"], '', $text));
-					// Emojis are always 4 byte Unicode characters
-					if (!empty($conv) && (strlen($conv) / mb_strlen($conv) == 4)) {
-						$text = '<span style="font-size: xx-large; line-height: normal;">' . $text . '</span>';
-					}
+				if (!$for_plaintext && DI::config()->get('system', 'big_emojis') && ($simple_html != self::DIASPORA) && Smilies::isEmojiPost($text)) {
+					$text = '<span style="font-size: xx-large; line-height: normal;">' . $text . '</span>';
 				}
+
+				$text = preg_replace_callback("/\[(url)\](.*?)\[\/url\]/ism", [self::class, 'sanitizeLinksCallback'], $text);
+				$text = preg_replace_callback("/\[(url)\=(.*?)\](.*?)\[\/url\]/ism", [self::class, 'sanitizeLinksCallback'], $text);
 
 				// Handle mentions and hashtag links
 				if ($simple_html == self::DIASPORA) {
@@ -1790,7 +1933,7 @@ class BBCode
 					$text
 				);
 
-				if (in_array($simple_html, [self::OSTATUS, self::TWITTER])) {
+				if (in_array($simple_html, [self::OSTATUS, self::TWITTER, self::BLUESKY])) {
 					$text = preg_replace_callback("/([^#@!])\[url\=([^\]]*)\](.*?)\[\/url\]/ism", [self::class, 'expandLinksCallback'], $text);
 					//$text = preg_replace("/[^#@!]\[url\=([^\]]*)\](.*?)\[\/url\]/ism", ' $2 [url]$1[/url]', $text);
 					$text = preg_replace("/\[bookmark\=([^\]]*)\](.*?)\[\/bookmark\]/ism", ' $2 [url]$1[/url]', $text);
@@ -1833,11 +1976,11 @@ class BBCode
 				self::performWithEscapedTags($text, ['url', 'share'], function ($text) use ($simple_html) {
 					$text = preg_replace_callback("/(?:#\[url\=[^\[\]]*\]|\[url\=[^\[\]]*\]#)(.*?)\[\/url\]/ism", function ($matches) use ($simple_html) {
 						if ($simple_html == self::ACTIVITYPUB) {
-							return '<a href="' . DI::baseUrl() . '/search?tag=' . rawurlencode($matches[1])
+							return '<a href="' . DI::baseUrl() . '/search?tag=' . urlencode($matches[1])
 								. '" data-tag="' . XML::escape($matches[1]) . '" rel="tag ugc">#'
 								. XML::escape($matches[1]) . '</a>';
 						} else {
-							return '#<a href="' . DI::baseUrl() . '/search?tag=' . rawurlencode($matches[1])
+							return '#<a href="' . DI::baseUrl() . '/search?tag=' . urlencode($matches[1])
 								. '" class="tag" rel="tag" title="' . XML::escape($matches[1]) . '">'
 								. XML::escape($matches[1]) . '</a>';
 						}
@@ -1864,6 +2007,7 @@ class BBCode
 				$text = preg_replace('/acct:([^@]+)@((?!\-)(?:[a-zA-Z\d\-]{0,62}[a-zA-Z\d]\.){1,126}(?!\d+)[a-zA-Z\d]{1,63})/', '<a href="' . DI::baseUrl() . '/acctlink?addr=$1@$2" target="extlink">acct:$1@$2</a>', $text);
 
 				// Perform MAIL Search
+				$text = preg_replace_callback("/\[(mail)\](.*?)\[\/mail\]/ism", [self::class, 'sanitizeLinksCallback'], $text);
 				$text = preg_replace("/\[mail\](.*?)\[\/mail\]/", '<a href="mailto:$1">$1</a>', $text);
 				$text = preg_replace("/\[mail\=(.*?)\](.*?)\[\/mail\]/", '<a href="mailto:$1">$2</a>', $text);
 
@@ -1949,13 +2093,7 @@ class BBCode
 		);
 
 		// Default iframe allowed domains/path
-		$allowedIframeDomains = [
-			DI::baseUrl()->getHost()
-				. (DI::baseUrl()->getPath() ? '/' . DI::baseUrl()->getPath() : '')
-				. '/oembed/', # The path part has to change with the source in Content\Oembed::iframe
-			'www.youtube.com/embed/',
-			'player.vimeo.com/video/',
-		];
+		$allowedIframeDomains = DI::config()->get('system', 'no_oembed_rich_content') ? [] : ['www.youtube.com/embed/', 'player.vimeo.com/video/'];
 
 		$allowedIframeDomains = array_merge(
 			$allowedIframeDomains,
@@ -1984,7 +2122,7 @@ class BBCode
 	{
 		DI::profiler()->startRecording('rendering');
 
-		$text = BBCode::performWithEscapedTags($text, ['code', 'noparse', 'nobb', 'pre'], function ($text) {
+		$text = self::performWithEscapedTags($text, ['code', 'noparse', 'nobb', 'pre'], function ($text) {
 			$text = preg_replace("/[\s|\n]*\[abstract\].*?\[\/abstract\][\s|\n]*/ism", ' ', $text);
 			$text = preg_replace("/[\s|\n]*\[abstract=.*?\].*?\[\/abstract][\s|\n]*/ism", ' ', $text);
 			return $text;
@@ -2006,7 +2144,7 @@ class BBCode
 		DI::profiler()->startRecording('rendering');
 		$addon = strtolower($addon);
 
-		$abstract = BBCode::performWithEscapedTags($text, ['code', 'noparse', 'nobb', 'pre'], function ($text) use ($addon) {
+		$abstract = self::performWithEscapedTags($text, ['code', 'noparse', 'nobb', 'pre'], function ($text) use ($addon) {
 			if ($addon && preg_match('#\[abstract=' . preg_quote($addon, '#') . '](.*?)\[/abstract]#ism', $text, $matches)) {
 				return $matches[1];
 			}
@@ -2082,7 +2220,7 @@ class BBCode
 
 		// Convert it to HTML - don't try oembed
 		if ($for_diaspora) {
-			$text = self::convert($text, false, self::DIASPORA);
+			$text = self::convertForUriId(0, $text, self::DIASPORA);
 
 			// Add all tags that maybe were removed
 			if (preg_match_all("/#\[url\=([$url_search_string]*)\](.*?)\[\/url\]/ism", $original_text, $tags)) {
@@ -2096,12 +2234,15 @@ class BBCode
 				$text = $text . ' ' . $tagline;
 			}
 		} else {
-			$text = self::convert($text, false, self::CONNECTORS);
+			$text = self::convertForUriId(0, $text, self::CONNECTORS);
 		}
 
 		// If a link is followed by a quote then there should be a newline before it
 		// Maybe we should make this newline at every time before a quote.
 		$text = str_replace(['</a><blockquote>'], ['</a><br><blockquote>'], $text);
+
+		// The converter doesn't convert these elements
+		$text = str_replace(['<div>', '</div>'], ['<p>', '</p>'], $text);
 
 		// Now convert HTML to Markdown
 		$text = HTML::toMarkdown($text);
@@ -2221,7 +2362,7 @@ class BBCode
 
 					case '#':
 					default:
-						return $match[1] . '[url=' . DI::baseUrl() . '/search?tag=' . $match[2] . ']' . $match[2] . '[/url]';
+						return $match[1] . '[url=' . DI::baseUrl() . '/search?tag=' . urlencode($match[2]) . ']' . $match[2] . '[/url]';
 				}
 			},
 			$body

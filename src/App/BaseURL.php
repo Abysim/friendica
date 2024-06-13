@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -126,5 +126,15 @@ class BaseURL extends Uri implements UriInterface
 
 		$redirectTo = $this->__toString() . '/' . ltrim($toUrl, '/');
 		System::externalRedirect($redirectTo);
+	}
+
+	public function isLocalUrl(string $url): bool
+	{
+		return strpos(Strings::normaliseLink($url), Strings::normaliseLink((string)$this)) === 0;
+	}
+
+	public function isLocalUri(UriInterface $uri): bool
+	{
+		return $this->isLocalUrl((string)$uri);
 	}
 }

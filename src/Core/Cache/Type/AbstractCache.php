@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -28,6 +28,8 @@ use Friendica\Core\Cache\Capability\ICanCache;
  */
 abstract class AbstractCache implements ICanCache
 {
+	const NAME = '';
+
 	/**
 	 * @var string The hostname
 	 */
@@ -104,5 +106,11 @@ abstract class AbstractCache implements ICanCache
 
 			return $result;
 		}
+	}
+
+	/** {@inheritDoc} */
+	public function getName(): string
+	{
+		return static::NAME;
 	}
 }

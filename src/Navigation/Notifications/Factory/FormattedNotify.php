@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -222,7 +222,7 @@ class FormattedNotify extends BaseFactory
 					$this->baseUrl . '/notify/' . $Notify->id,
 					Contact::getAvatarUrlForUrl($Notify->url, $Notify->uid, Proxy::SIZE_MICRO),
 					$Notify->url,
-					strip_tags(BBCode::toPlaintext($Notify->msg ?? '')),
+					BBCode::toPlaintext($Notify->msg ?? '', false),
 					DateTimeFormat::local($Notify->date->format(DateTimeFormat::MYSQL), 'r'),
 					Temporal::getRelativeDate($Notify->date->format(DateTimeFormat::MYSQL)),
 					$Notify->seen

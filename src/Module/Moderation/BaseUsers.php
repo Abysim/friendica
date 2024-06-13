@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -59,7 +59,7 @@ abstract class BaseUsers extends BaseModeration
 	protected function getTabsHTML(string $selectedTab): string
 	{
 		$all     = $this->database->count('user', ["`uid` != ?", 0]);
-		$active  = $this->database->count('user', ["NOT `blocked` AND `verified` AND NOT `account_removed` AND `uid` != ?", 0]);
+		$active  = $this->database->count('user', ["`verified` AND NOT `blocked` AND NOT `account_removed` AND NOT `account_expired` AND `uid` != ?", 0]);
 		$pending = Register::getPendingCount();
 		$blocked = $this->database->count('user', ['blocked' => true, 'verified' => true, 'account_removed' => false]);
 		$deleted = $this->database->count('user', ['account_removed' => true]);
@@ -118,15 +118,15 @@ abstract class BaseUsers extends BaseModeration
 			$page_types = [
 				User::PAGE_FLAGS_NORMAL    => $this->t('Normal Account Page'),
 				User::PAGE_FLAGS_SOAPBOX   => $this->t('Soapbox Page'),
-				User::PAGE_FLAGS_COMMUNITY => $this->t('Public Forum'),
+				User::PAGE_FLAGS_COMMUNITY => $this->t('Public Group'),
 				User::PAGE_FLAGS_FREELOVE  => $this->t('Automatic Friend Page'),
-				User::PAGE_FLAGS_PRVGROUP  => $this->t('Private Forum')
+				User::PAGE_FLAGS_PRVGROUP  => $this->t('Private Group')
 			];
 			$account_types = [
 				User::ACCOUNT_TYPE_PERSON       => $this->t('Personal Page'),
 				User::ACCOUNT_TYPE_ORGANISATION => $this->t('Organisation Page'),
 				User::ACCOUNT_TYPE_NEWS         => $this->t('News Page'),
-				User::ACCOUNT_TYPE_COMMUNITY    => $this->t('Community Forum'),
+				User::ACCOUNT_TYPE_COMMUNITY    => $this->t('Community Group'),
 				User::ACCOUNT_TYPE_RELAY        => $this->t('Relay'),
 			];
 

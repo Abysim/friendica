@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -87,10 +87,6 @@ class NodeInfo110 extends BaseModule
 		$nodeinfo['metadata']['protocols']['inbound'][]  = 'rss2.0';
 
 		$nodeinfo['metadata']['services'] = $nodeinfo['services'];
-
-		if (Addon::isEnabled('twitter')) {
-			$nodeinfo['metadata']['services']['inbound'][] = 'twitter';
-		}
 
 		$nodeinfo['metadata']['explicitContent'] = $this->config->get('system', 'explicit_content', false) == true;
 

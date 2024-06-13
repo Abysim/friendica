@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -231,11 +231,12 @@ class CookieTest extends MockedTest
 
 		$data = json_decode(StaticCookie::$_COOKIE[Cookie::NAME]);
 
-		self::assertObjectHasAttribute('uid', $data);
+		self::assertIsObject($data);
+		self::assertTrue(property_exists($data, 'uid'));
 		self::assertEquals($uid, $data->uid);
-		self::assertObjectHasAttribute('hash', $data);
+		self::assertTrue(property_exists($data, 'hash'));
 		self::assertEquals($hash, $data->hash);
-		self::assertObjectHasAttribute('ip', $data);
+		self::assertTrue(property_exists($data, 'ip'));
 		self::assertEquals($remoteIp, $data->ip);
 
 		self::assertLessThanOrEqual(time() + Cookie::DEFAULT_EXPIRE * 24 * 60 * 60, StaticCookie::$_EXPIRE);

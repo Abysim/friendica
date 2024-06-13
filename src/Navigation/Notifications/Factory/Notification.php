@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -171,7 +171,7 @@ class Notification extends BaseFactory implements ICanCreateFromTableRow
 					}
 				}
 
-				if (($Notification->verb != Activity::POST) || !in_array($Notification->type, [Post\UserNotification::TYPE_DIRECT_THREAD_COMMENT, Post\UserNotification::TYPE_IMPLICIT_TAGGED])) {
+				if (($Notification->verb != Activity::POST) || !in_array($Notification->type, [Post\UserNotification::TYPE_DIRECT_THREAD_COMMENT, Post\UserNotification::TYPE_IMPLICIT_TAGGED, Post\UserNotification::TYPE_DIRECT_COMMENT])) {
 					$link_item = $item;
 				}
 			}

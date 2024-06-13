@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,6 +25,7 @@ use DOMDocument;
 use DOMElement;
 use DOMXPath;
 use Friendica\App;
+use Friendica\Contact\LocalRelationship\Entity\LocalRelationship;
 use Friendica\Content\PageInfo;
 use Friendica\Content\Text\BBCode;
 use Friendica\Content\Text\HTML;
@@ -42,6 +43,7 @@ use Friendica\Model\Tag;
 use Friendica\Model\User;
 use Friendica\Network\HTTPException;
 use Friendica\Util\DateTimeFormat;
+use Friendica\Util\Images;
 use Friendica\Util\Network;
 use Friendica\Util\ParseUrl;
 use Friendica\Util\Proxy;
@@ -561,16 +563,18 @@ class Feed
 			} elseif (!Item::isValid($item)) {
 				Logger::info('Feed item is invalid', ['created' => $item['created'], 'uid' => $item['uid'], 'uri' => $item['uri']]);
 				continue;
-			} elseif (Item::isTooOld($item)) {
+			} elseif (DI::contentItem()->isTooOld($item['created'], $item['uid'])) {
 				Logger::info('Feed is too old', ['created' => $item['created'], 'uid' => $item['uid'], 'uri' => $item['uri']]);
 				continue;
 			}
 
+			$fetch_further_information = $contact['fetch_further_information'] ?? LocalRelationship::FFI_NONE;
+
 			$preview = '';
-			if (!empty($contact['fetch_further_information']) && ($contact['fetch_further_information'] < 3)) {
+			if (in_array($fetch_further_information, [LocalRelationship::FFI_INFORMATION, LocalRelationship::FFI_BOTH])) {
 				// Handle enclosures and treat them as preview picture
 				foreach ($attachments as $attachment) {
-					if ($attachment['mimetype'] == 'image/jpeg') {
+					if (Images::isSupportedMimeType($attachment['mimetype'])) {
 						$preview = $attachment['url'];
 					}
 				}
@@ -611,7 +615,12 @@ class Feed
 					}
 				}
 
-				$data = PageInfo::queryUrl($item['plink'], false, $preview, ($contact['fetch_further_information'] == 2), $contact['ffi_keyword_denylist'] ?? '');
+				$data = PageInfo::queryUrl(
+					$item['plink'],
+					false,
+					$fetch_further_information == LocalRelationship::FFI_BOTH,
+					$contact['ffi_keyword_denylist'] ?? ''
+				);
 
 				if (!empty($data)) {
 					// Take the data that was provided by the feed if the query is empty
@@ -630,7 +639,7 @@ class Feed
 					// We always strip the title since it will be added in the page information
 					$item['title'] = '';
 					$item['body'] = $item['body'] . "\n" . PageInfo::getFooterFromData($data, false);
-					$taglist = $contact['fetch_further_information'] == 2 ? PageInfo::getTagsFromUrl($item['plink'], $preview, $contact['ffi_keyword_denylist'] ?? '') : [];
+					$taglist = $fetch_further_information == LocalRelationship::FFI_BOTH ? PageInfo::getTagsFromUrl($item['plink'], $preview, $contact['ffi_keyword_denylist'] ?? '') : [];
 					$item['object-type'] = Activity\ObjectType::BOOKMARK;
 					$attachments = [];
 
@@ -662,7 +671,7 @@ class Feed
 					$item['body'] = '[abstract]' . HTML::toBBCode($summary, $basepath) . "[/abstract]\n" . $item['body'];
 				}
 
-				if (!empty($contact['fetch_further_information']) && ($contact['fetch_further_information'] == 3)) {
+				if ($fetch_further_information == LocalRelationship::FFI_KEYWORD) {
 					if (empty($taglist)) {
 						$taglist = PageInfo::getTagsFromUrl($item['plink'], $preview, $contact['ffi_keyword_denylist'] ?? '');
 					}

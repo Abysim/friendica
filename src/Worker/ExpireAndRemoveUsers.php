@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -36,13 +36,13 @@ class ExpireAndRemoveUsers
 {
 	public static function execute()
 	{
-		// expire any expired regular accounts. Don't expire forums.
+		// expire any expired regular accounts. Don't expire groups.
 		$condition = ["NOT `account_expired` AND `account_expires_on` > ? AND `account_expires_on` < ? AND `page-flags` = ? AND `uid` != ?",
 			DBA::NULL_DATETIME, DateTimeFormat::utcNow(), User::PAGE_FLAGS_NORMAL, 0];
 		DBA::update('user', ['account_expired' => true], $condition);
 
 		// Ensure to never remove the user with uid=0
-		DBA::update('user', ['account_expired' => false, 'account_removed' => false,
+		DBA::update('user', ['verified' => true, 'blocked' => false, 'account_removed' => false, 'account_expired' => false,
 			'account_expires_on' => DBA::NULL_DATETIME], ['uid' => 0]);
 
 		// Remove any freshly expired account

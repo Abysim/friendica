@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -385,12 +385,14 @@ class OStatus
 			}
 		}
 
-		$header = [];
-		$header['uid'] = $importer['uid'];
-		$header['network'] = Protocol::OSTATUS;
-		$header['wall'] = 0;
-		$header['origin'] = 0;
-		$header['gravity'] = Item::GRAVITY_COMMENT;
+		// Initial header elements
+		$header = [
+			'uid'     => $importer['uid'],
+			'network' => Protocol::OSTATUS,
+			'wall'    => 0,
+			'origin'  => 0,
+			'gravity' => Item::GRAVITY_COMMENT,
+		];
 
 		if (!is_object($doc->firstChild) || empty($doc->firstChild->tagName)) {
 			return false;
@@ -734,7 +736,7 @@ class OStatus
 		$stored = false;
 		$curlResult = DI::httpClient()->get($related, HttpClientAccept::ATOM_XML);
 
-		if (!$curlResult->isSuccess() || empty($curlResult->getBody())) {
+		if (!$curlResult->isSuccess() || empty($curlResult->getBodyString())) {
 			return;
 		}
 
@@ -743,12 +745,12 @@ class OStatus
 		if ($curlResult->inHeader('Content-Type') &&
 			in_array('application/atom+xml', $curlResult->getHeader('Content-Type'))) {
 			Logger::info('Directly fetched XML for URI ' . $related_uri);
-			$xml = $curlResult->getBody();
+			$xml = $curlResult->getBodyString();
 		}
 
 		if ($xml == '') {
 			$doc = new DOMDocument();
-			if (!@$doc->loadHTML($curlResult->getBody())) {
+			if (!@$doc->loadHTML($curlResult->getBodyString())) {
 				return;
 			}
 			$xpath = new DOMXPath($doc);
@@ -768,7 +770,7 @@ class OStatus
 
 					if ($curlResult->isSuccess()) {
 						Logger::info('Fetched XML for URI ' . $related_uri);
-						$xml = $curlResult->getBody();
+						$xml = $curlResult->getBodyString();
 					}
 				}
 			}
@@ -780,7 +782,7 @@ class OStatus
 
 			if ($curlResult->isSuccess()) {
 				Logger::info('GNU Social workaround to fetch XML for URI ' . $related_uri);
-				$xml = $curlResult->getBody();
+				$xml = $curlResult->getBodyString();
 			}
 		}
 
@@ -791,7 +793,7 @@ class OStatus
 
 			if ($curlResult->isSuccess()) {
 				Logger::info('GNU Social workaround 2 to fetch XML for URI ' . $related_uri);
-				$xml = $curlResult->getBody();
+				$xml = $curlResult->getBodyString();
 			}
 		}
 
@@ -1468,6 +1470,8 @@ class OStatus
 			$entry = $doc->createElement('entry');
 
 			if ($owner['contact-type'] == Contact::TYPE_COMMUNITY) {
+				$entry->setAttribute('xmlns:activity', ActivityNamespace::ACTIVITY);
+
 				$contact = Contact::getByURL($item['author-link']) ?: $owner;
 				$contact['nickname'] = $contact['nickname'] ?? $contact['nick'];
 				$author = self::addAuthor($doc, $contact, false);

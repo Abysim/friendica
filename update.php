@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -62,6 +62,8 @@ use Friendica\Model\User;
 use Friendica\Protocol\Activity;
 use Friendica\Protocol\Delivery;
 use Friendica\Security\PermissionSet\Repository\PermissionSet;
+use Friendica\Util\DateTimeFormat;
+use Friendica\Worker\UpdateContact;
 
 // Post-update script of PR 5751
 function update_1298()
@@ -1330,5 +1332,135 @@ function update_1518()
 	}
 	DBA::close($users);
 
+	return Update::SUCCESS;
+}
+
+function update_1520(): int
+{
+	DBA::update('user', ['parent-uid' => null], ['parent-uid' => 0]);
+
+	return Update::SUCCESS;
+}
+
+/**
+ * user-contact.remote_self was wrongly declared as boolean, possibly truncating integer values from contact.remote_self
+ *
+ * @return int
+ * @throws Exception
+ */
+function update_1524(): int
+{
+	$contacts = DBA::select('contact', ['uid', 'uri-id', 'remote_self'], ["`uid` != ?", 0]);
+	while ($contact = DBA::fetch($contacts)) {
+		Contact\User::insertForContactArray($contact);
+	}
+
+	return Update::SUCCESS;
+}
+
+function update_1525(): int
+{
+	// Use expected value for user.username
+	if (!DBA::e('UPDATE `user` u
+    JOIN `profile` p
+    ON p.`uid` = u.`uid`
+    SET u.`username` = p.`name`
+    WHERE p.`name` != ""')) {
+		return Update::FAILED;
+	}
+
+	// Blank out deprecated field profile.name to avoid future confusion
+	if (!DBA::e('UPDATE `profile` p
+    SET p.`name` = ""')) {
+		return Update::FAILED;
+	}
+
+	// Update users' self-contact name if needed
+	if (!DBA::e('UPDATE `contact` c
+    JOIN `user` u
+    ON u.`uid` = c.`uid` AND c.`self` = 1
+    SET c.`name` = u.`username`')) {
+		return Update::FAILED;
+	}
+
+	return Update::SUCCESS;
+}
+
+function update_1531()
+{
+	$threads = Post::selectThread(Item::DELIVER_FIELDLIST, ["`uid` = ? AND `created` > ?", 0, DateTimeFormat::utc('now - ' . DI::config()->get('channel', 'engagement_hours') . ' hour')]);
+	while ($post = Post::fetch($threads)) {
+		$post['gravity'] = Item::GRAVITY_COMMENT;
+		Post\Engagement::storeFromItem($post);
+	}
+	DBA::close($threads);
+
+	return Update::SUCCESS;
+}
+
+function update_1535()
+{
+	if (DI::config()->get('system', 'compute_group_counts')) {
+		DI::config()->set('system', 'compute_circle_counts', true);
+	}
+	DI::config()->delete('system', 'compute_group_counts');
+	
+	return Update::SUCCESS;
+}
+
+function update_1539()
+{
+	$users = DBA::select('user', ['uid'], ['account-type' => User::ACCOUNT_TYPE_COMMUNITY]);
+	while ($user = DBA::fetch($users)) {
+		User::setCommunityUserSettings($user['uid']);
+	}
+	DBA::close($users);
+
+	return Update::SUCCESS;
+}
+
+function pre_update_1550()
+{
+	if (DBStructure::existsTable('post-engagement') && DBStructure::existsColumn('post-engagement', ['language'])) {
+		DBA::e("ALTER TABLE `post-engagement` DROP `language`");
+	}
+	if (DBStructure::existsTable('post-searchindex') && DBStructure::existsColumn('post-searchindex', ['network'])) {
+		DBA::e("ALTER TABLE `post-searchindex` DROP `network`, DROP `private`");
+	}
+	return Update::SUCCESS;
+}
+
+function update_1552()
+{
+	DBA::e("UPDATE `post-content` INNER JOIN `post-tag` ON `post-tag`.`uri-id` = `post-content`.`uri-id` INNER JOIN `tag` ON `tag`.`id` = `post-tag`.`tid` SET `sensitive` = ? WHERE `name` = ?", true, 'nsfw');
+
+	return Update::SUCCESS;
+}
+
+function update_1554()
+{
+	DBA::e("UPDATE `post-engagement` INNER JOIN `post` ON `post`.`uri-id` = `post-engagement`.`uri-id` SET `post-engagement`.`network` = `post`.`network`");
+
+	return Update::SUCCESS;
+}
+
+function update_1556()
+{
+	$users = DBA::select('user', ['uid'], ['verified' => true, 'blocked' => false, 'account_removed' => false, 'account_expired' => false]);
+	while ($user = DBA::fetch($users)) {
+		Worker::add(Worker::PRIORITY_LOW, 'ProfileUpdate', $user['uid']);
+	}
+	DBA::close($users);
+
+	return Update::SUCCESS;
+}
+
+function update_1557()
+{
+	$contacts = DBA::select('account-view', ['id'], ['platform' => 'friendica', 'contact-type' => Contact::TYPE_RELAY]);
+	while ($contact = DBA::fetch($contacts)) {
+		UpdateContact::add(Worker::PRIORITY_LOW, $contact['id']);
+	}
+	DBA::close($contacts);
 	return Update::SUCCESS;
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -104,7 +104,10 @@ class OAuth
 		}
 		Logger::debug('Token found', $token);
 
-		User::updateLastActivity($token['uid']);
+		$user = User::getById($token['uid'], ['uid', 'parent-uid', 'last-activity', 'login_date']);
+		if (!empty($user)) {
+			User::updateLastActivity($user, false);
+		}
 
 		// Regularly update suggestions
 		if (Contact\Relation::areSuggestionsOutdated($token['uid'])) {
@@ -128,8 +131,10 @@ class OAuth
 		if (!empty($client_secret)) {
 			$condition['client_secret'] = $client_secret;
 		}
+
 		if (!empty($redirect_uri)) {
-			$condition['redirect_uri'] = $redirect_uri;
+			$redirect_uri = strtok($redirect_uri, '?');
+			$condition = DBA::mergeConditions($condition, ["`redirect_uri` LIKE ?", '%' . $redirect_uri . '%']);
 		}
 
 		$application = DBA::selectFirst('application', [], $condition);
@@ -137,6 +142,12 @@ class OAuth
 			Logger::warning('Application not found', $condition);
 			return [];
 		}
+
+		// The redirect_uri could contain several URI that are separated by spaces.
+		if (($application['redirect_uri'] != $redirect_uri) && !in_array($redirect_uri, explode(' ', $application['redirect_uri']))) {
+			return [];
+		}
+
 		return $application;
 	}
 
@@ -187,7 +198,8 @@ class OAuth
 			'write'          => (stripos($scope, BaseApi::SCOPE_WRITE) !== false),
 			'follow'         => (stripos($scope, BaseApi::SCOPE_FOLLOW) !== false),
 			'push'           => (stripos($scope, BaseApi::SCOPE_PUSH) !== false),
-			'created_at'     => DateTimeFormat::utcNow()];
+			'created_at'     => DateTimeFormat::utcNow()
+		];
 
 		foreach ([BaseApi::SCOPE_READ, BaseApi::SCOPE_WRITE, BaseApi::SCOPE_WRITE, BaseApi::SCOPE_PUSH] as $scope) {
 			if ($fields[$scope] && !$application[$scope]) {

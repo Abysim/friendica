@@ -11,11 +11,11 @@ labels:
 
 skip_clone: true
 
-pipeline:
+steps:
   clone:
     image: alpine/git
     commands:
-      - git clone $CI_REPO_LINK .
+      - git clone $CI_REPO_CLONE_URL .
       - git checkout $CI_COMMIT_BRANCH
       - git fetch origin $CI_COMMIT_REF
       - git merge $CI_COMMIT_SHA
@@ -39,7 +39,7 @@ pipeline:
       branch: [ develop, '*-rc' ]
       event: push
   composer_install:
-    image: friendicaci/php7.4:php7.4.33
+    image: friendicaci/php8.2:php8.2.16
     commands:
       - export COMPOSER_HOME=.composer
       - composer validate

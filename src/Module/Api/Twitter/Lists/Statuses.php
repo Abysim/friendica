@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -36,7 +36,7 @@ use Friendica\Util\Profiler;
 use Psr\Log\LoggerInterface;
 
 /**
- * Returns recent statuses from users in the specified group.
+ * Returns recent statuses from users in the specified circle.
  *
  * @see https://developer.twitter.com/en/docs/accounts-and-users/create-manage-lists/api-reference/get-lists-ownerships
  */
@@ -48,9 +48,9 @@ class Statuses extends BaseApi
 	/** @var Database */
 	private $dba;
 
-	public function __construct(Database $dba, TwitterStatus $twitterStatus, App $app, L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, ApiResponse $response, array $server, array $parameters = [])
+	public function __construct(Database $dba, TwitterStatus $twitterStatus, \Friendica\Factory\Api\Mastodon\Error $errorFactory, App $app, L10n $l10n, App\BaseURL $baseUrl, App\Arguments $args, LoggerInterface $logger, Profiler $profiler, ApiResponse $response, array $server, array $parameters = [])
 	{
-		parent::__construct($app, $l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
+		parent::__construct($errorFactory, $app, $l10n, $baseUrl, $args, $logger, $profiler, $response, $server, $parameters);
 
 		$this->dba           = $dba;
 		$this->twitterStatus = $twitterStatus;
@@ -58,7 +58,7 @@ class Statuses extends BaseApi
 
 	protected function rawContent(array $request = [])
 	{
-		BaseApi::checkAllowedScope(BaseApi::SCOPE_READ);
+		$this->checkAllowedScope(BaseApi::SCOPE_READ);
 		$uid = BaseApi::getCurrentUserID();
 
 		if (empty($request['list_id'])) {
@@ -76,9 +76,9 @@ class Statuses extends BaseApi
 
 		$start = max(0, ($page - 1) * $count);
 
-		$groups    = $this->dba->selectToArray('group_member', ['contact-id'], ['gid' => $request['list_id']]);
-		$gids      = array_column($groups, 'contact-id');
-		$condition = ['uid' => $uid, 'gravity' => [Item::GRAVITY_PARENT, Item::GRAVITY_COMMENT], 'contact-id' => $gids];
+		$members   = $this->dba->selectToArray('group_member', ['contact-id'], ['gid' => $request['list_id']]);
+		$cids      = array_column($members, 'contact-id');
+		$condition = ['uid' => $uid, 'gravity' => [Item::GRAVITY_PARENT, Item::GRAVITY_COMMENT], 'contact-id' => $cids];
 		$condition = DBA::mergeConditions($condition, ["`uri-id` > ?", $since_id]);
 
 		if ($max_id > 0) {
@@ -103,6 +103,6 @@ class Statuses extends BaseApi
 		}
 		$this->dba->close($statuses);
 
-		$this->response->exit('statuses', ['status' => $items], $this->parameters['extension'] ?? null, Contact::getPublicIdByUserId($uid));
+		$this->response->addFormattedContent('statuses', ['status' => $items], $this->parameters['extension'] ?? null, Contact::getPublicIdByUserId($uid));
 	}
 }

@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -42,7 +42,7 @@ class Type
 	const TAG_SELF = 128;
 	/** @var int Notification about getting poked/prodded/etc. (Obsolete) */
 	const POKE = 512;
-	/** @var int Notification about either a contact had posted something directly or the contact is a mentioned forum */
+	/** @var int Notification about either a contact had posted something directly or the contact is a mentioned group */
 	const SHARE = 1024;
 
 	/** @var int Global System notifications */

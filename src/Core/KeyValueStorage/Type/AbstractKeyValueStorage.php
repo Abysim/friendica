@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -21,13 +21,15 @@
 
 namespace Friendica\Core\KeyValueStorage\Type;
 
-use Friendica\Core\KeyValueStorage\Capabilities\IManageKeyValuePairs;
+use Friendica\Core\KeyValueStorage\Capability\IManageKeyValuePairs;
 
 /**
  * An abstract helper class for Key-Value storage classes
  */
 abstract class AbstractKeyValueStorage implements IManageKeyValuePairs
 {
+	const NAME = '';
+
 	/** {@inheritDoc} */
 	public function get(string $key)
 	{

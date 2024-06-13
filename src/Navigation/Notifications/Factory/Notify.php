@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -68,7 +68,7 @@ class Notify extends BaseFactory implements ICanCreateFromTableRow
 			false,
 			$params['verb'] ?? '',
 			$params['otype'] ?? '',
-			substr(strip_tags(BBCode::convertForUriId($uri_id, $params['source_name'])), 0, 255),
+			substr(BBCode::toPlaintext($params['source_name'], false), 0, 255),
 			null,
 			null,
 			$item_id,

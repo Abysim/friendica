@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -62,7 +62,7 @@ class Directory
 	}
 
 	private static function updateAll() {
-		$users = DBA::select('owner-view', ['url'], ['net-publish' => true, 'account_expired' => false, 'verified' => true]);
+		$users = DBA::select('owner-view', ['url'], ['net-publish' => true, 'verified' => true, 'blocked' => false, 'account_removed' => false, 'account_expired' => false]);
 		while ($user = DBA::fetch($users)) {
 			Worker::add(Worker::PRIORITY_LOW, 'Directory', $user['url']);
 		}

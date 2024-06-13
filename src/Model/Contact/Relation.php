@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -22,6 +22,7 @@
 namespace Friendica\Model\Contact;
 
 use Exception;
+use Friendica\Content\Widget;
 use Friendica\Core\Logger;
 use Friendica\Core\Protocol;
 use Friendica\Database\Database;
@@ -31,6 +32,8 @@ use Friendica\Model\APContact;
 use Friendica\Model\Contact;
 use Friendica\Model\Profile;
 use Friendica\Model\User;
+use Friendica\Model\Verb;
+use Friendica\Protocol\Activity;
 use Friendica\Protocol\ActivityPub;
 use Friendica\Util\DateTimeFormat;
 use Friendica\Util\Strings;
@@ -76,14 +79,14 @@ class Relation
 	 */
 	public static function discoverByUser(int $uid)
 	{
-		$contact = Contact::selectFirst(['id', 'url', 'network'], ['uid' => $uid, 'self' => true]);
+		$contact = Contact::selectFirst(['id', 'url', 'network'], ['id' => Contact::getPublicIdByUserId($uid)]);
 		if (empty($contact)) {
 			Logger::warning('Self contact for user not found', ['uid' => $uid]);
 			return;
 		}
 
-		$followers = self::getContacts($uid, [Contact::FOLLOWER, Contact::FRIEND]);
-		$followings = self::getContacts($uid, [Contact::SHARING, Contact::FRIEND]);
+		$followers  = self::getContacts($uid, [Contact::FOLLOWER, Contact::FRIEND], false);
+		$followings = self::getContacts($uid, [Contact::SHARING, Contact::FRIEND], false);
 
 		self::updateFollowersFollowings($contact, $followers, $followings);
 	}
@@ -205,10 +208,11 @@ class Relation
 	 * Fetch contact url list from the given local user
 	 *
 	 * @param integer $uid
-	 * @param array $rel
+	 * @param array   $rel
+	 * @param bool    $only_ap
 	 * @return array contact list
 	 */
-	private static function getContacts(int $uid, array $rel): array
+	private static function getContacts(int $uid, array $rel, bool $only_ap = true): array
 	{
 		$list = [];
 		$profile = Profile::getByUID($uid);
@@ -217,15 +221,22 @@ class Relation
 		}
 
 		$condition = [
-			'rel' => $rel,
-			'uid' => $uid,
-			'self' => false,
+			'rel'     => $rel,
+			'uid'     => $uid,
+			'self'    => false,
 			'deleted' => false,
-			'hidden' => false,
+			'hidden'  => false,
 			'archive' => false,
 			'pending' => false,
+			'blocked' => false,
+			'failed'  => false,
 		];
-		$condition = DBA::mergeConditions($condition, ["`url` IN (SELECT `url` FROM `apcontact`)"]);
+		if ($only_ap) {
+			$condition = DBA::mergeConditions($condition, ["`url` IN (SELECT `url` FROM `apcontact`)"]);
+		} else {
+			$networks  = Widget::unavailableNetworks();
+			$condition = DBA::mergeConditions($condition, array_merge(["NOT `network` IN (" . substr(str_repeat("?, ", count($networks)), 0, -2) . ")"], $networks));
+		}
 		$contacts = DBA::select('contact', ['url'], $condition);
 		while ($contact = DBA::fetch($contacts)) {
 			$list[] = $contact['url'];
@@ -245,6 +256,10 @@ class Relation
 	public static function isDiscoverable(string $url, array $contact = []): bool
 	{
 		$contact_discovery = DI::config()->get('system', 'contact_discovery');
+
+		if (Contact::isLocal($url)) {
+			return true;
+		}
 
 		if ($contact_discovery == self::DISCOVERY_NONE) {
 			return false;
@@ -476,12 +491,11 @@ class Relation
 	 */
 	public static function countFollows(int $cid, array $condition = []): int
 	{
-		$condition = DBA::mergeConditions($condition, [
-			'`id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ? AND `follows`)',
-			$cid,
-		]);
+		$condition = DBA::mergeConditions($condition, ["`cid` = ? and `follows`", $cid]);
+		$sql = "SELECT COUNT(*) AS `total` FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `relation-cid` WHERE " . array_shift($condition);
 
-		return DI::dba()->count('contact', $condition);
+		$result = DBA::fetchFirst($sql, $condition);
+		return $result['total'] ?? 0;
 	}
 
 	/**
@@ -491,20 +505,18 @@ class Relation
 	 * @param array $condition Additional condition on the contact table
 	 * @param int   $count
 	 * @param int   $offset
-	 * @param bool  $shuffle
 	 * @return array
 	 * @throws Exception
 	 */
-	public static function listFollows(int $cid, array $condition = [], int $count = 30, int $offset = 0, bool $shuffle = false)
+	public static function listFollows(int $cid, array $condition = [], int $count = 30, int $offset = 0)
 	{
-		$condition = DBA::mergeConditions($condition,
-			['`id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ? AND `follows`)',
-			$cid]
-		);
-
-		return DI::dba()->selectToArray('contact', [], $condition,
-			['limit' => [$offset, $count], 'order' => [$shuffle ? 'RAND()' : 'name']]
-		);
+		$condition = DBA::mergeConditions($condition, ["`cid` = ? and `follows`", $cid]);
+		$sql = "SELECT `contact`.* FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `relation-cid` WHERE " . array_shift($condition);
+		if ($count > 0) {
+			$sql .= " LIMIT ?, ?";
+			$condition = array_merge($condition, [$offset, $count]);
+		}
+		return DBA::toArray(DBA::p($sql, $condition));
 	}
 
 	/**
@@ -517,12 +529,11 @@ class Relation
 	 */
 	public static function countFollowers(int $cid, array $condition = [])
 	{
-		$condition = DBA::mergeConditions($condition,
-			['`id` IN (SELECT `cid` FROM `contact-relation` WHERE `relation-cid` = ? AND `follows`)',
-			$cid]
-		);
+		$condition = DBA::mergeConditions($condition, ["`relation-cid` = ? and `follows`", $cid]);
+		$sql = "SELECT COUNT(*) AS `total` FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `cid` WHERE " . array_shift($condition);
 
-		return DI::dba()->count('contact', $condition);
+		$result = DBA::fetchFirst($sql, $condition);
+		return $result['total'] ?? 0;
 	}
 
 	/**
@@ -532,19 +543,18 @@ class Relation
 	 * @param array $condition Additional condition on the contact table
 	 * @param int   $count
 	 * @param int   $offset
-	 * @param bool  $shuffle
 	 * @return array
 	 * @throws Exception
 	 */
-	public static function listFollowers(int $cid, array $condition = [], int $count = 30, int $offset = 0, bool $shuffle = false)
+	public static function listFollowers(int $cid, array $condition = [], int $count = 30, int $offset = 0)
 	{
-		$condition = DBA::mergeConditions($condition,
-			['`id` IN (SELECT `cid` FROM `contact-relation` WHERE `relation-cid` = ? AND `follows`)', $cid]
-		);
-
-		return DI::dba()->selectToArray('contact', [], $condition,
-			['limit' => [$offset, $count], 'order' => [$shuffle ? 'RAND()' : 'name']]
-		);
+		$condition = DBA::mergeConditions($condition, ["`relation-cid` = ? and `follows`", $cid]);
+		$sql = "SELECT `contact`.* FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `cid` WHERE " . array_shift($condition);
+		if ($count > 0) {
+			$sql .= " LIMIT ?, ?";
+			$condition = array_merge($condition, [$offset, $count]);
+		}
+		return DBA::toArray(DBA::p($sql, $condition));
 	}
 
 	/**
@@ -557,13 +567,21 @@ class Relation
 	 */
 	public static function countMutuals(int $cid, array $condition = [])
 	{
-		$condition = DBA::mergeConditions($condition,
-			['`id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ? AND `follows`) 
-			AND `id` IN (SELECT `cid` FROM `contact-relation` WHERE `relation-cid` = ? AND `follows`)',
-			$cid, $cid]
-		);
+		$condition1 = DBA::mergeConditions($condition, ["`cid` = ? and `follows`", $cid]);
+		$condition2 = DBA::mergeConditions($condition, ["`relation-cid` = ? and `follows`", $cid]);
+		$sql1 = "SELECT `contact`.`id` FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `relation-cid` WHERE " . array_shift($condition1);
+		$sql2 = "SELECT `contact`.`id` FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `cid` WHERE " . array_shift($condition2);
+		$union = array_merge($condition1, $condition2);
+		$sql = $sql1 . " INTERSECT " . $sql2;
 
-		return DI::dba()->count('contact', $condition);
+		$contacts = 0;
+		$query = DBA::p($sql, $union);
+		while (DBA::fetch($query)) {
+			$contacts++;
+		}
+		DBA::close($query);
+
+		return $contacts;
 	}
 
 	/**
@@ -573,23 +591,23 @@ class Relation
 	 * @param array $condition Additional condition on the contact table
 	 * @param int   $count
 	 * @param int   $offset
-	 * @param bool  $shuffle
 	 * @return array
 	 * @throws Exception
 	 */
-	public static function listMutuals(int $cid, array $condition = [], int $count = 30, int $offset = 0, bool $shuffle = false)
+	public static function listMutuals(int $cid, array $condition = [], int $count = 30, int $offset = 0)
 	{
-		$condition = DBA::mergeConditions($condition,
-			['`id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ? AND `follows`) 
-			AND `id` IN (SELECT `cid` FROM `contact-relation` WHERE `relation-cid` = ? AND `follows`)',
-			$cid, $cid]
-		);
-
-		return DI::dba()->selectToArray('contact', [], $condition,
-			['limit' => [$offset, $count], 'order' => [$shuffle ? 'RAND()' : 'name']]
-		);
+		$condition1 = DBA::mergeConditions($condition, ["`cid` = ? and `follows`", $cid]);
+		$condition2 = DBA::mergeConditions($condition, ["`relation-cid` = ? and `follows`", $cid]);
+		$sql1 = "SELECT `contact`.* FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `relation-cid` WHERE " . array_shift($condition1);
+		$sql2 = "SELECT `contact`.* FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `cid` WHERE " . array_shift($condition2);
+		$union = array_merge($condition1, $condition2);
+		$sql = $sql1 . " INTERSECT " . $sql2;
+		if ($count > 0) {
+			$sql .= " LIMIT ?, ?";
+			$union = array_merge($union, [$offset, $count]);
+		}
+		return DBA::toArray(DBA::p($sql, $union));
 	}
-
 
 	/**
 	 * Counts the number of contacts with any relationship with the provided public contact.
@@ -601,13 +619,21 @@ class Relation
 	 */
 	public static function countAll(int $cid, array $condition = [])
 	{
-		$condition = DBA::mergeConditions($condition,
-			['(`id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ? AND `follows`) 
-			OR `id` IN (SELECT `cid` FROM `contact-relation` WHERE `relation-cid` = ? AND `follows`))',
-				$cid, $cid]
-		);
+		$condition1 = DBA::mergeConditions($condition, ["`cid` = ? and `follows`", $cid]);
+		$condition2 = DBA::mergeConditions($condition, ["`relation-cid` = ? and `follows`", $cid]);
+		$sql1 = "SELECT `contact`.`id` FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `relation-cid` WHERE " . array_shift($condition1);
+		$sql2 = "SELECT `contact`.`id` FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `cid` WHERE " .array_shift($condition2);
+		$union = array_merge($condition1, $condition2);
+		$sql = $sql1 . " UNION " . $sql2;
 
-		return DI::dba()->count('contact', $condition);
+		$contacts = 0;
+		$query = DBA::p($sql, $union);
+		while (DBA::fetch($query)) {
+			$contacts++;
+		}
+		DBA::close($query);
+
+		return $contacts;
 	}
 
 	/**
@@ -617,21 +643,22 @@ class Relation
 	 * @param array $condition Additional condition on the contact table
 	 * @param int   $count
 	 * @param int   $offset
-	 * @param bool  $shuffle
 	 * @return array
 	 * @throws Exception
 	 */
-	public static function listAll(int $cid, array $condition = [], int $count = 30, int $offset = 0, bool $shuffle = false)
+	public static function listAll(int $cid, array $condition = [], int $count = 30, int $offset = 0)
 	{
-		$condition = DBA::mergeConditions($condition,
-			['(`id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ? AND `follows`) 
-			OR `id` IN (SELECT `cid` FROM `contact-relation` WHERE `relation-cid` = ? AND `follows`))',
-				$cid, $cid]
-		);
-
-		return DI::dba()->selectToArray('contact', [], $condition,
-			['limit' => [$offset, $count], 'order' => [$shuffle ? 'RAND()' : 'name']]
-		);
+		$condition1 = DBA::mergeConditions($condition, ["`cid` = ? and `follows`", $cid]);
+		$condition2 = DBA::mergeConditions($condition, ["`relation-cid` = ? and `follows`", $cid]);
+		$sql1 = "SELECT `contact`.* FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `relation-cid` WHERE " . array_shift($condition1);
+		$sql2 = "SELECT `contact`.* FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `cid` WHERE " .array_shift($condition2);
+		$union = array_merge($condition1, $condition2);
+		$sql = $sql1 . " UNION " . $sql2;
+		if ($count > 0) {
+			$sql .= " LIMIT ?, ?";
+			$union = array_merge($union, [$offset, $count]);
+		}
+		return DBA::toArray(DBA::p($sql, $union));
 	}
 
 	/**
@@ -646,13 +673,21 @@ class Relation
 	 */
 	public static function countCommon(int $sourceId, int $targetId, array $condition = [])
 	{
-		$condition = DBA::mergeConditions($condition,
-			['`id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ?) 
-			AND `id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ?)',
-			$sourceId, $targetId]
-		);
+		$condition1 = DBA::mergeConditions($condition, ["`relation-cid` = ?", $sourceId]);
+		$condition2 = DBA::mergeConditions($condition, ["`relation-cid` = ?", $targetId]);
+		$sql1 = "SELECT `contact`.`id` FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `cid` WHERE " . array_shift($condition1);
+		$sql2 = "SELECT `contact`.`id` FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `cid` WHERE " .array_shift($condition2);
+		$union = array_merge($condition1, $condition2);
+		$sql = $sql1 . " INTERSECT " . $sql2;
 
-		return DI::dba()->count('contact', $condition);
+		$contacts = 0;
+		$query = DBA::p($sql, $union);
+		while (DBA::fetch($query)) {
+			$contacts++;
+		}
+		DBA::close($query);
+
+		return $contacts;
 	}
 
 	/**
@@ -664,21 +699,22 @@ class Relation
 	 * @param array $condition Additional condition on the contact table
 	 * @param int   $count
 	 * @param int   $offset
-	 * @param bool  $shuffle
 	 * @return array|bool Array on success, false on failure
 	 * @throws Exception
 	 */
-	public static function listCommon(int $sourceId, int $targetId, array $condition = [], int $count = 30, int $offset = 0, bool $shuffle = false)
+	public static function listCommon(int $sourceId, int $targetId, array $condition = [], int $count = 30, int $offset = 0)
 	{
-		$condition = DBA::mergeConditions($condition,
-			["`id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ?) 
-			AND `id` IN (SELECT `relation-cid` FROM `contact-relation` WHERE `cid` = ?)",
-			$sourceId, $targetId]
-		);
-
-		return DI::dba()->selectToArray('contact', [], $condition,
-			['limit' => [$offset, $count], 'order' => [$shuffle ? 'RAND()' : 'name']]
-		);
+		$condition1 = DBA::mergeConditions($condition, ["`relation-cid` = ?", $sourceId]);
+		$condition2 = DBA::mergeConditions($condition, ["`relation-cid` = ?", $targetId]);
+		$sql1 = "SELECT `contact`.* FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `cid` WHERE " . array_shift($condition1);
+		$sql2 = "SELECT `contact`.* FROM `contact-relation` INNER JOIN `contact` ON `contact`.`id` = `cid` WHERE " .array_shift($condition2);
+		$union = array_merge($condition1, $condition2);
+		$sql = $sql1 . " INTERSECT " . $sql2;
+		if ($count > 0) {
+			$sql .= " LIMIT ?, ?";
+			$union = array_merge($union, [$offset, $count]);
+		}
+		return DBA::toArray(DBA::p($sql, $union));
 	}
 
 	/**
@@ -769,5 +805,94 @@ class Relation
 		return DI::dba()->selectToArray('contact', [], $condition,
 			['limit' => [$offset, $count], 	'order' => [$shuffle ? 'RAND()' : 'name']]
 		);
+	}
+
+	/**
+	 * Calculate the interaction scores for the given user
+	 *
+	 * @param integer $uid
+	 * @return void
+	 */
+	public static function calculateInteractionScore(int $uid)
+	{
+		$days = DI::config()->get('channel', 'interaction_score_days');
+		$contact_id = Contact::getPublicIdByUserId($uid);
+
+		Logger::debug('Calculation - start', ['uid' => $uid, 'cid' => $contact_id, 'days' => $days]);
+
+		$follow = Verb::getID(Activity::FOLLOW);
+		$view = Verb::getID(Activity::VIEW);
+		$read = Verb::getID(Activity::READ);
+
+		DBA::update('contact-relation', ['score' => 0, 'relation-score' => 0, 'thread-score' => 0, 'relation-thread-score' => 0], ['relation-cid' => $contact_id]);
+
+		$total = DBA::fetchFirst("SELECT count(*) AS `activity` FROM `post-user` INNER JOIN `post` ON `post`.`uri-id` = `post-user`.`thr-parent-id` WHERE `post-user`.`author-id` = ? AND `post-user`.`received` >= ? AND `post-user`.`uid` = ? AND `post`.`author-id` != ? AND NOT `post`.`vid` IN (?, ?, ?)",
+			$contact_id, DateTimeFormat::utc('now - ' . $days . ' day'), $uid, $contact_id, $follow, $view, $read);
+
+		Logger::debug('Calculate relation-score', ['uid' => $uid, 'total' => $total['activity']]);
+
+		$interactions = DBA::p("SELECT `post`.`author-id`, count(*) AS `activity`, EXISTS(SELECT `pid` FROM `account-user-view` WHERE `pid` = `post`.`author-id` AND `uid` = ? AND `rel` IN (?, ?)) AS `follows`
+			FROM `post-user` INNER JOIN `post` ON `post`.`uri-id` = `post-user`.`thr-parent-id` WHERE `post-user`.`author-id` = ? AND `post-user`.`received` >= ? AND `post-user`.`uid` = ? AND `post`.`author-id` != ? AND NOT `post`.`vid` IN (?, ?, ?) GROUP BY `post`.`author-id`",
+			$uid, Contact::SHARING, Contact::FRIEND, $contact_id, DateTimeFormat::utc('now - ' . $days . ' day'), $uid, $contact_id, $follow, $view, $read);
+		while ($interaction = DBA::fetch($interactions)) {
+			$score = min((int)(($interaction['activity'] / $total['activity']) * 65535), 65535);
+			DBA::update('contact-relation', ['relation-score' => $score, 'follows' => $interaction['follows']], ['relation-cid' => $contact_id, 'cid' => $interaction['author-id']]);
+		}
+		DBA::close($interactions);
+
+		$total = DBA::fetchFirst("SELECT count(*) AS `activity` FROM `post-user` INNER JOIN `post` ON `post`.`uri-id` = `post-user`.`parent-uri-id` WHERE `post-user`.`author-id` = ? AND `post-user`.`received` >= ? AND `post-user`.`uid` = ? AND `post`.`author-id` != ? AND NOT `post`.`vid` IN (?, ?, ?)",
+			$contact_id, DateTimeFormat::utc('now - ' . $days . ' day'), $uid, $contact_id, $follow, $view, $read);
+
+		Logger::debug('Calculate relation-thread-score', ['uid' => $uid, 'total' => $total['activity']]);
+
+		$interactions = DBA::p("SELECT `post`.`author-id`, count(*) AS `activity`, EXISTS(SELECT `pid` FROM `account-user-view` WHERE `pid` = `post`.`author-id` AND `uid` = ? AND `rel` IN (?, ?)) AS `follows`
+			FROM `post-user` INNER JOIN `post` ON `post`.`uri-id` = `post-user`.`parent-uri-id` WHERE `post-user`.`author-id` = ? AND `post-user`.`received` >= ? AND `post-user`.`uid` = ? AND `post`.`author-id` != ? AND NOT `post`.`vid` IN (?, ?, ?) GROUP BY `post`.`author-id`",
+			$uid, Contact::SHARING, Contact::FRIEND, $contact_id, DateTimeFormat::utc('now - ' . $days . ' day'), $uid, $contact_id, $follow, $view, $read);
+		while ($interaction = DBA::fetch($interactions)) {
+			$score = min((int)(($interaction['activity'] / $total['activity']) * 65535), 65535);
+			DBA::update('contact-relation', ['relation-thread-score' => $score, 'follows' => !empty($interaction['follows'])], ['relation-cid' => $contact_id, 'cid' => $interaction['author-id']]);
+		}
+		DBA::close($interactions);
+
+		$total = DBA::fetchFirst("SELECT count(*) AS `activity` FROM `post-user` INNER JOIN `post` ON `post-user`.`uri-id` = `post`.`thr-parent-id` WHERE `post-user`.`author-id` = ? AND `post-user`.`received` >= ? AND `post-user`.`uid` = ? AND `post`.`author-id` != ? AND NOT `post`.`vid` IN (?, ?, ?)",
+			$contact_id, DateTimeFormat::utc('now - ' . $days . ' day'), $uid, $contact_id, $follow, $view, $read);
+
+		Logger::debug('Calculate score', ['uid' => $uid, 'total' => $total['activity']]);
+
+		$interactions = DBA::p("SELECT `post`.`author-id`, count(*) AS `activity` FROM `post-user` INNER JOIN `post` ON `post-user`.`uri-id` = `post`.`thr-parent-id` WHERE `post-user`.`author-id` = ? AND `post-user`.`received` >= ? AND `post-user`.`uid` = ? AND `post`.`author-id` != ? AND NOT `post`.`vid` IN (?, ?, ?) GROUP BY `post`.`author-id`",
+			$contact_id, DateTimeFormat::utc('now - ' . $days . ' day'), $uid, $contact_id, $follow, $view, $read);
+		while ($interaction = DBA::fetch($interactions)) {
+			$score = min((int)(($interaction['activity'] / $total['activity']) * 65535), 65535);
+			DBA::update('contact-relation', ['score' => $score], ['relation-cid' => $contact_id, 'cid' => $interaction['author-id']]);
+		}
+		DBA::close($interactions);
+
+		$total = DBA::fetchFirst("SELECT count(*) AS `activity` FROM `post-user` INNER JOIN `post` ON `post-user`.`uri-id` = `post`.`parent-uri-id` WHERE `post-user`.`author-id` = ? AND `post-user`.`received` >= ? AND `post-user`.`uid` = ? AND `post`.`author-id` != ? AND NOT `post`.`vid` IN (?, ?, ?)",
+			$contact_id, DateTimeFormat::utc('now - ' . $days . ' day'), $uid, $contact_id, $follow, $view, $read);
+
+		Logger::debug('Calculate thread-score', ['uid' => $uid, 'total' => $total['activity']]);
+
+		$interactions = DBA::p("SELECT `post`.`author-id`, count(*) AS `activity` FROM `post-user` INNER JOIN `post` ON `post-user`.`uri-id` = `post`.`parent-uri-id` WHERE `post-user`.`author-id` = ? AND `post-user`.`received` >= ? AND `post-user`.`uid` = ? AND `post`.`author-id` != ? AND NOT `post`.`vid` IN (?, ?, ?) GROUP BY `post`.`author-id`",
+			$contact_id, DateTimeFormat::utc('now - ' . $days . ' day'), $uid, $contact_id, $follow, $view, $read);
+		while ($interaction = DBA::fetch($interactions)) {
+			$score = min((int)(($interaction['activity'] / $total['activity']) * 65535), 65535);
+			DBA::update('contact-relation', ['thread-score' => $score], ['relation-cid' => $contact_id, 'cid' => $interaction['author-id']]);
+		}
+		DBA::close($interactions);
+
+		$total = DBA::fetchFirst("SELECT count(*) AS `posts` FROM `post-thread-user` WHERE EXISTS(SELECT `cid` FROM `contact-relation` WHERE `cid` = `post-thread-user`.`author-id` AND `relation-cid` = ? AND `follows`) AND `uid` = ? AND `created` > ?",
+			$contact_id, $uid, DateTimeFormat::utc('now - ' . $days . ' day'));
+
+		Logger::debug('Calculate post-score', ['uid' => $uid, 'total' => $total['posts']]);
+
+		$posts = DBA::p("SELECT `author-id`, count(*) AS `posts` FROM `post-thread-user` WHERE EXISTS(SELECT `cid` FROM `contact-relation` WHERE `cid` = `post-thread-user`.`author-id` AND `relation-cid` = ? AND `follows`) AND `uid` = ? AND `created` > ? GROUP BY `author-id`",
+			$contact_id, $uid, DateTimeFormat::utc('now - ' . $days . ' day'));
+		while ($post = DBA::fetch($posts)) {
+			$score = min((int)(($post['posts'] / $total['posts']) * 65535), 65535);
+			DBA::update('contact-relation', ['post-score' => $score], ['relation-cid' => $contact_id, 'cid' => $post['author-id']]);
+		}
+		DBA::close($posts);
+
+		Logger::debug('Calculation - end', ['uid' => $uid]);
 	}
 }

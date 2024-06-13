@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -43,10 +43,11 @@ class Babel extends BaseModule
 		}
 
 		$results = [];
-		if (!empty($_REQUEST['text'])) {
-			switch (($_REQUEST['type'] ?? '') ?: 'bbcode') {
+		if (!empty($request['text'])) {
+			self::checkFormSecurityTokenForbiddenOnError('babel');
+			switch (($request['type'] ?? '') ?: 'bbcode') {
 				case 'bbcode':
-					$bbcode = $_REQUEST['text'];
+					$bbcode = $request['text'];
 					$results[] = [
 						'title'   => DI::l10n()->t('Source input'),
 						'content' => visible_whitespace($bbcode)
@@ -58,7 +59,7 @@ class Babel extends BaseModule
 						'content' => visible_whitespace($plain)
 					];
 
-					$html = Text\BBCode::convert($bbcode);
+					$html = Text\BBCode::convertForUriId(0, $bbcode);
 					$results[] = [
 						'title'   => DI::l10n()->t('BBCode::convert (raw HTML)'),
 						'content' => visible_whitespace($html)
@@ -125,7 +126,7 @@ class Babel extends BaseModule
 						'title'   => DI::l10n()->t('PageInfo::appendToBody'),
 						'content' => visible_whitespace($body2)
 					];
-					$html3 = Text\BBCode::convert($body2);
+					$html3 = Text\BBCode::convertForUriId(0, $body2);
 					$results[] = [
 						'title'   => DI::l10n()->t('PageInfo::appendToBody => BBCode::convert (raw HTML)'),
 						'content' => visible_whitespace($html3)
@@ -136,7 +137,7 @@ class Babel extends BaseModule
 					];
 					break;
 				case 'diaspora':
-					$diaspora = trim($_REQUEST['text']);
+					$diaspora = trim($request['text']);
 					$results[] = [
 						'title'   => DI::l10n()->t('Source input (Diaspora format)'),
 						'content' => visible_whitespace($diaspora),
@@ -144,7 +145,7 @@ class Babel extends BaseModule
 
 					$markdown = XML::unescape($diaspora);
 				case 'markdown':
-					$markdown = $markdown ?? trim($_REQUEST['text']);
+					$markdown = $markdown ?? trim($request['text']);
 
 					$results[] = [
 						'title'   => DI::l10n()->t('Source input (Markdown)'),
@@ -169,7 +170,7 @@ class Babel extends BaseModule
 					];
 					break;
 				case 'html' :
-					$html = trim($_REQUEST['text']);
+					$html = trim($request['text']);
 					$results[] = [
 						'title'   => DI::l10n()->t('Raw HTML input'),
 						'content' => visible_whitespace($html),
@@ -203,7 +204,7 @@ class Babel extends BaseModule
 						'content' => visible_whitespace($bbcode)
 					];
 
-					$html2 = Text\BBCode::convert($bbcode);
+					$html2 = Text\BBCode::convertForUriId(0, $bbcode);
 					$results[] = [
 						'title'   => DI::l10n()->t('HTML::toBBCode => BBCode::convert'),
 						'content' => $html2
@@ -239,7 +240,7 @@ class Babel extends BaseModule
 					];
 					break;
 				case 'twitter':
-					$json = trim($_REQUEST['text']);
+					$json = trim($request['text']);
 
 					if (file_exists('addon/twitter/twitter.php')) {
 						require_once 'addon/twitter/twitter.php';
@@ -302,13 +303,14 @@ class Babel extends BaseModule
 		$tpl = Renderer::getMarkupTemplate('babel.tpl');
 		$o = Renderer::replaceMacros($tpl, [
 			'$title'         => DI::l10n()->t('Babel Diagnostic'),
-			'$text'          => ['text', DI::l10n()->t('Source text'), $_REQUEST['text'] ?? '', ''],
-			'$type_bbcode'   => ['type', DI::l10n()->t('BBCode'), 'bbcode', '', (($_REQUEST['type'] ?? '') ?: 'bbcode') == 'bbcode'],
-			'$type_diaspora' => ['type', DI::l10n()->t('Diaspora'), 'diaspora', '', (($_REQUEST['type'] ?? '') ?: 'bbcode') == 'diaspora'],
-			'$type_markdown' => ['type', DI::l10n()->t('Markdown'), 'markdown', '', (($_REQUEST['type'] ?? '') ?: 'bbcode') == 'markdown'],
-			'$type_html'     => ['type', DI::l10n()->t('HTML'), 'html', '', (($_REQUEST['type'] ?? '') ?: 'bbcode') == 'html'],
+			'$form_security_token' => self::getFormSecurityToken('babel'),
+			'$text'          => ['text', DI::l10n()->t('Source text'), $request['text'] ?? '', ''],
+			'$type_bbcode'   => ['type', DI::l10n()->t('BBCode'), 'bbcode', '', (($request['type'] ?? '') ?: 'bbcode') == 'bbcode'],
+			'$type_diaspora' => ['type', DI::l10n()->t('Diaspora'), 'diaspora', '', (($request['type'] ?? '') ?: 'bbcode') == 'diaspora'],
+			'$type_markdown' => ['type', DI::l10n()->t('Markdown'), 'markdown', '', (($request['type'] ?? '') ?: 'bbcode') == 'markdown'],
+			'$type_html'     => ['type', DI::l10n()->t('HTML'), 'html', '', (($request['type'] ?? '') ?: 'bbcode') == 'html'],
 			'$flag_twitter'  => file_exists('addon/twitter/twitter.php'),
-			'$type_twitter'  => ['type', DI::l10n()->t('Twitter Source / Tweet URL (requires API key)'), 'twitter', '', (($_REQUEST['type'] ?? '') ?: 'bbcode') == 'twitter'],
+			'$type_twitter'  => ['type', DI::l10n()->t('Twitter Source / Tweet URL (requires API key)'), 'twitter', '', (($request['type'] ?? '') ?: 'bbcode') == 'twitter'],
 			'$results'       => $results,
 			'$submit'        => DI::l10n()->t('Submit'),
 		]);

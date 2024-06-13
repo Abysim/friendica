@@ -16,6 +16,7 @@ General
 -------
 * p - Profile
 * n - Network
+* l - Channel
 * c - Community
 * s - Search
 * a - Admin
@@ -27,6 +28,19 @@ General
 --------
 * l - Local community
 * g - Global community
+
+../channel
+--------
+* y - for you
+* f - followers
+* r - sharers of sharers
+* q - quiet sharers
+* h - what's hot
+* i - Images
+* v - Videos
+* d - Audio
+* g - Posts in your language
+* o - Hot posts in your language
 
 ../profile
 --------
@@ -48,7 +62,7 @@ General
 * i - Only show ignored contacts
 * y - Only show archived contacts
 * h - Only show hidden contacts
-* e - Edit contact groups
+* e - Edit contact circles
 
 ../contact (single contact view)
 -------------------------------

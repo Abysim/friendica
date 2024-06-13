@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -29,6 +29,15 @@ use Friendica\Test\Util\CreateDatabaseTrait;
 class DatabaseTest extends FixtureTest
 {
 	use CreateDatabaseTrait;
+
+	/**
+	 * @var Cache
+	 */
+	protected $configCache;
+	/**
+	 * @var ConfigFileManager
+	 */
+	protected $configFileManager;
 
 	protected function setUp(): void
 	{

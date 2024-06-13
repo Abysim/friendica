@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -25,6 +25,8 @@ use Friendica\Database\DBA;
 use \BadMethodCallException;
 use Friendica\Database\Database;
 use Friendica\DI;
+use Friendica\Model\Item;
+use Friendica\Protocol\Activity;
 
 class User
 {
@@ -49,8 +51,8 @@ class User
 		$fields['uri-id'] = $uri_id;
 		$fields['uid'] = $uid;
 
-		// Public posts are always seen
-		if ($uid == 0) {
+		// Public posts and activities (like, dislike, ...) are always seen
+		if ($uid == 0 || (($data['gravity'] == Item::GRAVITY_ACTIVITY) && ($data['verb'] != Activity::ANNOUNCE))) {
 			$fields['unseen'] = false;
 		}
 

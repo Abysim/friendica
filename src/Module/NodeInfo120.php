@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -70,10 +70,6 @@ class NodeInfo120 extends BaseModule
 
 		if (empty($this->config->get('system', 'ostatus_disabled'))) {
 			$nodeinfo['protocols'][] = 'ostatus';
-		}
-
-		if (Addon::isEnabled('twitter')) {
-			$nodeinfo['services']['inbound'][] = 'twitter';
 		}
 
 		$nodeinfo['services']['inbound'][]  = 'atom1.0';

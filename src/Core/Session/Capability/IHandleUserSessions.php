@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -92,6 +92,13 @@ interface IHandleUserSessions extends IHandleSessions
 	 * @return bool true if user is an admin
 	 */
 	public function isSiteAdmin(): bool;
+
+	/**
+	 * Check if current user is a moderator.
+	 *
+	 * @return bool true if user is a moderator
+	 */
+	public function isModerator(): bool;
 
 	/**
 	 * Returns User ID of the managed user in case it's a different identity

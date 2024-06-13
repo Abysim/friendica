@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -302,6 +302,7 @@ class HTML
 			self::tagToBBCode($doc, 'a', ['href' => '/(.+)/'], '[url=$1]', '[/url]');
 
 			self::tagToBBCode($doc, 'img', ['src' => '/(.+)/', 'alt' => '/(.+)/'], '[img=$1]$2', '[/img]', true);
+			self::tagToBBCode($doc, 'img', ['src' => '/(.+)/', 'title' => '/(.+)/'], '[img=$1]$2', '[/img]', true);
 			self::tagToBBCode($doc, 'img', ['src' => '/(.+)/', 'width' => '/(\d+)/', 'height' => '/(\d+)/'], '[img=$2x$3]$1', '[/img]', true);
 			self::tagToBBCode($doc, 'img', ['src' => '/(.+)/'], '[img]$1', '[/img]', true);
 
@@ -422,7 +423,8 @@ class HTML
 	{
 		$URLSearchString = "^\[\]";
 
-		$matches = ["/\[url\=([$URLSearchString]*)\].*?\[\/url\]/ism",
+		$matches = [
+			"/\[url\=([$URLSearchString]*)\].*?\[\/url\]/ism",
 			"/\[url\]([$URLSearchString]*)\[\/url\]/ism",
 			"/\[img\=[0-9]*x[0-9]*\](.*?)\[\/img\]/ism",
 			"/\[img\](.*?)\[\/img\]/ism",
@@ -531,8 +533,10 @@ class HTML
 			$ignore = false;
 
 			// A list of some links that should be ignored
-			$list = ["/user/", "/tag/", "/group/", "/profile/", "/search?search=", "/search?tag=", "mailto:", "/u/", "/node/",
-				"//plus.google.com/", "//twitter.com/"];
+			$list = [
+				"/user/", "/tag/", "/group/", "/circle/", "/profile/", "/search?search=", "/search?tag=", "mailto:", "/u/", "/node/",
+				"//plus.google.com/", "//twitter.com/"
+			];
 			foreach ($list as $listitem) {
 				if (strpos($treffer[1], $listitem) !== false) {
 					$ignore = true;
@@ -861,7 +865,7 @@ class HTML
 			'$id'           => $id,
 			'$search_label' => DI::l10n()->t('Search'),
 			'$save_label'   => $save_label,
-			'$search_hint'  => DI::l10n()->t('@name, !forum, #tags, content'),
+			'$search_hint'  => DI::l10n()->t('@name, !group, #tags, content'),
 			'$mode'         => $mode,
 			'$return_url'   => urlencode(Search::getSearchPath($s)),
 		];
@@ -874,7 +878,7 @@ class HTML
 			];
 
 			if (DI::config()->get('system', 'poco_local_search')) {
-				$values['$searchoption']['forums'] = DI::l10n()->t('Forums');
+				$values['$searchoption']['groups'] = DI::l10n()->t('Groups');
 			}
 		}
 
@@ -941,7 +945,8 @@ class HTML
 			$domain = '(?:(?!-)[A-Za-z0-9-]{1,63}(?<!-)\.)*' . preg_quote(trim($domain, '/'), '%');
 		});
 
-		$config->set('URI.SafeIframeRegexp',
+		$config->set(
+			'URI.SafeIframeRegexp',
 			'%^https://(?:
 				' . implode('|', $allowedIframeDomains) . '
 			)
@@ -1050,7 +1055,8 @@ class HTML
 			if (isset($mediaType->parameters['charset'])) {
 				return strtolower($mediaType->parameters['charset']);
 			}
-		} catch(\InvalidArgumentException $e) {}
+		} catch (\InvalidArgumentException $e) {
+		}
 
 		return null;
 	}

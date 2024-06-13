@@ -1,6 +1,6 @@
 <?php
 /**
- * @copyright Copyright (C) 2010-2023, the Friendica project
+ * @copyright Copyright (C) 2010-2024, the Friendica project
  *
  * @license GNU AGPL version 3 or any later version
  *
@@ -98,7 +98,7 @@ class Notification extends BaseDataTransferObject
 		$this->date_rel   = Temporal::getRelativeDate($this->date);
 
 		try {
-			$this->msg_html  = BBCode::convert($this->msg, false);
+			$this->msg_html  = BBCode::convertForUriId($Notify->uriId, $this->msg, BBCode::EXTERNAL);
 		} catch (\Exception $e) {
 			$this->msg_html  = '';
 		}

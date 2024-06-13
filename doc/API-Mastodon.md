@@ -11,21 +11,7 @@ Authentication is the same as described in [Using the APIs](help/api#Authenticat
 
 ## Clients
 
-### Supported apps
-
-For supported apps please have a look at the [FAQ](help/FAQ#clients)
-
-### Unsupported apps
-
-#### Android
-
-- [Fedilab](https://framagit.org/tom79/fedilab) Automatically uses the legacy API, see issue: https://framagit.org/tom79/fedilab/-/issues/520
-- [Mammut](https://github.com/jamiesanson/Mammut) There are problems with the token request, see issue https://github.com/jamiesanson/Mammut/issues/19
-
-#### iOS
-
-- [Mast](https://github.com/Beesitech/Mast) Doesn't accept the entered instance name. Claims that it is invalid (Message is: "Not a valid instance (may be closed or dead)")
-- [Toot!](https://apps.apple.com/app/toot/id1229021451)
+Please find a list of supported apps at [FAQ](help/FAQ#clients).
 
 ## Entities
 
@@ -170,7 +156,8 @@ Example:
 
 - [`GET /api/v1/followed_tags`](https://docs.joinmastodon.org/methods/followed_tags/)
 - [`GET /api/v1/instance`](https://docs.joinmastodon.org/methods/instance/#v1)
-- `GET /api/v1/instance/rules` Undocumented, returns Terms of Service
+- [`GET /api/v1/instance/extended_description`](https://docs.joinmastodon.org/methods/instance/#extended_description)
+- [`GET /api/v1/instance/rules`](https://docs.joinmastodon.org/methods/instance/#rules)
 - [`GET /api/v1/instance/peers`](https://docs.joinmastodon.org/methods/instance#list-of-connected-domains)
 - [`GET /api/v1/lists`](https://docs.joinmastodon.org/methods/timelines/lists/)
 - [`POST /api/v1/lists`](https://docs.joinmastodon.org/methods/timelines/lists/)
@@ -211,7 +198,7 @@ Example:
         - `title`: Explicitly sets the title for a post status, ignored if used on a comment status. For post statuses the legacy behavior is to use any "spoiler text" as the title if it is provided. If both the title and spoiler text are provided for a post status then they will each be used for their respective roles. If no title is provided then the legacy behavior will persist. If you want to create a post with no title but spoiler text then explicitly set the title but set it to an empty string `""`.
 - [`POST /api/v1/statuses`](https://docs.joinmastodon.org/methods/statuses/#create)
     - Does not support `polls` argument as Friendica does not have polls
-    - Additionally to the static values `public`, `unlisted` and `private`, the `visibility` parameter can contain a numeric value with a group id.
+    - Additionally to the static values `public`, `unlisted` and `private`, the `visibility` parameter can contain a numeric value with a circle id.
     - Additional field `quote_id` for the post that is being quote reshared
     - Additional fields `friendica` for Friendica specific parameters:
        - `title`: Explicitly sets the title for a post status, ignored if used on a comment status. For post statuses the legacy behavior is to use any "spoiler text" as the title if it is provided. If both the title and spoiler text are provided for a post status then they will each be used for their respective roles. If no title is provided then the legacy behavior will persist. If you want to create a post with no title but spoiler text then explicitly set the title but set it to an empty string `""`.
@@ -314,7 +301,6 @@ They refer to features or data that don't exist in Friendica yet.
 - [`PUT /api/v1/filters/:id`](https://docs.joinmastodon.org/methods/accounts/filters/)
 - [`DELETE /api/v1/filters/:id`](https://docs.joinmastodon.org/methods/accounts/filters/)
 - [`GET /api/v1/instance/activity`](https://docs.joinmastodon.org/methods/instance#weekly-activity)
-- [`POST /api/v1/markers`](https://docs.joinmastodon.org/methods/timelines/markers/)
 - [`PUT /api/v1/scheduled_statuses/:id`](https://docs.joinmastodon.org/methods/statuses/scheduled_statuses/)
 - [`GET /api/v1/statuses/{id:\d+}/history`](https://github.com/mastodon/mastodon/pull/16697)
 - [`GET /api/v1/streaming`](https://docs.joinmastodon.org/methods/timelines/streaming/)
