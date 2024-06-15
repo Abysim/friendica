@@ -233,6 +233,7 @@ function item_insert(int $uid, array $request, bool $preview, string $return_pat
 
 function item_process(array $post, array $request, bool $preview, string $return_path): array
 {
+	Logger::debug('Item process: ' . json_encode($post) . json_encode($request));
 	$post['self']       = true;
 	$post['api_source'] = false;
 	$post['attach']     = '';
