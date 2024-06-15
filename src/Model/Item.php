@@ -853,7 +853,6 @@ class Item
 	 */
 	public static function insert(array $item, int $notify = 0, bool $post_local = true): int
 	{
-		Logger::debug('Item insert: ' . json_encode($item));
 		$orig_item = $item;
 
 		$priority = Worker::PRIORITY_HIGH;
