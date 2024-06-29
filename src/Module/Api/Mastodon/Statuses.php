@@ -308,6 +308,10 @@ class Statuses extends BaseApi
 			}
 		}
 
+		if (!empty($request['friendica']['category'])) {
+			$item['file'] = '<' . $request['friendica']['category'] . '>';
+		}
+
 		$item = DI::contentItem()->expandTags($item, $request['visibility'] == 'direct');
 
 		if (!empty($request['media_ids'])) {
